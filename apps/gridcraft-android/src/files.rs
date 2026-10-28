@@ -27,17 +27,26 @@ static REQUESTS: Mutex<VecDeque<String>> = Mutex::new(VecDeque::new());
 static FLIGHTS: Mutex<Vec<Flight>> = Mutex::new(Vec::new());
 /// Picked documents: (location, cache file path).
 static OPENED: Mutex<Vec<(String, String)>> = Mutex::new(Vec::new());
-/// Locations a Save As put a workbook at; the app adopts them (plain Save writes there next time).
-static ADOPTED: Mutex<Vec<String>> = Mutex::new(Vec::new());
+/// Successful workbook saves: (the workbook revision that was saved, the document's location).
+/// The app marks that revision clean and adopts the location (plain Save writes there next time).
+static SAVED: Mutex<Vec<(u64, String)>> = Mutex::new(Vec::new());
+/// The active workbook's revision at the start of this frame; a save queued now saves that state.
+static SAVE_REV: AtomicU64 = AtomicU64::new(0);
 /// Messages for the status line.
 static NOTICES: Mutex<Vec<String>> = Mutex::new(Vec::new());
 
-/// A save in flight: its ticket, the name it saves under, and whether a success makes the new file
-/// the workbook's location (a Save As of an `.xlsx`, not a write back).
+/// A save in flight: its ticket, the name it saves under, the workbook revision it saves, and
+/// whether a success makes the file the workbook's location (a `.xlsx`, Save As or write back).
 struct Flight {
     ticket: u64,
     name: String,
+    rev: u64,
     adopt: bool,
+}
+
+/// Called by the app each frame with the active workbook's revision.
+pub fn set_revision(rev: u64) {
+    SAVE_REV.store(rev, Ordering::Relaxed);
 }
 
 /// Asks Kotlin to show the document picker.
@@ -108,7 +117,8 @@ fn queue(line: String, flight: Flight) {
 pub fn save_as(name: &str, bytes: &[u8]) {
     let Some((ticket, path)) = stage(name, bytes) else { return };
     let line = format!("save\t{ticket}\t{}\t{path}", tidy(name));
-    queue(line, Flight { ticket, name: name.to_string(), adopt: keeps_location(name) });
+    let rev = SAVE_REV.load(Ordering::Relaxed);
+    queue(line, Flight { ticket, name: name.to_string(), rev, adopt: keeps_location(name) });
 }
 
 /// Plain Save of a picked document: writes `bytes` over `loc`. Returns `false` when `loc` is not a
@@ -117,7 +127,8 @@ pub fn save_in_place(loc: &str, bytes: &[u8]) -> bool {
     let Some((uri, name)) = parse_location(loc) else { return false };
     let Some((ticket, path)) = stage(name, bytes) else { return true };
     let line = format!("write\t{ticket}\t{uri}\t{path}");
-    queue(line, Flight { ticket, name: name.to_string(), adopt: false });
+    let rev = SAVE_REV.load(Ordering::Relaxed);
+    queue(line, Flight { ticket, name: name.to_string(), rev, adopt: true });
     true
 }
 
@@ -129,8 +140,8 @@ pub fn save_done(ticket: u64, status: i32, msg: String, display: String) {
     match status {
         1 => {
             notice(format!("Saved {display}"));
-            if flight.adopt && !msg.is_empty() && let Ok(mut a) = ADOPTED.lock() {
-                a.push(location(&msg, &display));
+            if flight.adopt && !msg.is_empty() && let Ok(mut s) = SAVED.lock() {
+                s.push((flight.rev, location(&msg, &display)));
             }
         }
         0 => {}
@@ -159,9 +170,9 @@ pub fn drain_notices() -> Vec<String> {
     NOTICES.lock().map(|mut n| n.drain(..).collect()).unwrap_or_default()
 }
 
-/// Locations that Save As just created.
-pub fn drain_adopted() -> Vec<String> {
-    ADOPTED.lock().map(|mut a| a.drain(..).collect()).unwrap_or_default()
+/// Successful saves since the last call: (revision saved, location).
+pub fn drain_saved() -> Vec<(u64, String)> {
+    SAVED.lock().map(|mut s| s.drain(..).collect()).unwrap_or_default()
 }
 
 /// Picked documents as (location, bytes). The cache files are removed; unreadable ones are reported.
@@ -201,11 +212,11 @@ mod tests {
     #[test]
     fn a_save_as_of_a_workbook_is_adopted_and_an_export_is_not() {
         let (ok, ex) = (7_000_001, 7_000_002);
-        queue("save".into(), Flight { ticket: ok, name: "Book1.xlsx".into(), adopt: keeps_location("Book1.xlsx") });
-        queue("save".into(), Flight { ticket: ex, name: "Book1.csv".into(), adopt: keeps_location("Book1.csv") });
+        queue("save".into(), Flight { ticket: ok, name: "Book1.xlsx".into(), rev: 5, adopt: keeps_location("Book1.xlsx") });
+        queue("save".into(), Flight { ticket: ex, name: "Book1.csv".into(), rev: 5, adopt: keeps_location("Book1.csv") });
         save_done(ok, 1, "content://d/u".into(), "Book1.xlsx".into());
         save_done(ex, 1, "content://d/p".into(), "Book1.csv".into());
-        assert_eq!(drain_adopted(), vec!["content://d/u/Book1.xlsx".to_string()]);
+        assert_eq!(drain_saved(), vec![(5, "content://d/u/Book1.xlsx".to_string())]);
         assert!(drain_notices().iter().any(|n| n == "Saved Book1.csv"));
     }
 }

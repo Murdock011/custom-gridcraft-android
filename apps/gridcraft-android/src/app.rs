@@ -62,6 +62,22 @@ impl Shell {
         }
     }
 
+    /// A save of revision `rev` to `loc` succeeded: if the active workbook is still that revision,
+    /// it is clean now (the title drops "Edited", as after a desktop save) and lives at `loc`.
+    /// Edits made since the save was asked for leave it dirty.
+    fn finish_save(&mut self, rev: u64, loc: &str) {
+        let saved = match self.app.session.active_mut() {
+            Some(d) if d.revision == rev => {
+                d.saved = d.wb.clone();
+                true
+            }
+            _ => false,
+        };
+        if saved {
+            self.adopt(loc);
+        }
+    }
+
     /// Turns the keyboard's messages into egui events for the next frame.
     fn drain_ime(&mut self) {
         while let Some(m) = ime::pop() {
@@ -135,6 +151,8 @@ impl eframe::App for Shell {
         if !self.pending.is_empty() {
             ctx.request_repaint();
         }
+        // Saves queued during this frame's input save this revision.
+        files::set_revision(self.app.session.active().map_or(0, |d| d.revision));
         // Inbox documents open inside `logic`: the one that became active keeps its location.
         let before = self.app.session.active().map(|d| d.uid);
         self.app.logic(ctx);
@@ -145,8 +163,8 @@ impl eframe::App for Shell {
         {
             self.adopt(&loc);
         }
-        for loc in files::drain_adopted() {
-            self.adopt(&loc);
+        for (rev, loc) in files::drain_saved() {
+            self.finish_save(rev, &loc);
         }
     }
 
