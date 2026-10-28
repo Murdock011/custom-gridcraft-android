@@ -62,8 +62,9 @@ Emulator (wc35, x86_64 debug): GridCraft launches and shows the grid (`~/.cache/
   A successful Save As of an `.xlsx` also adopts the new URI, so the next Save writes there.
 - `ui-egui`: new optional `Services::save_in_place(path, bytes) -> bool`, checked first in
   `run_command` for `file.save` without a path. Desktop and web leave it unset, so they are unchanged.
-- Writes do not clear the dirty flag, the same as a web download. The title keeps "Edited" after
-  a save until the next save or the document is closed.
+- A successful save (Save As or write-back) marks the revision it saved as clean, so the title
+  drops "Edited". The revision is the one current when the save was asked for: edits made after
+  that leave the workbook dirty. Failures and cancels change nothing. No shared-crate change for this.
 - Removed the WordCraft leftovers: Read Aloud (TTS, `nativeTakeSpeech`/`nativeSpeechEvent`), print
   (`print` requests, `printPdf`), the Recent `read` request and the picture picker type.
   `grep -ri wordcraft apps/gridcraft-android packaging/android-native` is empty.
@@ -73,5 +74,6 @@ Emulator (wc35, x86_64 debug): GridCraft launches and shows the grid (`~/.cache/
 
 Not tested on a device: the emulator was not used (another agent had it). Checked: clippy clean
 for `gridcraft-android`, the host tests for `files` and `clip`, and the x86_64 debug APK build.
-Still to do on a device: Save As to a new file, Save back to a picked file, Cancel in the dialog,
-a read-only provider, and a non-xlsx open followed by Save.
+Also checked: `cargo xtask wasm` passes (own target dir). Still to do on a device: Save As to a new
+file, Save back to a picked file (title loses "Edited"), Cancel in the dialog, a read-only provider,
+and a non-xlsx open followed by Save.
