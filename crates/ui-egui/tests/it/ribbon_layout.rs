@@ -84,8 +84,9 @@ fn each_tab_keeps_a_scroll_offset_of_its_own() {
 #[test]
 fn the_scroll_arrows_stay_inside_a_narrow_window() {
     // The tab row can be wider than a narrow window (more so with wider system fonts); the card
-    // and its arrows stay inside the window, and the right arrow still scrolls.
-    for width in [600.0, 480.0] {
+    // and its arrows stay inside the window, and the right arrow still scrolls. Windows narrower
+    // than the phone breakpoint (600 pt) get the phone layout instead, with no ribbon to scroll.
+    for width in [600.0, 700.0] {
         let mut h = app_at(width, "Home");
         let arrow = h.get_by_label("Scroll ribbon right").rect();
         assert!(arrow.max.x <= width, "{width}: the arrow ends at {}", arrow.max.x);
