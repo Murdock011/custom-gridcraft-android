@@ -142,6 +142,52 @@ fn sheet_rect_id() -> egui::Id {
     egui::Id::new("phone_sheet_rect")
 }
 
+/// The gesture the grid must ignore: a press that began outside the open sheet. Set while the
+/// button is held, so the press closes the sheet and reaches neither the grid nor the cells.
+fn gesture_id() -> egui::Id {
+    egui::Id::new("phone_gesture_taken")
+}
+
+/// Whether the grid ignores the pointer this frame (see [`take_pointer`]).
+pub fn pointer_taken(ctx: &Context) -> bool {
+    ctx.data(|d| d.get_temp::<bool>(gesture_id())).unwrap_or(false)
+}
+
+/// Runs once a frame, before the grid. A press outside the open sheet closes it and is taken: the
+/// grid gets none of the gesture until the button is released. A press inside the sheet is the
+/// sheet's own.
+pub fn take_pointer(ctx: &Context) {
+    let (pressed, pos) = ctx.input(|i| (i.pointer.primary_pressed(), i.pointer.latest_pos()));
+    // Set on the press and kept through the release: egui emits the click on the release frame.
+    // The next press decides again.
+    if !pressed {
+        return;
+    }
+    let outside = menu_tab(ctx).is_some() && {
+        let rect = ctx.data(|d| d.get_temp::<Rect>(sheet_rect_id()));
+        matches!((pos, rect), (Some(p), Some(r)) if !r.contains(p))
+    };
+    if outside {
+        set_menu(ctx, None);
+        set_palette(ctx, None);
+    }
+    ctx.data_mut(|d| d.insert_temp(gesture_id(), outside));
+}
+
+/// Whether Android Back has an open sheet (or its palette) to close first.
+pub fn can_go_back(ctx: &Context) -> bool {
+    menu_tab(ctx).is_some()
+}
+
+/// Escape or Back: closes the open sheet's colour palette first, then the sheet.
+pub fn back_step(ctx: &Context) {
+    if open_palette(ctx).is_some() {
+        set_palette(ctx, None);
+    } else {
+        set_menu(ctx, None);
+    }
+}
+
 /// The top app bar: File (the Backstage), the workbook's name, and Undo, Redo and Save.
 pub fn top_bar(app: &mut SheetApp, ui: &mut Ui) {
     let ctx = ui.ctx().clone();
@@ -185,21 +231,13 @@ pub fn bottom_bar(app: &mut SheetApp, ui: &mut Ui) {
     let t = Tokens::get(&ctx);
     let lang = app.ui.language;
     if ctx.input(|i| i.key_pressed(egui::Key::Escape)) {
-        set_menu(&ctx, None);
+        back_step(&ctx);
     }
-    // A press outside the open sheet closes it. The press still reaches the grid, as a cell tap.
-    if menu_tab(&ctx).is_some() && ctx.input(|i| i.pointer.primary_pressed()) {
-        let pos = ctx.input(|i| i.pointer.latest_pos());
-        let rect = ctx.data(|d| d.get_temp::<Rect>(sheet_rect_id()));
-        if matches!((pos, rect), (Some(p), Some(r)) if !r.contains(p)) {
-            set_menu(&ctx, None);
-            set_palette(&ctx, None);
-        }
-    }
+    take_pointer(&ctx);
     if let Some(tab) = menu_tab(&ctx) {
         return sheet(app, ui, tab);
     }
-    Panel::bottom("phone_tab_bar").exact_size(PILL_H + 2.0 * FLOAT_GAP).frame(Frame::NONE).show(ui, |ui| {
+    Panel::bottom("phone_tab_bar").exact_size(PILL_H + 2.0 * FLOAT_GAP).frame(Frame::NONE.fill(t.grid_bg)).show(ui, |ui| {
         let outer = ui.max_rect();
         let pill = Rect::from_min_max(
             Pos2::new(outer.left() + PILL_SIDE, outer.top() + FLOAT_GAP),

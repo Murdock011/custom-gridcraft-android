@@ -1282,6 +1282,12 @@ impl SheetApp {
     }
 
     /// Lays out the whole window.
+    /// Whether Android Back has something open to close first: a phone sheet or its palette, or the
+    /// Backstage. The host calls this each frame and closes the innermost part on Back.
+    pub fn can_go_back(&self, ctx: &egui::Context) -> bool {
+        self.backstage.is_some() || phone::can_go_back(ctx)
+    }
+
     pub fn ui(&mut self, ui: &mut egui::Ui) {
         let ctx = ui.ctx().clone();
         self.poll_printing(&ctx);
