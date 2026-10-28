@@ -27,6 +27,7 @@ pub mod keytips;
 pub mod outline;
 pub mod panes;
 pub mod paper_view;
+mod phone;
 pub mod pivot_pane;
 pub mod printing;
 pub mod ribbon;
@@ -1301,22 +1302,32 @@ impl SheetApp {
         if self.backstage.is_none() || self.keytips.prefix().is_some() {
             self.ribbon_keys(&ctx);
         }
-        if self.chrome.title_bar {
+        // A narrow window (a phone) gets the touch layout: an app bar, and a floating tab bar with
+        // bottom sheets in place of the ribbon and status bar (see `phone`).
+        let phone = phone::active(&ctx);
+        if phone {
+            phone::top_bar(self, ui);
+        } else if self.chrome.title_bar {
             ribbon::title_bar(self, ui);
         }
         if self.backstage.is_some() {
             // File tab: the Backstage view replaces everything below the title bar.
             backstage::show(self, ui);
         } else {
-            ribbon::show(self, ui);
+            if !phone {
+                ribbon::show(self, ui);
+            }
             widgets::notice_bar(self, ui);
             if self.session.prefs.formula_bar {
                 formula_bar::show(self, ui);
             }
-            if self.ui.status_bar {
+            if self.ui.status_bar && !phone {
                 tabs::status_bar(self, ui);
             }
             tabs::sheet_tabs(self, ui);
+            if phone {
+                phone::bottom_bar(self, ui);
+            }
             pivot_pane::show(self, ui);
             panes::show(self, ui);
             egui::CentralPanel::default().frame(egui::Frame::NONE.fill(t.grid_bg)).show(ui, |ui| {

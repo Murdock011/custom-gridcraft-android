@@ -459,7 +459,7 @@ fn active_style(app: &SheetApp) -> Style {
         .unwrap_or_default()
 }
 
-fn theme_colors(app: &SheetApp) -> [u32; 12] {
+pub(crate) fn theme_colors(app: &SheetApp) -> [u32; 12] {
     app.session.active().map(|d| d.wb.theme.colors).unwrap_or(gridcraft_engine::model::Theme::default().colors)
 }
 

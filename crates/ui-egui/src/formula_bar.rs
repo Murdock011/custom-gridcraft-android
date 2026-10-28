@@ -72,7 +72,8 @@ pub fn show(app: &mut SheetApp, ui: &mut egui::Ui) {
     // Height follows the content's line count (last frame's), 1 to MAX_LINES; the chevron pins it
     // at MAX_LINES. It eases only when that target changes.
     let lines = if app.ui.formula_bar_expanded { MAX_LINES } else { last.lines.clamp(1, MAX_LINES) };
-    let target = one_line(row_h) + (lines - 1) as f32 * row_h;
+    let one = crate::phone::bar_height(ui.ctx(), one_line(row_h));
+    let target = one + (lines - 1) as f32 * row_h;
     let h = ui.ctx().animate_value_with_time(egui::Id::new("formula_bar.height"), target, EASE_SECONDS);
     let mut layout = BarLayout { height: h, ..Default::default() };
     egui::Panel::top("formula_bar")

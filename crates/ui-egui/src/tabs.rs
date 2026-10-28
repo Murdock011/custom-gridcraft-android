@@ -97,7 +97,7 @@ fn tab_split_handle(app: &mut SheetApp, ui: &mut Ui, split: Rect, bar: (f32, f32
 
 pub fn sheet_tabs(app: &mut SheetApp, ui: &mut Ui) {
     let t = Tokens::get(ui.ctx());
-    egui::Panel::bottom("sheet_tabs").exact_size(32.0).frame(egui::Frame::NONE.fill(t.tab_bar)).show(ui, |ui| {
+    egui::Panel::bottom("sheet_tabs").exact_size(crate::phone::bar_height(ui.ctx(), 32.0)).frame(egui::Frame::NONE.fill(t.tab_bar)).show(ui, |ui| {
         let rect = ui.max_rect();
         ui.painter().line_segment([rect.left_top(), rect.right_top()], Stroke::new(1.0, t.ribbon_border));
         ui.horizontal_centered(|ui| {
@@ -180,7 +180,8 @@ pub fn sheet_tabs(app: &mut SheetApp, ui: &mut Ui) {
                                 let font = if active { theme::ui_bold(13.0) } else { theme::ui_font(13.0) };
                                 let tw = ui.painter().layout_no_wrap(name.clone(), font.clone(), t.text).size().x;
                                 let w = (tw + 32.0).max(72.0);
-                                let (r, resp) = ui.allocate_exact_size(vec2(w, 30.0), Sense::click_and_drag());
+                                let tab_h = if crate::phone::active(ui.ctx()) { 40.0 } else { 30.0 };
+                                let (r, resp) = ui.allocate_exact_size(vec2(w, tab_h), Sense::click_and_drag());
                                 if active && reveal_active {
                                     resp.scroll_to_me(None);
                                 }
