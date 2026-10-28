@@ -49,3 +49,38 @@ Emulator (wc35, x86_64 debug): GridCraft launches and shows the grid (`~/.cache/
 - Open-with and Share intents deliver the file bytes through the same picker path, but only the
   `Open` request is exercised so far.
 - The system IME may also send text through GameActivity; not checked on the emulator yet.
+
+## Update 1: phone UI
+
+A narrow window (shorter side under 600 pt, the WordCraft break) gets a touch layout in place of the
+ribbon, title bar and status bar. Code: `crates/ui-egui/src/phone.rs`; hooks in `lib.rs`
+(`SheetApp::ui`), `tabs.rs` and `formula_bar.rs` (bars at least 44 pt on the phone only), `grid.rs`
+(a press taken by an open sheet is not a grid gesture) and `ribbon.rs` (`theme_colors` made
+`pub(crate)`). Desktop layout is unchanged.
+
+- App bar (64 pt): File (opens Backstage at Home), the workbook name with the unsaved dot, Undo,
+  Redo, Save. Undo and Redo grey out as the commands report.
+- Floating tab bar at the bottom: Home, Insert, Formulas, Data, View. It is a bottom panel, so the
+  grid stops above it and nothing is drawn under it.
+- Each tab opens a bottom sheet of 48 pt rows, each running a command id from `ribbon.rs`:
+  Home (Bold, Italic, Underline, Fill and Font colour palettes, Align, Number Format dialog,
+  Cut/Copy/Paste, Insert and Delete Row and Column), Insert (Chart, Picture, Function dialog,
+  Comment), Formulas (AutoSum, Insert Function), Data (Sort A to Z, Sort Z to A, Filter), View
+  (Freeze Panes, Gridlines, Zoom In, Zoom Out).
+- A press outside an open sheet closes it and does not reach the grid (`phone::take_pointer`).
+  Escape closes it (`phone::back_step`). `SheetApp::can_go_back` and `phone::back_step` are there
+  for the Android host to close the sheet on Back; the host side is not wired (see below).
+- Bold and the other font commands run the same command the ribbon runs. On the emulator the
+  bold change does not show in the cell: the build's cell fonts have no bold face, so the renderer
+  falls back to regular (a font issue, shared with desktop). Center alignment does show.
+
+### Open
+
+- Android Back does not close the sheet yet. The `nativeCanGoBack` stub in
+  `apps/gridcraft-android/src/android.rs` still returns false, and that crate was off limits in this
+  pass (another agent is editing it). Wire it to `SheetApp::can_go_back` and `back_step`.
+- No keyboard handling on the phone: the tab bar and sheets stay up while the keyboard is open.
+- Search, Share, Comments, AutoSave and the theme switch from the desktop title bar are not on the
+  phone.
+- `header_autofit::table_filter_autofit_works_through_command_and_header_double_click` fails
+  intermittently on the base commit too (pre-existing, not from the phone change).
