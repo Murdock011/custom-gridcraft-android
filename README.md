@@ -1,70 +1,34 @@
-<p align="center">
-  <a href="https://getartcraft.com/">
-    <picture>
-      <source media="(prefers-color-scheme: dark)" srcset="docs/brand/artcraft-logo-white.svg">
-      <img alt="ArtCraft" src="docs/brand/artcraft-logo.svg" width="200">
-    </picture>
-  </a>
-</p>
+# Custom GridCraft for Android
 
-<p align="center">
-  <img src="assets/app-icon/hicolor/256x256/apps/ai.storyteller.gridcraft.png" width="128" height="128" alt="GridCraft icon: a spreadsheet page on a green tile">
-</p>
+> [!WARNING]
+> **This project is made entirely by AI.** All of the code, notes and documentation in this
+> repository's Android work were written by AI coding agents (Anthropic's Claude models), directed
+> by a person who did not write or review the code line by line. It has not had human code
+> review or security review, and has only been tried on an emulator. Expect bugs. Do not
+> trust it with spreadsheets you can't afford to lose.
 
-<h1 align="center">GridCraft</h1>
+> [!IMPORTANT]
+> **This is an unofficial, personal fork. It is not made, endorsed or supported by the ArtCraft
+> team or by storytold.** It is not the official GridCraft, and it is not an ArtCraft project.
+> Please don't report problems with this fork to the original project.
 
-<p align="center">
-  <b>Spreadsheets and data; an open-source, high-performance modern spreadsheet application, built in pure Rust.</b>
-</p>
+## What this is
 
-<p align="center">
-  A fast, open-source, clean-room take on modern spreadsheet workflows. It runs natively on macOS,
-  Windows, Linux and BSD, and in the browser via WebAssembly.<br>
-  <i>By the ArtCraft team.</i>
-</p>
+An Android port of [GridCraft](https://github.com/storytold/gridcraft), the open-source Rust
+spreadsheet by the ArtCraft team, running as a **native app** (no WebView): a GameActivity with
+Kotlin bridges for the keyboard, the system file picker and the clipboard. Everything that makes it
+a spreadsheet is the original GridCraft engine. It is currently based on GridCraft **0.12.1**.
+Changes below the interface are listed in [docs/ENGINE-CHANGES.md](docs/ENGINE-CHANGES.md)
+(none so far); port notes are in [notes/native-port.md](notes/native-port.md).
 
-<p align="center">
-  <img alt="Written in Rust" src="https://img.shields.io/badge/written%20in-Rust-147a40?style=flat-square&logo=rust&logoColor=white">
-  <img alt="Runs on macOS, Windows, Linux, BSD and the web" src="https://img.shields.io/badge/runs%20on-macOS%20%C2%B7%20Windows%20%C2%B7%20Linux%20%C2%B7%20BSD%20%C2%B7%20Web-1f9d55?style=flat-square">
-  <img alt="License: MIT OR Apache-2.0" src="https://img.shields.io/badge/license-MIT%20%2F%20Apache--2.0-147a40?style=flat-square">
-  <img alt="Agent-drivable over MCP" src="https://img.shields.io/badge/agents-MCP-1f9d55?style=flat-square">
-  <br>
-  <a href="https://sonarcloud.io/project/overview?id=storytold_gridcraft"><img alt="Scanned by SonarCloud" src="https://img.shields.io/badge/Scanned_by-SonarCloud-4b9fd5?style=flat-square&logo=sonarqubecloud&logoColor=white"></a>
-  <a href="https://coderabbit.ai"><img alt="Reviewed by CodeRabbit" src="https://img.shields.io/coderabbit/prs/github/storytold/gridcraft?style=flat-square&label=Reviewed%20by%20CodeRabbit&logo=coderabbit"></a>
-</p>
+Status: early. The desktop interface runs on the phone; a phone-friendly interface is not done yet.
+Saving goes to the app's private folder. It installs as `ai.storyteller.gridcraft.native`.
 
-<p align="center">
-  <a href="https://discord.gg/artcraft"><img alt="Join the ArtCraft community on Discord" src="https://img.shields.io/badge/Join%20us%20on%20Discord-5865F2?style=for-the-badge&logo=discord&logoColor=white" height="40"></a>
-</p>
+Build (x86_64 emulator): `sh packaging/android-native/build-native.sh x86_64`
 
-<p align="center">
-  <a href="https://getartcraft.com/apps/gridcraft"><b>GridCraft on getartcraft.com</b></a> ·
-  <a href="https://getartcraft.com/">ArtCraft</a> ·
-  <a href="https://getartcraft.com/apps">All Crafting Apps</a>
-</p>
+---
 
-<br>
-
-<p align="center">
-  <img src="docs/images/hero-sales.png" alt="GridCraft showing a quarterly sales dashboard: a styled table with banded rows, filter buttons, a totals row, data bars, arrow icons and sparklines, next to a clustered column chart and a pie chart" width="100%">
-  <br><sub><b>Quarterly Sales Dashboard</b>: a table with a totals row, conditional formatting, sparklines and two live charts — built entirely from GridCraft commands (<code>File → New → Sample</code>).</sub>
-</p>
-
-> [!NOTE]
-> **ArtCraft is a community of artists from all walks of life.** Painters, photographers,
-> filmmakers, illustrators, designers, animators, hobbyists, and people who picked up a pencil
-> last week. If you make things, you're one of us. **[Come say hi on Discord](https://discord.gg/artcraft).**
-
-<p align="center">
-  <a href="#a-look-around">A look around</a> ·
-  <a href="#why-gridcraft">Why GridCraft</a> ·
-  <a href="#quick-start">Quick start</a> ·
-  <a href="#for-agents-mcp-cli-and-the-control-channel">For agents</a> ·
-  <a href="#architecture">Architecture</a> ·
-  <a href="#roadmap">Roadmap</a> ·
-  <a href="#the-crafting-apps">The Crafting Apps</a> ·
-  <a href="#license-and-credits">License and credits</a>
-</p>
+The original GridCraft README follows.
 
 ## A look around
 
