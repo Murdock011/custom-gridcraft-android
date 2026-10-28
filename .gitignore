@@ -8,3 +8,10 @@ plan/
 /.claude/
 /target-*/
 /craft-fonts/
+
+# Native Android host: build output, local SDK paths, and generated .so files (build-native.sh)
+/packaging/android-native/.gradle/
+/packaging/android-native/.kotlin/
+/packaging/android-native/app/build/
+/packaging/android-native/app/src/main/jniLibs/
+/packaging/android-native/local.properties
