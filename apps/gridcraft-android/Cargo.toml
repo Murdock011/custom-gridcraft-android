@@ -1,0 +1,37 @@
+[package]
+name = "gridcraft-android"
+description = "GridCraft native Android host (egui on android-activity). Spike: not the shipping app yet."
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+publish = false
+
+[lib]
+name = "gridcraft_android"
+crate-type = ["cdylib"]
+
+# The workspace forbids unsafe_code. This crate exports `android_main` and the JNI functions
+# MainActivity.kt calls (both need #[unsafe(no_mangle)]); each carries `#[allow(unsafe_code)]`.
+# No other unsafe code lives here.
+[lints.rust]
+unsafe_code = "deny"
+
+[lints.rust.unexpected_cfgs]
+level = "warn"
+
+[lints.clippy]
+dbg_macro = "warn"
+todo = "warn"
+too_many_arguments = "allow"
+type_complexity = "allow"
+
+# Everything below is Android-only, so `cargo build` on the desktop keeps building an empty library.
+[target.'cfg(target_os = "android")'.dependencies]
+eframe = { workspace = true, features = ["default_fonts", "wgpu", "android-game-activity"] }
+egui = { workspace = true }
+gridcraft-engine = { workspace = true }
+gridcraft-ui-egui = { workspace = true }
+android_logger = "0.15"
+android-activity = { version = "0.6", features = ["game-activity"] }
+jni = "0.22"
+log = { workspace = true }
