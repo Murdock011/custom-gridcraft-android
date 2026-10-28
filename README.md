@@ -308,6 +308,5 @@ Forks and modified versions must remove them.
 <br>
 
 <p align="center">
-  <a href="https://getartcraft.com/"><img alt="ArtCraft" src="docs/brand/artcraft-mark.svg" width="28"></a><br>
-  <sub>Made by the <a href="https://getartcraft.com/">ArtCraft</a> team and community.</sub>
+  GridCraft is made by the ArtCraft team and community.<br>
 </p>
