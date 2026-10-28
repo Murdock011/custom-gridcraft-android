@@ -10,15 +10,6 @@ import android.provider.OpenableColumns
 import androidx.activity.result.contract.ActivityResultContract
 import java.io.File
 import android.os.Bundle
-import android.os.CancellationSignal
-import android.speech.tts.TextToSpeech
-import android.speech.tts.UtteranceProgressListener
-import android.os.ParcelFileDescriptor
-import android.print.PageRange
-import android.print.PrintAttributes
-import android.print.PrintDocumentAdapter
-import android.print.PrintDocumentInfo
-import android.print.PrintManager
 import android.os.Handler
 import android.os.Looper
 import android.text.InputType
@@ -39,7 +30,6 @@ import androidx.core.view.ViewCompat
 import androidx.core.view.WindowCompat
 import androidx.core.view.WindowInsetsCompat
 import com.google.androidgamesdk.GameActivity
-import java.util.Locale
 
 /**
  * GameActivity with the system-bar and keyboard insets applied as padding on the content view, so
@@ -141,57 +131,10 @@ class MainActivity : GameActivity() {
         return Pair(beforeCp, afterCp)
     }
 
-    // Read Aloud (speech.rs): TextToSpeech speaks the sentences Rust queues. Created in onCreate so it
-    // is ready by the time Play is pressed; `ttsFailed` says why it is not, when it isn't.
-    private var tts: TextToSpeech? = null
-    private var ttsReady = false
-    private var ttsFailed = ""
-
-    private val speechListener = object : UtteranceProgressListener() {
-        override fun onStart(utteranceId: String?) {}
-
-        override fun onDone(utteranceId: String?) {
-            utteranceId?.toLongOrNull()?.let { nativeSpeechEvent(it, 1, "") }
-        }
-
-        override fun onError(utteranceId: String?) {
-            utteranceId?.toLongOrNull()?.let { nativeSpeechEvent(it, 2, "Text-to-speech failed.") }
-        }
-    }
-
-    /** Speaks what Rust queued: "x" stops, "s<id>\t<rate>\t<lang>\t<text>" speaks one sentence. */
-    private fun drainSpeech() {
-        while (true) {
-            val line = nativeTakeSpeech().takeIf { it.isNotEmpty() } ?: return
-            if (line == "x") {
-                tts?.stop()
-                continue
-            }
-            val f = line.substring(1).split('\t', limit = 4)
-            val id = f.getOrNull(0)?.toLongOrNull() ?: continue
-            speakSentence(id, f.getOrNull(1)?.toFloatOrNull() ?: 1f, f.getOrNull(2) ?: "", f.getOrNull(3) ?: "")
-        }
-    }
-
-    private fun speakSentence(id: Long, rate: Float, lang: String, text: String) {
-        val engine = tts
-        if (engine == null || !ttsReady) {
-            nativeSpeechEvent(id, 2, ttsFailed.ifEmpty { "Text-to-speech is still starting. Press Play again." })
-            return
-        }
-        // A language with no installed voice keeps the default voice, which is what the text gets anyway.
-        if (lang.isNotEmpty()) engine.setLanguage(Locale.forLanguageTag(lang))
-        engine.setSpeechRate(rate)
-        if (engine.speak(text, TextToSpeech.QUEUE_FLUSH, null, id.toString()) == TextToSpeech.ERROR) {
-            nativeSpeechEvent(id, 2, "Text-to-speech refused the sentence.")
-        }
-    }
-
     private val keyboardPoll = object : Runnable {
         override fun run() {
             nativeTakeRequest().takeIf { it.isNotEmpty() }?.let { files.add(it); nextFile() }
             nativeTakeClip().takeIf { it.isNotEmpty() }?.let { clipboard.setPrimaryClip(ClipData.newPlainText("GridCraft", it.substring(1))) }
-            drainSpeech()
             if (nativeQuitRequested()) {
                 // Close: the save prompt already ran. End the process too, so the next launch is a cold start.
                 nativeFlushRecovery()
@@ -214,12 +157,16 @@ class MainActivity : GameActivity() {
         }
     }
 
-    // File requests from Rust (files.rs): "save\tticket\tname\tpath", "write\tticket\turi\tpath",
-    // "open\tpurpose" or "print\tpath", one picker at a time.
+    // File requests from Rust (files.rs): "save\tticket\tname\tpath", "write\tticket\turi\tpath" or
+    // "open\tdocument", one at a time.
     private val files = ArrayDeque<String>()
     private var filesBusy = false
     private var saveTicket = 0L
     private var saveSource = ""
+
+    private companion object {
+        const val XLSX_MIME = "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
+    }
 
     private class CreateDoc : ActivityResultContract<Pair<String, String>, Uri?>() {
         override fun createIntent(context: Context, input: Pair<String, String>) =
@@ -244,7 +191,8 @@ class MainActivity : GameActivity() {
             if (uri == null) {
                 nativeSaveDone(ticket, 0, "", "")
             } else {
-                contentResolver.openOutputStream(uri, "wt")!!.use { out -> src.inputStream().use { it.copyTo(out) } }
+                val out = contentResolver.openOutputStream(uri, "wt") ?: throw java.io.FileNotFoundException(uri.toString())
+                out.use { src.inputStream().use { input -> input.copyTo(it) } }
                 keepAccess(uri)
                 nativeSaveDone(ticket, 1, uri.toString(), displayName(uri))
             }
@@ -261,11 +209,12 @@ class MainActivity : GameActivity() {
             try {
                 val name = displayName(uri)
                 val dest = File(cacheDir, "open-${System.nanoTime()}.bin")
-                contentResolver.openInputStream(uri)!!.use { input -> dest.outputStream().use { input.copyTo(it) } }
+                val input = contentResolver.openInputStream(uri) ?: throw java.io.FileNotFoundException(uri.toString())
+                input.use { src -> dest.outputStream().use { src.copyTo(it) } }
                 keepAccess(uri)
                 nativeOpened(name, dest.path, uri.toString())
             } catch (e: Exception) {
-                android.util.Log.w("gridcraft", "open failed: $e")
+                nativeNotice(readFailure(displayName(uri), e))
             }
         }
         filesBusy = false
@@ -278,7 +227,7 @@ class MainActivity : GameActivity() {
             contentResolver.takePersistableUriPermission(uri, Intent.FLAG_GRANT_READ_URI_PERMISSION or Intent.FLAG_GRANT_WRITE_URI_PERMISSION)
         } catch (e: SecurityException) {
             // Read only, or not persistable: keep the read access if the provider allows it. Otherwise
-            // the picker's access lasts while the app runs, and Recent says so after a restart.
+            // the picker's access lasts while the app runs.
             try {
                 contentResolver.takePersistableUriPermission(uri, Intent.FLAG_GRANT_READ_URI_PERMISSION)
             } catch (e2: SecurityException) {
@@ -304,50 +253,35 @@ class MainActivity : GameActivity() {
         val line = files.removeFirstOrNull() ?: return
         val f = line.split('\t')
         if (f[0] == "write") {
-            // Plain Save of a document picked before: rewrite it without a picker. On failure the cache
-            // file stays, for the picker that Rust then asks for.
+            // Plain Save of a picked workbook: rewrite it without a picker. A failure is reported to Rust,
+            // which shows it on the status line.
             val src = File(f[3])
             val ticket = f[1].toLong()
             val uri = Uri.parse(f[2])
             try {
-                contentResolver.openOutputStream(uri, "wt")!!.use { out -> src.inputStream().use { it.copyTo(out) } }
-                src.delete()
+                val out = contentResolver.openOutputStream(uri, "wt") ?: throw java.io.FileNotFoundException(f[2])
+                out.use { o -> src.inputStream().use { it.copyTo(o) } }
                 nativeSaveDone(ticket, 1, f[2], displayName(uri))
             } catch (e: Exception) {
                 nativeSaveDone(ticket, -1, e.message ?: e.toString(), "")
+            } finally {
+                src.delete()
             }
-            nextFile()
-            return
-        }
-        if (f[0] == "read") {
-            // Recent asked for a picked document: copy its bytes out, then open them like a picked one.
-            val name = f[2]
-            try {
-                val dest = File(cacheDir, "open-${System.nanoTime()}.bin")
-                contentResolver.openInputStream(Uri.parse(f[1]))?.use { input -> dest.outputStream().use { input.copyTo(it) } }
-                    ?: throw java.io.FileNotFoundException(f[1])
-                nativeOpened(name, dest.path, f[1])
-            } catch (e: Exception) {
-                nativeNotice(readFailure(name, e))
-            }
-            nextFile()
-            return
-        }
-        if (f[0] == "print") {
-            printPdf(File(f[1]))
             nextFile()
             return
         }
         filesBusy = true
         if (f[0] == "save") {
+            // The system's Create dialog names the new document; the cache file holds its bytes.
             saveTicket = f[1].toLong()
             saveSource = f[3]
             val name = f[2]
-            val mime = android.webkit.MimeTypeMap.getSingleton().getMimeTypeFromExtension(name.substringAfterLast('.', "").lowercase())
-            createDoc.launch(Pair(name, mime ?: "application/octet-stream"))
+            val mime = if (name.endsWith(".xlsx", ignoreCase = true)) XLSX_MIME else android.webkit.MimeTypeMap.getSingleton()
+                .getMimeTypeFromExtension(name.substringAfterLast('.', "").lowercase()) ?: "application/octet-stream"
+            createDoc.launch(Pair(name, mime))
         } else {
-            val types = if (f.getOrNull(1) == "picture") arrayOf("image/*") else arrayOf(
-                "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+            openDoc.launch(arrayOf(
+                XLSX_MIME,
                 "application/vnd.ms-excel.sheet.macroEnabled.12",
                 "application/vnd.ms-excel",
                 "application/vnd.ms-excel.sheet.binary.macroEnabled.12",
@@ -355,40 +289,15 @@ class MainActivity : GameActivity() {
                 "text/csv",
                 "text/tab-separated-values",
                 "text/plain",
-            )
-            openDoc.launch(types)
+            ))
         }
     }
 
-    /** Why a Recent document would not open, in words the status line can show. */
+    /** Why a document could not be opened, in words the status line can show. */
     private fun readFailure(name: String, e: Exception): String = when (e) {
         is java.io.FileNotFoundException -> "$name is no longer there. It was moved, renamed or deleted."
         is SecurityException -> "GridCraft can no longer open $name. Open it again from File > Open."
         else -> "Couldn't open $name: ${e.message ?: e.toString()}"
-    }
-
-    /** The system print dialog for a PDF file; the file is deleted when the dialog closes. */
-    private fun printPdf(pdf: File) {
-        val adapter = object : PrintDocumentAdapter() {
-            override fun onLayout(old: PrintAttributes?, new: PrintAttributes, cancel: CancellationSignal?, cb: LayoutResultCallback, extras: Bundle?) {
-                if (cancel?.isCanceled == true) return cb.onLayoutCancelled()
-                cb.onLayoutFinished(PrintDocumentInfo.Builder("GridCraft.pdf").setContentType(PrintDocumentInfo.CONTENT_TYPE_DOCUMENT).build(), old != new)
-            }
-
-            override fun onWrite(pages: Array<out PageRange>, dest: ParcelFileDescriptor, cancel: CancellationSignal?, cb: WriteResultCallback) {
-                try {
-                    ParcelFileDescriptor.AutoCloseOutputStream(dest).use { out -> pdf.inputStream().use { it.copyTo(out) } }
-                    cb.onWriteFinished(arrayOf(PageRange.ALL_PAGES))
-                } catch (e: Exception) {
-                    cb.onWriteFailed(e.message)
-                }
-            }
-
-            override fun onFinish() {
-                pdf.delete()
-            }
-        }
-        (getSystemService(Context.PRINT_SERVICE) as PrintManager).print("GridCraft", adapter, null)
     }
 
     override fun onCreate(savedInstanceState: Bundle?) {
@@ -414,19 +323,6 @@ class MainActivity : GameActivity() {
             }
         })
         clipboard.addPrimaryClipChangedListener(clipListener)
-        tts = try {
-            TextToSpeech(this) { status ->
-                if (status == TextToSpeech.SUCCESS) {
-                    tts?.setOnUtteranceProgressListener(speechListener)
-                    ttsReady = true
-                } else {
-                    ttsFailed = "Text-to-speech isn't available on this device."
-                }
-            }
-        } catch (e: Exception) {
-            ttsFailed = "Text-to-speech isn't available on this device."
-            null
-        }
         reportNight(resources.configuration)
         handler.post(keyboardPoll)
         // A restored instance (process death) must not reopen the document it was launched with.
@@ -455,7 +351,7 @@ class MainActivity : GameActivity() {
 
     /**
      * Reads a document another app handed over and opens it like a picked one, so the unsaved-changes
-     * prompt, Recent and Save all apply. VIEW grants are often temporary: keeping access is tried, not required.
+     * prompt and Save all apply. VIEW grants are often temporary: keeping access is tried, not required.
      */
     private fun openIncoming(uri: Uri, mime: String) {
         val name = displayName(uri)
@@ -565,7 +461,6 @@ class MainActivity : GameActivity() {
     override fun onDestroy() {
         clipboard.removePrimaryClipChangedListener(clipListener)
         handler.removeCallbacks(keyboardPoll)
-        tts?.shutdown()
         super.onDestroy()
     }
 
@@ -611,12 +506,6 @@ class MainActivity : GameActivity() {
 
     /** The activity is being backgrounded: write a recovery copy of unsaved work. */
     private external fun nativeFlushRecovery()
-
-    /** Next Read Aloud request for TextToSpeech (speech.rs take_request), or an empty string. */
-    private external fun nativeTakeSpeech(): String
-
-    /** A Read Aloud sentence ended: [kind] 1 done, 2 failed with [msg]. */
-    private external fun nativeSpeechEvent(id: Long, kind: Int, msg: String)
 
     /** Whether egui wants the soft keyboard. */
     private external fun nativeWantsKeyboard(): Boolean

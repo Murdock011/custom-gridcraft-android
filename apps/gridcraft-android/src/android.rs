@@ -7,7 +7,7 @@
 use android_activity::AndroidApp;
 use jni::EnvUnowned;
 use jni::objects::{JObject, JString};
-use jni::sys::{jboolean, jint};
+use jni::sys::{jboolean, jint, jlong};
 use std::sync::atomic::Ordering;
 
 use crate::files;
@@ -129,7 +129,7 @@ pub extern "system" fn Java_ai_storyteller_gridcraft_nativeapp_MainActivity_nati
     files::notice(msg);
 }
 
-/// The user picked the document `name`; its bytes are in the cache file at `path`.
+/// The user picked the document `name` at content URI `uri`; its bytes are in the cache file at `path`.
 #[allow(unsafe_code)]
 #[unsafe(no_mangle)]
 pub extern "system" fn Java_ai_storyteller_gridcraft_nativeapp_MainActivity_nativeOpened<'local>(
@@ -137,11 +137,29 @@ pub extern "system" fn Java_ai_storyteller_gridcraft_nativeapp_MainActivity_nati
     _this: JObject<'local>,
     name: JString<'local>,
     path: JString<'local>,
-    _uri: JString<'local>,
+    uri: JString<'local>,
 ) {
     let name: String = env.with_env(|env| name.try_to_string(env)).resolve::<jni::errors::ThrowRuntimeExAndDefault>();
     let path: String = env.with_env(|env| path.try_to_string(env)).resolve::<jni::errors::ThrowRuntimeExAndDefault>();
-    files::opened(name, path);
+    let uri: String = env.with_env(|env| uri.try_to_string(env)).resolve::<jni::errors::ThrowRuntimeExAndDefault>();
+    files::opened(name, path, uri);
+}
+
+/// A save ended (see `files::save_done`): status 1 saved (`msg` is the URI, `display` its name),
+/// 0 cancelled, anything else failed with `msg`.
+#[allow(unsafe_code)]
+#[unsafe(no_mangle)]
+pub extern "system" fn Java_ai_storyteller_gridcraft_nativeapp_MainActivity_nativeSaveDone<'local>(
+    mut env: EnvUnowned<'local>,
+    _this: JObject<'local>,
+    ticket: jlong,
+    status: jint,
+    msg: JString<'local>,
+    display: JString<'local>,
+) {
+    let msg: String = env.with_env(|env| msg.try_to_string(env)).resolve::<jni::errors::ThrowRuntimeExAndDefault>();
+    let display: String = env.with_env(|env| display.try_to_string(env)).resolve::<jni::errors::ThrowRuntimeExAndDefault>();
+    files::save_done(ticket as u64, status, msg, display);
 }
 
 /// Whether GridCraft opens a document named `name` (the MIME type is not needed: the name decides).
@@ -211,14 +229,4 @@ pub extern "system" fn Java_ai_storyteller_gridcraft_nativeapp_MainActivity_nati
 ) {
     ime::INSET_LEFT.store(left, Ordering::Relaxed);
     ime::INSET_TOP.store(top, Ordering::Relaxed);
-}
-
-/// Read Aloud is not ported: nothing is ever queued for TextToSpeech.
-#[allow(unsafe_code)]
-#[unsafe(no_mangle)]
-pub extern "system" fn Java_ai_storyteller_gridcraft_nativeapp_MainActivity_nativeTakeSpeech<'local>(
-    mut env: EnvUnowned<'local>,
-    _this: JObject<'local>,
-) -> JString<'local> {
-    env.with_env(|env| env.new_string("")).resolve::<jni::errors::ThrowRuntimeExAndDefault>()
 }
