@@ -56,7 +56,8 @@ far. When a release is made it will be on the
   More for Fill Down, Insert and Delete).
 - Dialogs and messages as bottom sheets with large buttons pinned at the bottom.
 - A File side drawer (Home, New, Open, Info, Save, Save As, Export, Options, Close); Close and
-  Back ask before discarding unsaved changes.
+  Back ask before discarding unsaved changes. The File pages and Options open as full-screen
+  phone pages (Options: a category list, on/off settings as switches).
 
 ## Known gaps
 
