@@ -295,6 +295,12 @@ pub fn bottom_bar(app: &mut SheetApp, ui: &mut Ui) {
         back_step(&ctx);
     }
     take_pointer(&ctx);
+    // Editing a cell: the edit bar replaces the floating bar and sits directly above the keyboard.
+    track_edit(app, &ctx);
+    if app.editor.is_some() {
+        set_menu(&ctx, None);
+        return edit_bar(app, ui);
+    }
     match menu_tab(&ctx) {
         Some(SHEETS) => return sheets_sheet(app, ui),
         Some(MORE) => return more_sheet(app, ui),
@@ -334,6 +340,62 @@ pub fn bottom_bar(app: &mut SheetApp, ui: &mut Ui) {
             }
         }
     });
+}
+
+/// The edit bar's height, and its 48 pt buttons: a red cancel (✗) at the left, a green confirm (✓) at
+/// the right.
+const EDIT_BAR_H: f32 = 56.0;
+const CANCEL_RED: Color32 = Color32::from_rgb(0xC6, 0x28, 0x28);
+const CONFIRM_GREEN: Color32 = Color32::from_rgb(0x1E, 0x7E, 0x34);
+
+/// Keeps the edited cell in view. The grid scrolls to it when an edit starts and again whenever the
+/// window height changes while editing (the keyboard coming up or going down).
+fn track_edit(app: &mut SheetApp, ctx: &Context) {
+    let id = egui::Id::new("phone_edit_height");
+    if app.editor.is_none() {
+        ctx.data_mut(|d| d.remove::<f32>(id));
+        return;
+    }
+    let h = ctx.content_rect().height();
+    let prev = ctx.data_mut(|d| d.get_temp::<f32>(id));
+    ctx.data_mut(|d| d.insert_temp(id, h));
+    if prev.is_none_or(|p| (p - h).abs() > 1.0) {
+        app.grid.ensure_visible = true;
+    }
+}
+
+/// The edit bar, shown while a cell is being edited. ✗ cancels the edit (the keyboard closes with
+/// it); ✓ commits and moves down, as Enter does.
+fn edit_bar(app: &mut SheetApp, ui: &mut Ui) {
+    let ctx = ui.ctx().clone();
+    let lang = app.ui.language;
+    let t = Tokens::get(&ctx);
+    Panel::bottom("phone_edit_bar").exact_size(EDIT_BAR_H).frame(Frame::NONE.fill(t.ribbon)).show(ui, |ui| {
+        let bar = ui.max_rect();
+        let top = bar.top() + (EDIT_BAR_H - ICON_BTN) / 2.0;
+        let cancel = Rect::from_min_size(Pos2::new(bar.left() + 4.0, top), vec2(ICON_BTN, ICON_BTN));
+        let confirm = Rect::from_min_size(Pos2::new(bar.right() - 4.0 - ICON_BTN, top), vec2(ICON_BTN, ICON_BTN));
+        if edit_button(ui, t, cancel, Icon::Close, CANCEL_RED, lang.tr("Cancel")) {
+            app.cancel_edit();
+        }
+        if edit_button(ui, t, confirm, Icon::Check, CONFIRM_GREEN, lang.tr("Enter")) {
+            app.commit_edit(1, 0, false, false);
+        }
+    });
+}
+
+/// One edit-bar button: a large coloured mark in a 48 pt touch target. Returns whether it was tapped.
+fn edit_button(ui: &mut Ui, t: Tokens, r: Rect, icon: Icon, color: Color32, label: &str) -> bool {
+    let resp = ui.interact(r, ui.id().with(("phone_edit", label)), Sense::click());
+    let painter = ui.painter();
+    if resp.is_pointer_button_down_on() {
+        painter.circle_filled(r.center(), ICON_BTN / 2.0, t.pressed);
+    } else if resp.hovered() {
+        painter.circle_filled(r.center(), ICON_BTN / 2.0, t.hover);
+    }
+    icons::paint(painter, Rect::from_center_size(r.center(), vec2(32.0, 32.0)), icon, color);
+    resp.widget_info(|| egui::WidgetInfo::labeled(egui::WidgetType::Button, true, label));
+    resp.clicked()
 }
 
 /// The sheet button at the bar's left: a sheet icon and the active sheet's name, cut short with an
