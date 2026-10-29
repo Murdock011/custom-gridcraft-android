@@ -182,8 +182,8 @@ pub extern "system" fn Java_ai_storyteller_gridcraft_nativeapp_MainActivity_nati
     _env: EnvUnowned<'local>,
     _this: JObject<'local>,
 ) {
-    crate::recovery::request_flush();
-    ime::wake();
+    // Waits (bounded) for the UI to write the copies; a window that never draws again gives up after the timeout.
+    crate::recovery::request_and_wait(std::time::Duration::from_millis(500), ime::wake);
 }
 
 /// The next copy for the system clipboard, prefixed with `c`; empty when there is none.

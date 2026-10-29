@@ -7,18 +7,48 @@
 
 use std::io;
 use std::path::Path;
-use std::sync::atomic::{AtomicBool, Ordering};
+use std::sync::atomic::{AtomicU64, Ordering};
+use std::sync::{Condvar, Mutex};
+use std::time::{Duration, Instant};
 
-/// Set by Kotlin when the activity is backgrounded (`nativeFlushRecovery`); the next frame syncs.
-static FLUSH: AtomicBool = AtomicBool::new(false);
+/// Edits must stop this long before the recovery copies are written (see `write_due`).
+pub const IDLE: Duration = Duration::from_secs(2);
 
-pub fn request_flush() {
-    FLUSH.store(true, Ordering::Relaxed);
+/// Flush requests from Kotlin: `ASKED` counts them, `DONE` is the last one the UI has written.
+static ASKED: AtomicU64 = AtomicU64::new(0);
+static DONE: Mutex<u64> = Mutex::new(0);
+static DONE_CV: Condvar = Condvar::new();
+
+/// Asks the UI to write the copies now, wakes it with `wake`, and waits up to `timeout` for it.
+/// A UI that never runs a frame (the window is gone) makes this wait the full `timeout`.
+pub fn request_and_wait(timeout: Duration, wake: impl FnOnce()) {
+    let n = ASKED.fetch_add(1, Ordering::SeqCst) + 1;
+    wake();
+    let Ok(done) = DONE.lock() else { return };
+    let _ = DONE_CV.wait_timeout_while(done, timeout, |d| *d < n);
 }
 
-/// Whether a background flush was asked for since the last call.
-pub fn take_flush() -> bool {
-    FLUSH.swap(false, Ordering::Relaxed)
+/// The newest flush request not yet written, if any. Pass it to `flush_done` once the copies are written.
+pub fn flush_requested() -> Option<u64> {
+    let asked = ASKED.load(Ordering::SeqCst);
+    let done = DONE.lock().map_or(asked, |d| *d);
+    (asked > done).then_some(asked)
+}
+
+/// Marks the requests up to `n` written and releases the waiting Kotlin thread.
+pub fn flush_done(n: u64) {
+    if let Ok(mut done) = DONE.lock() {
+        *done = (*done).max(n);
+        DONE_CV.notify_all();
+    }
+}
+
+/// Whether the copies should be written now. `state` lists the dirty documents as (uid, revision),
+/// `written` is what the copies on disk hold, and `changed_at` is when `state` last changed.
+/// Writes only when the state differs and it has been unchanged for `IDLE`. A clean state (no dirty
+/// documents) differs from a written one that had copies, so the stale copies are removed too.
+pub fn write_due(state: &[(u64, u64)], written: &[(u64, u64)], changed_at: Instant, now: Instant) -> bool {
+    state != written && now.saturating_duration_since(changed_at) >= IDLE
 }
 
 /// One unsaved workbook: the bytes are an `.xlsx` file.
@@ -166,6 +196,31 @@ mod tests {
         assert_eq!(parse("doc-x.xlsx"), None);
         assert_eq!(parse("doc-3"), None, "needs an extension");
         assert_eq!(load_all(Path::new("/nonexistent/gc-recovery")), Vec::new(), "a missing folder has no copies");
+    }
+
+    #[test]
+    fn writes_wait_for_two_seconds_without_edits() {
+        // A base instant only: the test never reads the clock, it adds offsets to this.
+        #[allow(clippy::disallowed_methods)]
+        let t0 = Instant::now();
+        let dirty = [(1, 5)];
+        let at = |secs: u64| t0 + Duration::from_secs(secs);
+        assert!(!write_due(&dirty, &[], t0, at(1)), "one second after an edit: wait");
+        assert!(write_due(&dirty, &[], t0, at(2)), "two seconds idle: write");
+        assert!(!write_due(&dirty, &dirty, t0, at(9)), "copies already match: nothing to write");
+        assert!(!write_due(&[(1, 6)], &dirty, at(10), at(11)), "a new edit restarts the wait");
+        assert!(write_due(&[(1, 6)], &dirty, at(10), at(12)), "the newer revision is written after idle");
+        assert!(write_due(&[], &dirty, t0, at(2)), "a clean state removes the old copies");
+        assert!(!write_due(&[], &[], t0, at(9)), "clean and no copies: nothing to do");
+    }
+
+    #[test]
+    fn a_flush_request_is_pending_until_it_is_done() {
+        // Only this test touches the flush counters, so the state it reads is its own.
+        let n = ASKED.fetch_add(1, Ordering::SeqCst) + 1;
+        assert_eq!(flush_requested(), Some(n));
+        flush_done(n);
+        assert_eq!(flush_requested(), None);
     }
 
     /// Fails the test on an I/O error (the crate's lints forbid `unwrap` and `panic!`, even in tests).

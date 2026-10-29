@@ -384,3 +384,21 @@ B4 near (275,610).
   written by `Shell::ui`'s `sync_recovery` on the next frame, and no frame runs while the activity is stopped.
 - Not fixed here (needs a design change): either write the copy on each edit, or make the JNI call write from the
   shared state. Until then, unsaved work is lost when Android kills GridCraft in the background.
+
+## Update 12: recovery written while editing
+
+- Cause of the lost copy: `onPause`/`onStop` only set a flag, and the copy was written by the next frame. With the
+  window gone no frame runs, so the copy was never written. The 10:51 pass was a race with a frame that happened to run.
+- Fix, two parts (`recovery.rs`, `app.rs`, `android.rs`, `MainActivity.kt`):
+  - Write while working: each frame compares the dirty documents as (uid, revision). A change restarts a 2 s
+    idle timer (`recovery::write_due`, pure, unit-tested); the frame then writes the copies. `request_repaint_after`
+    wakes the loop when the timer runs out, so an idle window still writes. A background kill loses at most ~2 s.
+  - Pause flush does not depend on a future frame: `nativeFlushRecovery` requests a flush, wakes the UI and waits
+    up to 500 ms for the frame to write (`request_and_wait` / `flush_done`). If the window never draws again, the
+    wait times out and the debounced copy is the fallback.
+  - `onDestroy` now calls `nativeFlushRecovery()` before starting the kill thread (the 300 ms sleep is gone), so the
+    kill is ordered after the flush. Close's path already flushes before its kill.
+- Clippy (`-p gridcraft-android -p gridcraft-ui-egui --all-targets`) clean. Host tests pass; `header_autofit` is the known flake.
+  `build-native.sh x86_64` builds.
+- Device checks: NOT RUN. The emulator was not attached (`adb devices` empty, no emulator process) during the
+  scenario a run; the helper's `adb` calls failed and the run left no recovery folder. Scenarios a, b and c are open.

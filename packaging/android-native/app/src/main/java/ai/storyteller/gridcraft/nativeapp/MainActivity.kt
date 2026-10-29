@@ -447,7 +447,8 @@ class MainActivity : GameActivity() {
         return super.dispatchTouchEvent(ev)
     }
 
-    // Android may kill a backgrounded process without warning: copy unsaved work now (Rust, recovery).
+    // Android may kill a backgrounded process without warning: copy unsaved work now. nativeFlushRecovery
+    // returns once Rust has written the copies, or after 500 ms if the window no longer draws (Rust, recovery).
     override fun onPause() {
         super.onPause()
         nativeFlushRecovery()
@@ -459,13 +460,11 @@ class MainActivity : GameActivity() {
     }
 
     override fun onDestroy() {
-        // The UI loop ends with the activity. Let the last recovery flush run, then end the process; a new
-        // activity in this process is restarted in a fresh one (onCreate). The kill runs on its own thread:
-        // super.onDestroy() can wait on the native loop, and the main thread is what would post it.
-        Thread {
-            Thread.sleep(300)
-            android.os.Process.killProcess(android.os.Process.myPid())
-        }.start()
+        // The UI loop ends with the activity. Flush first (waits for Rust, bounded), then end the process, so
+        // the kill never comes before the copies are written; a new activity in this process is restarted in a
+        // fresh one (onCreate). The kill runs on its own thread: super.onDestroy() can wait on the native loop.
+        nativeFlushRecovery()
+        Thread { android.os.Process.killProcess(android.os.Process.myPid()) }.start()
         clipboard.removePrimaryClipChangedListener(clipListener)
         handler.removeCallbacks(keyboardPoll)
         super.onDestroy()
