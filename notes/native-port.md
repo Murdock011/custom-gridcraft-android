@@ -312,3 +312,19 @@ edit. Tests: `tests/it/phone_edit.rs` (✗ cancels without committing; ✓ commi
 - Tried and dropped: relaunching from `onCreate` with an AlarmManager PendingIntent and killing the process. The
   process died during the activity relaunch and nothing started again, so the window stayed black.
 - Rust is unchanged; `android_main` is not called twice now that the activity is not recreated.
+
+### Update 10 device results (x86_64 emulator, 2026-10-29)
+
+- Recovery message: a bottom sheet with the warning disc and OK pinned full width (`dlg-recovery.png`). Passed.
+- Rename Sheet (sheet pill, then the sheet's options, then Rename): the sheet stays above the keyboard while typing
+  "Budget" and the field is 48 pt tall (`dlg-rename-kb.png`). The Cancel and OK buttons are about 46 pt tall on the
+  emulator, just under 48 pt: not fixed yet.
+- Format Cells: the tab row and the Number category overflowed the right edge (`dlg-format-cells.png`). Fixed:
+  the tab row scrolls sideways, the preset format buttons wrap, and the category and tab rows are 48 pt on the phone
+  (`dlg-format-cells2.png`). Commit a22880d2.
+- Insert Function: the rows were a fixed 480 pt wide and ran past the sheet. Fixed: rows fill the sheet width and are
+  48 pt tall (`dlg-insert-function2.png`). Commit 0b28bef9. The keyboard's number row shows above the search field.
+- Back: the first Back press with the keyboard up hid the keyboard; a later Back closed the dialog. A further Back left
+  the app to the home screen, which is expected with no dialog open.
+- Not done: Sort (the Data tab was covered by the Formula Builder during the run, and the sort commands have no dialog
+  to check on the phone yet).
