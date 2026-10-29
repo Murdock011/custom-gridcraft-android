@@ -400,5 +400,10 @@ B4 near (275,610).
     kill is ordered after the flush. Close's path already flushes before its kill.
 - Clippy (`-p gridcraft-android -p gridcraft-ui-egui --all-targets`) clean. Host tests pass; `header_autofit` is the known flake.
   `build-native.sh x86_64` builds.
-- Device checks: NOT RUN. The emulator was not attached (`adb devices` empty, no emulator process) during the
-  scenario a run; the helper's `adb` calls failed and the run left no recovery folder. Scenarios a, b and c are open.
+- Device check, scenario a (x86_64 emulator, 2026-10-30, debug build with temporary logging, since removed):
+  - Type 42 in A1, Enter, wait 4 s in the foreground: `run-as ... ls files/recovery` lists `doc-0.txt` and `doc-0.xlsx`.
+    Logcat shows the idle timer firing at about 2 s (`due=true` at idle 2013 ms), so the debounced copy works.
+  - Home, `am kill`, relaunch: A1 = 42, title `Book1 •`, dialog "Recovered unsaved changes" (`rec2-a.png`).
+  - Earlier "empty folder" result came from an emulator crash (qemu died 00:20), not from the timer.
+- Scenarios b (HOME right after typing) and c (Save clears the copy) are NOT RUN: the emulator dropped off adb again
+  during the reset. The final commit's code is what was built and installed for the scenario a run; the logging was removed afterwards and the tree matches the commit.
