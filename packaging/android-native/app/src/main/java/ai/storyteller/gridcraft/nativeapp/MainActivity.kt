@@ -596,7 +596,16 @@ class MainActivity : GameActivity() {
         override fun sendKeyEvent(event: KeyEvent): Boolean {
             if (event.action == KeyEvent.ACTION_DOWN) {
                 if (event.keyCode == KeyEvent.KEYCODE_DEL) eraseAround(1, 0, codePoints = true)
-                send(4, "", event.keyCode, 0)
+                // A printable key the keyboard sends as a key event (the first key after Enter did this)
+                // carries its character as a commit; a bare key code would be dropped by Rust.
+                val c = event.unicodeChar
+                if (c >= 32 && event.keyCode != KeyEvent.KEYCODE_FORWARD_DEL) {
+                    val t = String(Character.toChars(c))
+                    replacedRange().let { edit(it.first, it.second, t, composing = false) }
+                    send(0, t, 0, 0)
+                } else {
+                    send(4, "", event.keyCode, 0)
+                }
             }
             return true
         }

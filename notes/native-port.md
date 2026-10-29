@@ -154,3 +154,12 @@ and a non-xlsx open followed by Save.
 - Earlier note, superseded: the emulator dropped off adb (`adb devices` empty) during this pass,
   and it was not started again. Still to check: `v3-bold.png` (bold A1 next to regular A2), and typing
   "Hello" several times for lost letters. Italic on Android still draws regular (no italic Droid file).
+
+## Update 5: typing letters lost after Enter (fix pending device check)
+
+- Logged run (temporary logs, removed): the first key after Enter (T) reached Kotlin through the
+  IME connection's `sendKeyEvent`, which sent only its key code. Rust drops key codes other than
+  Enter, Delete and Escape, so the letter vanished. Other keys reached Rust as `Text`.
+- Fix: `Connection.sendKeyEvent` in `MainActivity.kt` sends a printable key's character as a commit.
+- Not verified on the device: the emulator detached again before the retest. Check: type `Thursday`
+  by `input text`, then T H U R S D A Y by keyevent in a fresh cell, and expect both to be complete.
