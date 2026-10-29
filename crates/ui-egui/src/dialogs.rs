@@ -1290,8 +1290,9 @@ pub fn show(app: &mut SheetApp, ctx: &egui::Context) {
         "advancedFilter" => window.default_height(0.0),
         _ => window,
     };
-    window.show(ctx, |ui| {
-            ui.set_min_width(width - 20.0);
+    let sheet_title = app.ui.language.tr(&d.title).to_string();
+    let sheet_id = egui::Id::new("dialog").with(&d.name);
+    let mut draw = |app: &mut SheetApp, ui: &mut egui::Ui| {
             match d.name.as_str() {
                 "formatCells" => format_cells(app, ui, &mut d, &mut confirm),
                 "dataValidation" => data_validation_form(ui, &mut d, &mut confirm, &mut open),
@@ -1361,7 +1362,7 @@ pub fn show(app: &mut SheetApp, ctx: &egui::Context) {
                     } else {
                         ui.label("Picture file path (PNG or JPEG):");
                         let mut path = d.values.get("path").and_then(Json::as_str).unwrap_or("").to_string();
-                        if ui.text_edit_singleline(&mut path).changed() {
+                        if ui.add(crate::phone::touch_edit(ui, egui::TextEdit::singleline(&mut path))).changed() {
                             d.values.remove("base64");
                             d.values.insert("path".into(), json!(path));
                         }
@@ -1382,7 +1383,7 @@ pub fn show(app: &mut SheetApp, ctx: &egui::Context) {
                     }
                     ui.label("Description (optional):");
                     let mut alt = d.values.get("alt").and_then(Json::as_str).unwrap_or("").to_string();
-                    if ui.text_edit_singleline(&mut alt).changed() {
+                    if ui.add(crate::phone::touch_edit(ui, egui::TextEdit::singleline(&mut alt))).changed() {
                         d.values.insert("alt".into(), json!(alt));
                     }
                     if d.values.get("placement").and_then(Json::as_str) == Some("cell") {
@@ -1417,7 +1418,7 @@ pub fn show(app: &mut SheetApp, ctx: &egui::Context) {
                     let fmt = d.values.get("format").and_then(Json::as_str).unwrap_or("xlsx").to_string();
                     ui.label(format!("Save a copy as .{fmt}"));
                     let mut path = d.values.get("path").and_then(Json::as_str).unwrap_or("").to_string();
-                    ui.text_edit_singleline(&mut path);
+                    ui.add(crate::phone::touch_edit(ui, egui::TextEdit::singleline(&mut path)));
                     d.values.insert("path".into(), json!(path.clone()));
                     ok_cancel(ui, &mut confirm, &mut open);
                     if confirm {
@@ -1446,19 +1447,31 @@ pub fn show(app: &mut SheetApp, ctx: &egui::Context) {
                     ui.label(format!("Do you want to save the changes you made to {}?", d.values.get("title").and_then(Json::as_str).unwrap_or("this workbook")));
                     // Asked while quitting: once answered, the next unsaved workbook is asked about.
                     let quitting = d.values.get("quit").and_then(Json::as_bool) == Some(true);
-                    ui.horizontal(|ui| {
-                        if ui.button("Don't Save").clicked() {
+                    let pick = match crate::phone::footer_row(ui, &["Don't Save", "Cancel", "Save"], 2, false) {
+                        Some(pick) => pick,
+                        None => ui.horizontal(|ui| {
+                            if ui.button("Don't Save").clicked() {
+                                Some(0)
+                            } else if ui.button("Cancel").clicked() {
+                                Some(1)
+                            } else if ui.button("Save").clicked() {
+                                Some(2)
+                            } else {
+                                None
+                            }
+                        }).inner,
+                    };
+                    match pick {
+                        Some(0) => {
                             app.run_or_alert("file.close", json!({"force": true}));
                             if quitting {
                                 app.continue_quit(ui.ctx());
                             }
                             open = false;
                         }
-                        if ui.button("Cancel").clicked() {
-                            open = false;
-                        }
+                        Some(1) => open = false,
                         // File operations must include the cell the user is still editing (as the File > Save menu item already does).
-                        if ui.button("Save").clicked() && app.commit_edit(0, 0, false, false) {
+                        Some(2) if app.commit_edit(0, 0, false, false) => {
                             app.run_or_alert("file.save", json!({}));
                             if app.session.active().is_some_and(|x| !x.is_dirty()) {
                                 app.run_or_alert("file.close", json!({"force": true}));
@@ -1468,7 +1481,8 @@ pub fn show(app: &mut SheetApp, ctx: &egui::Context) {
                             }
                             open = false;
                         }
-                    });
+                        _ => {}
+                    }
                 }
                 "start" => {
                     ui.heading("Start a new workbook");
@@ -1499,7 +1513,26 @@ pub fn show(app: &mut SheetApp, ctx: &egui::Context) {
                 }
                 _ => form(ui, &mut d, &mut confirm, &mut open),
             }
+    };
+    // On the phone a dialog is a bottom sheet (see `phone::dialog_sheet`); Back and a tap on the dimmed screen cancel it.
+    let sheet_closed = if crate::phone::active(ctx) {
+        // The window is not shown here; dropping it releases its hold on `win_open`.
+        drop(window);
+        let (done, _) = crate::phone::dialog_sheet(ctx, sheet_id, &sheet_title, |ui| {
+            draw(app, ui);
+            false
         });
+        done
+    } else {
+        window.show(ctx, |ui| {
+            ui.set_min_width(width - 20.0);
+            draw(app, ui);
+        });
+        false
+    };
+    if sheet_closed {
+        open = false;
+    }
     // Hyperlinks inside dialogs (About ▸ Contributors) open through the host's `open_url`, since
     // the native shell has no browser integration of its own.
     if let Some(open_url) = &app.services.open_url {
@@ -1708,6 +1741,16 @@ fn paste_special_shortcuts(d: &mut Dialog, ctx: &egui::Context) {
 }
 
 fn ok_cancel(ui: &mut egui::Ui, confirm: &mut bool, open: &mut bool) {
+    // On the phone the pair is pinned at the bottom of the sheet: Cancel left, OK right.
+    let lang = crate::i18n::current(ui.ctx());
+    if let Some(clicked) = crate::phone::footer_row(ui, &[lang.tr("Cancel"), lang.tr("OK")], 1, true) {
+        match clicked {
+            Some(1) => *confirm = true,
+            Some(0) => *open = false,
+            _ => {}
+        }
+        return;
+    }
     ui.add_space(8.0);
     // A row as tall as the buttons: a right-to-left layout straight in the window takes all the
     // height it is offered, which stretched every form dialog to the screen's height.
@@ -1791,7 +1834,7 @@ fn form_fields(ui: &mut egui::Ui, d: &mut Dialog) {
                         let r = if multiline {
                             ui.add(egui::TextEdit::multiline(&mut s).desired_rows(4).desired_width(320.0))
                         } else {
-                            ui.add(egui::TextEdit::singleline(&mut s).desired_width(320.0))
+                            ui.add(crate::phone::touch_edit(ui, egui::TextEdit::singleline(&mut s).desired_width(320.0)))
                         };
                         take_first_focus(d, &r);
                         if r.changed() {
@@ -1807,7 +1850,7 @@ fn form_fields(ui: &mut egui::Ui, d: &mut Dialog) {
                     ui.vertical(|ui| {
                         ui.label(lang.tr(label));
                         let mut s = d.values.get(key).and_then(Json::as_str).unwrap_or_default().to_string();
-                        if ui.add(egui::TextEdit::singleline(&mut s).password(!d.show_password).desired_width(320.0)).changed() {
+                        if ui.add(crate::phone::touch_edit(ui, egui::TextEdit::singleline(&mut s).password(!d.show_password).desired_width(320.0))).changed() {
                             d.values.insert(key.into(), json!(s));
                         }
                         ui.checkbox(&mut d.show_password, lang.tr("Show password"));
@@ -2160,7 +2203,7 @@ fn insert_function(app: &mut SheetApp, ui: &mut egui::Ui, d: &mut Dialog, confir
     let language = app.ui.language;
     ui.horizontal(|ui| {
         ui.label(language.tr("Search:"));
-        let r = ui.add(egui::TextEdit::singleline(&mut d.search).desired_width(300.0).hint_text(language.tr("e.g. lookup, average, date")));
+        let r = ui.add(crate::phone::touch_edit(ui, egui::TextEdit::singleline(&mut d.search).desired_width(300.0).hint_text(language.tr("e.g. lookup, average, date"))));
         r.request_focus();
     });
     let locale = language.formula_locale();
@@ -2236,7 +2279,7 @@ fn find(app: &mut SheetApp, ui: &mut egui::Ui, d: &mut Dialog) {
     let mut with = d.values.get("with").and_then(Json::as_str).unwrap_or("").to_string();
     ui.horizontal(|ui| {
         ui.label("Find what:");
-        let r = ui.add(egui::TextEdit::singleline(&mut what).desired_width(260.0));
+        let r = ui.add(crate::phone::touch_edit(ui, egui::TextEdit::singleline(&mut what).desired_width(260.0)));
         // Like Excel, the cursor starts in "Find what" - asked for once, so clicking another field still works.
         if !d.values.contains_key("focused") {
             r.request_focus();
@@ -2246,7 +2289,7 @@ fn find(app: &mut SheetApp, ui: &mut egui::Ui, d: &mut Dialog) {
     if d.tab == "Replace" {
         ui.horizontal(|ui| {
             ui.label("Replace with:");
-            ui.add(egui::TextEdit::singleline(&mut with).desired_width(244.0));
+            ui.add(crate::phone::touch_edit(ui, egui::TextEdit::singleline(&mut with).desired_width(244.0)));
         });
     }
     let mut case = d.values.get("matchCase").and_then(Json::as_bool).unwrap_or(false);
@@ -2389,7 +2432,7 @@ fn go_to(app: &mut SheetApp, ui: &mut egui::Ui, d: &mut Dialog, confirm: &mut bo
     let mut r = d.values.get("reference").and_then(Json::as_str).unwrap_or("").to_string();
     ui.horizontal(|ui| {
         ui.label("Reference:");
-        ui.text_edit_singleline(&mut r).request_focus();
+        ui.add(crate::phone::touch_edit(ui, egui::TextEdit::singleline(&mut r))).request_focus();
     });
     d.values.insert("reference".into(), json!(r.clone()));
     if ui.button("Special…").clicked() {
@@ -2441,7 +2484,7 @@ fn sort(app: &mut SheetApp, ui: &mut egui::Ui, d: &mut Dialog, confirm: &mut boo
             ui.label(if i == 0 { "Sort by" } else { "Then by" });
             let mut col = lv["column"].as_str().unwrap_or("A").to_string();
             if columns.is_empty() {
-                ui.add(egui::TextEdit::singleline(&mut col).desired_width(50.0));
+                ui.add(crate::phone::touch_edit(ui, egui::TextEdit::singleline(&mut col).desired_width(50.0)));
             } else {
                 egui::ComboBox::from_id_salt(("sort_col", i)).selected_text(col.clone()).show_ui(ui, |ui| {
                     for (letter, label) in &columns {
@@ -2757,7 +2800,7 @@ fn select_data(app: &mut SheetApp, ui: &mut egui::Ui, d: &mut Dialog, confirm: &
     let edit = |ui: &mut egui::Ui, d: &mut Dialog, key: &str, label: &str| {
         ui.label(label);
         let mut v = text(d, key);
-        if ui.add(egui::TextEdit::singleline(&mut v).desired_width(420.0)).changed() {
+        if ui.add(crate::phone::touch_edit(ui, egui::TextEdit::singleline(&mut v).desired_width(420.0))).changed() {
             d.values.insert(key.into(), json!(v));
         }
     };
@@ -2854,7 +2897,7 @@ fn command_search(app: &mut SheetApp, ui: &mut egui::Ui, d: &mut Dialog, confirm
         )
     });
     let width = ui.available_width();
-    let r = ui.add(egui::TextEdit::singleline(&mut d.search).desired_width(width).hint_text("Type a command, e.g. freeze, chart, bold…"));
+    let r = ui.add(crate::phone::touch_edit(ui, egui::TextEdit::singleline(&mut d.search).desired_width(width).hint_text("Type a command, e.g. freeze, chart, bold…")));
 
     if !d.focus_initialized {
         r.request_focus();
@@ -2934,13 +2977,13 @@ fn goal_seek(app: &mut SheetApp, ui: &mut egui::Ui, d: &mut Dialog, confirm: &mu
     let (mut set, mut to, mut changing) = (get("set"), get("to"), get("changing"));
     egui::Grid::new("gs").show(ui, |ui| {
         ui.label("Set cell:");
-        ui.text_edit_singleline(&mut set);
+        ui.add(crate::phone::touch_edit(ui, egui::TextEdit::singleline(&mut set)));
         ui.end_row();
         ui.label("To value:");
-        ui.text_edit_singleline(&mut to);
+        ui.add(crate::phone::touch_edit(ui, egui::TextEdit::singleline(&mut to)));
         ui.end_row();
         ui.label("By changing cell:");
-        ui.text_edit_singleline(&mut changing);
+        ui.add(crate::phone::touch_edit(ui, egui::TextEdit::singleline(&mut changing)));
         ui.end_row();
     });
     d.values.insert("set".into(), json!(set.clone()));
@@ -3088,7 +3131,7 @@ fn analysis_toolpak(app: &mut SheetApp, ui: &mut egui::Ui, d: &mut Dialog, confi
                 d.values.insert("outputTo".into(), json!(choice));
             }
             let mut t = d.values.get(key).and_then(Json::as_str).unwrap_or("").to_string();
-            if ui.add(egui::TextEdit::singleline(&mut t).desired_width(160.0)).changed() {
+            if ui.add(crate::phone::touch_edit(ui, egui::TextEdit::singleline(&mut t).desired_width(160.0))).changed() {
                 d.values.insert(key.into(), json!(t));
                 d.values.insert("outputTo".into(), json!(choice));
             }
@@ -3103,7 +3146,7 @@ fn solver(ui: &mut egui::Ui, d: &mut Dialog, confirm: &mut bool, open: &mut bool
     let text = |d: &Dialog, k: &str| d.values.get(k).map(|v| v.as_str().map(str::to_string).unwrap_or_else(|| v.to_string())).unwrap_or_default();
     let edit = |ui: &mut egui::Ui, d: &mut Dialog, k: &str, width: f32| {
         let mut t = text(d, k);
-        if ui.add(egui::TextEdit::singleline(&mut t).desired_width(width)).changed() {
+        if ui.add(crate::phone::touch_edit(ui, egui::TextEdit::singleline(&mut t).desired_width(width))).changed() {
             d.values.insert(k.into(), json!(t));
         }
     };
