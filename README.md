@@ -46,10 +46,10 @@ far. When a release is made it will be on the
   from the file picker. The unsaved-changes dot clears after a successful save.
 - Opening spreadsheets through the system file picker (.xlsx, .xlsm, .xls, .xlsb, .ods, .csv,
   .txt). Not yet tested on a device.
+- Bold text, and typing with the on-screen keyboard (checked on the emulator).
 
 ## Known gaps
 
-- Bold text on Android and dropped letters while typing on the emulator: fixes are in progress.
 - The keyboard doesn't move the tab bar or sheets out of the way yet.
 - No recovery of unsaved work if Android closes the app, and no unsaved-changes prompt on Back.
 - The app icon is a placeholder.
