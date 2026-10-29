@@ -874,6 +874,14 @@ const BAR_ITEMS: [(&str, Icon, Act); 7] = [
     ("Delete…", Icon::Delete, Act::Dialog("deleteCells", None)),
 ];
 
+/// The action bar shows this many actions and an "More" slot; the rest open the More sheet, so the bar never
+/// scrolls sideways.
+const BAR_VISIBLE: usize = 4;
+
+fn more_id() -> egui::Id {
+    egui::Id::new("phone_action_more_open")
+}
+
 fn bar_id() -> egui::Id {
     egui::Id::new("phone_action_bar_open")
 }
@@ -1013,11 +1021,14 @@ fn action_bar(app: &mut SheetApp, ctx: &Context, cells: Rect, selection: Rect) {
     let t = Tokens::get(ctx);
     let lang = app.ui.language;
     let width = (ctx.content_rect().width() - 2.0 * PILL_SIDE).max(0.0);
-    let above = selection.top() - BAR_GAP - BAR_H;
+    // With More open, the bar grows by the More rows: it stays above (or below) the selection as a whole.
+    let more = ctx.data(|d| d.get_temp::<bool>(more_id())).unwrap_or(false);
+    let bar_h = BAR_H + if more { BAR_ITEMS[BAR_VISIBLE..].len() as f32 * TOUCH_H + 8.0 } else { 0.0 };
+    let above = selection.top() - BAR_GAP - bar_h;
     let below = selection.bottom() + BAR_GAP;
     let y = if above >= cells.top() {
         above
-    } else if below + BAR_H <= cells.bottom() {
+    } else if below + bar_h <= cells.bottom() {
         below
     } else {
         cells.top() + BAR_GAP
@@ -1031,18 +1042,29 @@ fn action_bar(app: &mut SheetApp, ctx: &Context, cells: Rect, selection: Rect) {
             .inner_margin(Margin::symmetric(4, 0))
             .show(ui, |ui| {
                 ui.set_width((width - 8.0).max(0.0));
-                egui::ScrollArea::horizontal().show(ui, |ui| {
-                    ui.horizontal(|ui| {
-                        for (label, icon, act) in BAR_ITEMS.iter() {
-                            if bar_button(ui, t, lang.tr(label), *icon) {
-                                picked = Some(*act);
-                            }
+                ui.horizontal(|ui| {
+                    for (label, icon, act) in BAR_ITEMS[..BAR_VISIBLE].iter() {
+                        if bar_button(ui, t, lang.tr(label), *icon) {
+                            picked = Some(*act);
                         }
-                    });
+                    }
+                    if bar_button(ui, t, lang.tr("More"), Icon::More) {
+                        ctx.data_mut(|d| d.insert_temp(more_id(), true));
+                    }
                 });
+                if more {
+                    for (label, _icon, act) in BAR_ITEMS[BAR_VISIBLE..].iter() {
+                        if ui.add_sized([ui.available_width(), TOUCH_H], egui::Button::new(lang.tr(label))).clicked() {
+                            picked = Some(*act);
+                        }
+                    }
+                }
             });
     });
     ctx.data_mut(|d| d.insert_temp(bar_rect_id(), area.response.rect));
+    if more && (picked.is_some() || ctx.input(|i| i.key_pressed(egui::Key::Escape))) {
+        ctx.data_mut(|d| d.insert_temp(more_id(), false));
+    }
     if let Some(act) = picked {
         set_bar_open(ctx, false);
         // The tapped button leaves with the bar: drop its focus so none is left on a missing widget.

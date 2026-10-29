@@ -53,11 +53,13 @@ fn clear_in_the_action_bar_clears_the_selection() {
 
 #[test]
 fn delete_in_the_action_bar_opens_the_delete_cells_dialog() {
-    // Wide enough that all seven buttons show: on a 412 pt phone the last one scrolls off the bar.
-    let mut h = harness_sized(filled, egui::vec2(1000.0, 500.0));
+    // Delete is past the bar's visible slots: it sits in the More sheet.
+    let mut h = harness(filled);
     gridcraft_ui_egui::open_phone_sheet(&h.ctx, "actionbar");
     h.run_steps(4);
-    h.get_all_by_label("Delete…").last().expect("action bar delete").click();
+    h.get_all_by_label("More").last().expect("action bar more").click();
+    h.run_steps(4);
+    h.get_all_by_label("Delete…").last().expect("more sheet delete").click();
     h.run_steps(6);
     assert!(filled_at(&h, 0, 0), "nothing is deleted until the dialog is confirmed");
     assert_eq!(h.state().dialog.as_ref().map(|d| d.name()), Some("deleteCells"));
