@@ -229,3 +229,32 @@ After (`edit-after-*.png`):
 
 Code: `phone.rs` (`edit_bar`, `edit_button`, `track_edit`); `lib.rs` `can_go_back` also counts an open
 edit. Tests: `tests/it/phone_edit.rs` (✗ cancels without committing; ✓ commits and moves down).
+
+## Update 9: selection handles and long-press actions (device check pending)
+
+Code: `phone.rs` (`touch_gestures`, `action_bar`, `handle_range`), called from `grid::show` after the
+grid is painted and before its own input (`grid.rs`). `grid::scroll_by` is now `pub(crate)` for the
+handles' edge scroll.
+
+- Handles: when the phone has a selection, a 12 pt dot at the top-left and bottom-right corners, each
+  with a 44 pt touch area. Dragging one moves that corner and snaps to cells; the opposite corner stays
+  (`handle_range`). Near a cell edge the grid auto-scrolls. Dragging elsewhere still pans the grid.
+- Long press: a press held 500 ms without moving on a cell selects that cell (a press inside the current
+  area keeps it) and opens the action bar. The bar sits above the selection, or below it when there is no
+  room. Its buttons, in a horizontal scroll: Cut, Copy, Paste, Clear, Fill Down, Insert… and Delete…
+  (`edit.clearContents`, `edit.fillDown`, and the `insertCells` and `deleteCells` dialogs, which the
+  ribbon uses). A tap on an action runs it and closes the bar. A tap outside or Back closes it.
+- Tests: `tests/it/phone_touch.rs` (Clear clears, Delete opens its dialog, Copy fills the clipboard) and
+  unit tests of `handle_range` in `phone.rs`. The handle drag and the long-press timer are not covered by
+  kittest; check them on the device.
+- Snapshots: `~/.cache/gc-spike/sel-a-range-handles.png` (A1:B4 with handles) and
+  `~/.cache/gc-spike/sel-b-action-bar.png` (the bar open). `snapshot --phone-sheet actionbar` opens it.
+- Checks: `cargo clippy -p gridcraft-ui-egui --all-targets` clean; `cargo test -p gridcraft-ui-egui` passes
+  except the known `header_autofit` flake.
+
+Emulator recipe (not run here, another agent had the device): a 1080x2400 screen, cell A1 near (140,487),
+B4 near (275,610).
+1. Tap A1, then drag the top-left handle down-right: the area follows the finger, the bar is closed.
+2. Long-press B4 for about 600 ms: the bar opens below or above the area; Clear empties the area.
+3. Drag the bottom-right handle past the screen's bottom edge: the grid scrolls.
+4. Tap outside the bar, then Back: the bar closes and the app stays open.

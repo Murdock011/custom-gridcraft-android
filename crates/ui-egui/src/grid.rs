@@ -806,7 +806,8 @@ pub fn show(app: &mut SheetApp, ui: &mut egui::Ui) {
     if geo.paper.is_some() {
         crate::paper_view::paint_rulers(app, &painter, rect, &geo, &t);
     }
-    // Interaction.
+    // Interaction. Phone handles and long presses take their presses first (see `phone::touch_gestures`).
+    let gesture = crate::phone::touch_gestures(app, ui, &geo, sh);
     let previous_popups = (app.grid.filter_menu, app.grid.list_picker, app.grid.header_menu, app.grid.fill_menu);
     // A pan the grid never saw end (it was hidden mid-drag) must not swallow the next press.
     if app.grid.touch_pan && !resp.dragged() && !resp.drag_stopped() {
@@ -817,7 +818,7 @@ pub fn show(app: &mut SheetApp, ui: &mut egui::Ui) {
         if !resp.dragged() {
             app.grid.touch_pan = false;
         }
-    } else {
+    } else if !gesture {
         crate::paper_view::interact(app, ui, &resp, &geo, sh, &wb);
         interact(app, ui, &resp, &geo, sh, &wb);
     }
@@ -2784,7 +2785,7 @@ fn coalesce_last_undo(app: &mut SheetApp) {
     }
 }
 
-fn scroll_by(app: &mut SheetApp, d: egui::Vec2) {
+pub(crate) fn scroll_by(app: &mut SheetApp, d: egui::Vec2) {
     if d != egui::Vec2::ZERO
         && let Some(v) = app.view_mut()
     {

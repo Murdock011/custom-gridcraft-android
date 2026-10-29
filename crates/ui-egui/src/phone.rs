@@ -6,11 +6,13 @@
 
 use egui::{Align2, Color32, Context, CornerRadius, FontId, Frame, Layout, Margin, Painter, Panel, Pos2, Rect, Response, Sense, Stroke, StrokeKind, Ui, vec2};
 use gridcraft_engine::cmd;
-use gridcraft_engine::model::Visibility;
+use gridcraft_engine::core::{CellRef, RangeRef};
+use gridcraft_engine::model::{Sheet, Visibility};
 use serde_json::json;
 
 use crate::SheetApp;
 use crate::backstage::Page;
+use crate::grid::{self, Geo};
 use crate::icons::{self, Icon};
 use crate::ribbon;
 use crate::tabs;
@@ -169,6 +171,7 @@ fn close_all(ctx: &Context) {
     set_menu(ctx, None);
     set_palette(ctx, None);
     set_row_actions(ctx, None);
+    set_bar_open(ctx, false);
 }
 
 /// Where the open sheet was drawn last frame. A press outside it closes the sheet.
@@ -197,10 +200,15 @@ pub fn take_pointer(ctx: &Context) {
     if !pressed {
         return;
     }
-    let outside = menu_tab(ctx).is_some() && {
+    let outside_sheet = menu_tab(ctx).is_some() && {
         let rect = ctx.data(|d| d.get_temp::<Rect>(sheet_rect_id()));
         matches!((pos, rect), (Some(p), Some(r)) if !r.contains(p))
     };
+    let outside_bar = bar_open(ctx) && {
+        let rect = ctx.data(|d| d.get_temp::<Rect>(bar_rect_id()));
+        matches!((pos, rect), (Some(p), Some(r)) if !r.contains(p))
+    };
+    let outside = outside_sheet || outside_bar;
     if outside {
         close_all(ctx);
     }
@@ -209,12 +217,15 @@ pub fn take_pointer(ctx: &Context) {
 
 /// Whether Android Back has an open sheet (or its palette or row actions) to close first.
 pub fn can_go_back(ctx: &Context) -> bool {
-    menu_tab(ctx).is_some()
+    menu_tab(ctx).is_some() || bar_open(ctx)
 }
 
-/// Escape or Back: closes the innermost open part first (row actions, then the palette), then the sheet.
+/// Escape or Back: closes the innermost open part first (the action bar, row actions, then the
+/// palette), then the sheet.
 pub fn back_step(ctx: &Context) {
-    if row_actions(ctx).is_some() {
+    if bar_open(ctx) {
+        set_bar_open(ctx, false);
+    } else if row_actions(ctx).is_some() {
         set_row_actions(ctx, None);
     } else if open_palette(ctx).is_some() {
         set_palette(ctx, None);
@@ -233,6 +244,8 @@ pub fn open_by_name(ctx: &Context, which: &str) {
     } else if let Some(n) = which.strip_prefix("actions:").and_then(|n| n.parse().ok()) {
         set_menu(ctx, Some(SHEETS));
         set_row_actions(ctx, Some(n));
+    } else if which == "actionbar" {
+        set_bar_open(ctx, true);
     } else if let Some(i) = TABS.iter().position(|(label, _)| *label == which) {
         set_menu(ctx, Some(i));
     }
@@ -663,4 +676,245 @@ fn sheet_row(ui: &mut Ui, t: Tokens, name: &str, index: usize, active: bool) -> 
     main.widget_info(|| egui::WidgetInfo::labeled(egui::WidgetType::Button, true, name));
     more.widget_info(|| egui::WidgetInfo::labeled(egui::WidgetType::Button, true, format!("More actions: {name}")));
     (main, more)
+}
+
+/// Touch selection on the grid: a handle at each corner of the selection, and a long press that
+/// selects a cell and opens the action bar above (or below) the selection.
+/// A handle's dot is 12 pt; its touch target is 44 pt.
+const HANDLE_HIT: f32 = 44.0;
+const HANDLE_R: f32 = 6.0;
+/// A press held this long without moving opens the action bar.
+const LONG_PRESS: f64 = 0.5;
+/// An action button in the bar: 72 pt wide, the bar 64 pt tall (the bar scrolls across when it overflows).
+const BAR_BTN_W: f32 = 72.0;
+const BAR_H: f32 = 64.0;
+const BAR_GAP: f32 = 8.0;
+/// Within this many points of a cell edge, a handle drag scrolls the grid.
+const EDGE: f32 = 24.0;
+
+/// The action bar's buttons: the clipboard, Clear and Fill Down run their commands, the two insert and
+/// delete entries open their dialogs (as the ribbon's ellipsis entries do).
+const BAR_ITEMS: [(&str, Icon, Act); 7] = [
+    ("Cut", Icon::Cut, Act::Copy("edit.cut")),
+    ("Copy", Icon::Copy, Act::Copy("edit.copy")),
+    ("Paste", Icon::Paste, Act::Run("edit.paste")),
+    ("Clear", Icon::Eraser, Act::Run("edit.clearContents")),
+    ("Fill Down", Icon::FillDown, Act::Run("edit.fillDown")),
+    ("Insert…", Icon::Insert, Act::Dialog("insertCells", None)),
+    ("Delete…", Icon::Delete, Act::Dialog("deleteCells", None)),
+];
+
+fn bar_id() -> egui::Id {
+    egui::Id::new("phone_action_bar_open")
+}
+
+/// Whether the action bar is open.
+pub fn action_bar_open(ctx: &Context) -> bool {
+    bar_open(ctx)
+}
+
+fn bar_open(ctx: &Context) -> bool {
+    ctx.data(|d| d.get_temp::<bool>(bar_id())).unwrap_or(false)
+}
+
+fn set_bar_open(ctx: &Context, open: bool) {
+    ctx.data_mut(|d| d.insert_temp(bar_id(), open));
+}
+
+/// Where the action bar was drawn last frame. A press outside it closes the bar.
+fn bar_rect_id() -> egui::Id {
+    egui::Id::new("phone_action_bar_rect")
+}
+
+/// The press start time of the long press that last opened the bar, so one press opens it once.
+fn long_press_id() -> egui::Id {
+    egui::Id::new("phone_long_press_fired")
+}
+
+/// The selection area after a handle drag: the corner opposite the dragged handle stays where it is,
+/// and the dragged corner goes to `cell`. `moving_start` is the top-left handle.
+pub(crate) fn handle_range(current: RangeRef, moving_start: bool, cell: CellRef) -> RangeRef {
+    let fixed = if moving_start { current.end } else { current.start };
+    RangeRef::new(fixed, cell)
+}
+
+/// The grid's auto-scroll while a handle is dragged near the cells' edges, in logical points.
+fn edge_scroll(cells: Rect, p: Pos2) -> egui::Vec2 {
+    let mut d = vec2(0.0, 0.0);
+    if p.y > cells.bottom() - EDGE {
+        d.y = 20.0;
+    } else if p.y < cells.top() + EDGE {
+        d.y = -20.0;
+    }
+    if p.x > cells.right() - EDGE {
+        d.x = 30.0;
+    } else if p.x < cells.left() + EDGE {
+        d.x = -30.0;
+    }
+    d
+}
+
+/// Runs in the grid after it is painted, before its own input. Draws the handles at the selection's
+/// top-left and bottom-right corners and takes their drags, opens the action bar on a long press, and
+/// draws the bar. Returns whether a handle or a long press took this frame, so the grid skips its own
+/// input for the frame.
+pub(crate) fn touch_gestures(app: &mut SheetApp, ui: &mut Ui, geo: &Geo, sh: &Sheet) -> bool {
+    let ctx = ui.ctx().clone();
+    if !active(&ctx) || app.editor.is_some() || app.text_box_editor.is_some() || app.dialog.is_some() {
+        return false;
+    }
+    let t = Tokens::get(&ctx);
+    let sel = app.session.active().map(|d| d.selection.clone()).unwrap_or_default();
+    let cur = sel.current();
+    let logical = geo.range_rect(sh, cur);
+    let mut took = false;
+    let mut handles: Vec<(bool, Pos2)> = Vec::new();
+    for (i, (moving_start, corner)) in [(true, logical.left_top()), (false, logical.right_bottom())].into_iter().enumerate() {
+        let at = geo.mirror_pos(corner);
+        if !geo.cells.contains(at) {
+            continue;
+        }
+        handles.push((moving_start, at));
+        let resp = ui.interact(Rect::from_center_size(at, vec2(HANDLE_HIT, HANDLE_HIT)), ui.id().with(("phone_handle", i)), Sense::drag());
+        ui.painter().circle(at, HANDLE_R, t.accent, Stroke::new(2.0, t.window));
+        if !resp.dragged() {
+            continue;
+        }
+        took = true;
+        if let Some(p) = resp.interact_pointer_pos().map(|p| geo.mirror_pos(p)) {
+            let p = Pos2::new(p.x.clamp(geo.cells.left() + 1.0, geo.cells.right() - 1.0), p.y.clamp(geo.cells.top() + 1.0, geo.cells.bottom() - 1.0));
+            let range = handle_range(cur, moving_start, geo.cell_at(sh, p));
+            let fixed = if moving_start { cur.end } else { cur.start };
+            // The active cell stays put while it is in the area; otherwise it moves to the area's start.
+            let active = if range.contains(sel.active) { sel.active } else { range.start };
+            let mut ranges: Vec<String> = sel.ranges.iter().map(|r| r.a1()).collect();
+            ranges.pop();
+            ranges.push(range.a1());
+            let _ = app.session.run("selection.set", json!({"range": ranges.join(","), "active": active.a1()}));
+            if let Some(d) = app.session.active_mut() {
+                d.selection.anchor = fixed;
+            }
+            grid::scroll_by(app, edge_scroll(geo.cells, p));
+            ctx.request_repaint();
+        }
+    }
+
+    // A long press: held without moving, on a cell but not on a handle. It runs once per press.
+    let (down, origin, started, decided, multi, now) = ctx.input(|i| {
+        (
+            i.pointer.primary_down(),
+            i.pointer.press_origin(),
+            i.pointer.press_start_time(),
+            i.pointer.is_decidedly_dragging(),
+            i.multi_touch().is_some(),
+            i.time,
+        )
+    });
+    if let (true, Some(origin), Some(t0)) = (down && !decided && !multi && !took && !pointer_taken(&ctx), origin, started) {
+        let p = geo.mirror_pos(origin);
+        let on_handle = handles.iter().any(|(_, h)| Rect::from_center_size(*h, vec2(HANDLE_HIT, HANDLE_HIT)).contains(origin));
+        let fired = ctx.data(|d| d.get_temp::<f64>(long_press_id()));
+        if geo.in_cells(p) && !on_handle && fired != Some(t0) {
+            if now - t0 >= LONG_PRESS {
+                ctx.data_mut(|d| d.insert_temp(long_press_id(), t0));
+                let cell = geo.cell_at(sh, p);
+                if !sel.contains(cell) {
+                    let _ = app.session.run("selection.set", json!({"cell": cell.a1()}));
+                }
+                set_bar_open(&ctx, true);
+                // The grid ignores the rest of this press, so its release is no click.
+                ctx.data_mut(|d| d.insert_temp(gesture_id(), true));
+                took = true;
+            } else {
+                ctx.request_repaint_after(std::time::Duration::from_secs_f64(LONG_PRESS - (now - t0)));
+            }
+        }
+    }
+
+    if bar_open(&ctx) {
+        action_bar(app, &ctx, geo.cells, geo.mirror_rect(logical));
+    }
+    took
+}
+
+/// The action bar: a row of 48 pt-plus buttons in a card above the selection (below it when there is
+/// no room above), 16 pt in from the screen's sides, scrolling across when the buttons overflow.
+fn action_bar(app: &mut SheetApp, ctx: &Context, cells: Rect, selection: Rect) {
+    let t = Tokens::get(ctx);
+    let lang = app.ui.language;
+    let width = (ctx.content_rect().width() - 2.0 * PILL_SIDE).max(0.0);
+    let above = selection.top() - BAR_GAP - BAR_H;
+    let below = selection.bottom() + BAR_GAP;
+    let y = if above >= cells.top() {
+        above
+    } else if below + BAR_H <= cells.bottom() {
+        below
+    } else {
+        cells.top() + BAR_GAP
+    };
+    let mut picked = None;
+    let area = egui::Area::new(egui::Id::new("phone_action_bar_area")).order(egui::Order::Foreground).fixed_pos(Pos2::new(PILL_SIDE, y)).show(ctx, |ui| {
+        Frame::NONE
+            .fill(t.menu_bg)
+            .stroke(Stroke::new(1.0, t.ribbon_border))
+            .corner_radius(CornerRadius::same(12))
+            .inner_margin(Margin::symmetric(4, 0))
+            .show(ui, |ui| {
+                ui.set_width((width - 8.0).max(0.0));
+                egui::ScrollArea::horizontal().show(ui, |ui| {
+                    ui.horizontal(|ui| {
+                        for (label, icon, act) in BAR_ITEMS.iter() {
+                            if bar_button(ui, t, lang.tr(label), *icon) {
+                                picked = Some(*act);
+                            }
+                        }
+                    });
+                });
+            });
+    });
+    ctx.data_mut(|d| d.insert_temp(bar_rect_id(), area.response.rect));
+    if let Some(act) = picked {
+        set_bar_open(ctx, false);
+        // The tapped button leaves with the bar: drop its focus so none is left on a missing widget.
+        if let Some(id) = ctx.memory(|m| m.focused()) {
+            ctx.memory_mut(|m| m.surrender_focus(id));
+        }
+        run_act(app, ctx, act);
+    }
+}
+
+/// One action button: its icon above its label, in a 72 x 64 pt touch target. Returns whether it was tapped.
+fn bar_button(ui: &mut Ui, t: Tokens, label: &str, icon: Icon) -> bool {
+    let (r, resp) = ui.allocate_exact_size(vec2(BAR_BTN_W, BAR_H), Sense::click());
+    if resp.is_pointer_button_down_on() {
+        ui.painter().rect_filled(r, CornerRadius::same(10), t.pressed);
+    } else if resp.hovered() {
+        ui.painter().rect_filled(r, CornerRadius::same(10), t.hover);
+    }
+    let painter = ui.painter();
+    icons::paint(painter, Rect::from_center_size(Pos2::new(r.center().x, r.top() + 20.0), vec2(24.0, 24.0)), icon, t.text);
+    painter.text(Pos2::new(r.center().x, r.top() + 46.0), Align2::CENTER_CENTER, label, theme::ui_font(11.0), t.text_dim);
+    resp.widget_info(|| egui::WidgetInfo::labeled(egui::WidgetType::Button, true, label));
+    resp.clicked()
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn dragging_the_end_handle_keeps_the_start_corner() {
+        let a1_b4 = RangeRef::new(CellRef::new(0, 0), CellRef::new(3, 1));
+        // The bottom-right handle dragged to D6: the area grows from A1.
+        assert_eq!(handle_range(a1_b4, false, CellRef::new(5, 3)).a1(), "A1:D6");
+        // The top-left handle dragged to C2: the area is B2:C4, normalised around the fixed B4 corner.
+        assert_eq!(handle_range(a1_b4, true, CellRef::new(1, 2)).a1(), "B2:C4");
+    }
+
+    #[test]
+    fn dragging_a_handle_past_the_other_corner_flips_the_area() {
+        let a1_b4 = RangeRef::new(CellRef::new(0, 0), CellRef::new(3, 1));
+        // The top-left handle dragged below and right of B4: the fixed corner is now the start.
+        assert_eq!(handle_range(a1_b4, true, CellRef::new(6, 4)).a1(), "B4:E7");
+    }
 }
