@@ -4,7 +4,7 @@
 //! sheets, add one, or rename, duplicate or delete one. The grid keeps its canvas. Every control runs
 //! a command id, so the phone chrome adds no behaviour of its own.
 
-use egui::{Align2, Color32, Context, CornerRadius, FontId, Frame, Layout, Margin, Painter, Panel, Pos2, Rect, Response, Sense, Stroke, StrokeKind, Ui, vec2};
+use egui::{Align2, Color32, Context, CornerRadius, FontId, Frame, Layout, Margin, Order, Painter, Panel, Pos2, Rect, Response, Sense, Stroke, StrokeKind, Ui, vec2};
 use gridcraft_engine::cmd;
 use gridcraft_engine::model::Visibility;
 use serde_json::json;
@@ -663,4 +663,172 @@ fn sheet_row(ui: &mut Ui, t: Tokens, name: &str, index: usize, active: bool) -> 
     main.widget_info(|| egui::WidgetInfo::labeled(egui::WidgetType::Button, true, name));
     more.widget_info(|| egui::WidgetInfo::labeled(egui::WidgetType::Button, true, format!("More actions: {name}")));
     (main, more)
+}
+
+/// A touch target (Android's 48 pt minimum): dialog buttons, rows and text fields.
+pub(crate) const TOUCH_H: f32 = 48.0;
+/// A dialog sheet's title row, and its pinned action row: a 48 pt row with 12 pt above and below.
+const DIALOG_TITLE_H: f32 = 56.0;
+const DIALOG_FOOTER_H: f32 = TOUCH_H + 24.0;
+/// The gutter at a dialog sheet's sides and under its content.
+const DIALOG_GUTTER: f32 = 16.0;
+/// A dialog sheet's top corner radius, and the share of the screen past which it fills the screen.
+const DIALOG_R: u8 = 28;
+const DIALOG_FULL: f32 = 0.85;
+
+fn dialog_height_key() -> egui::Id {
+    egui::Id::new("phone_dialog_sheet_h")
+}
+
+fn dialog_footer_key() -> egui::Id {
+    egui::Id::new("phone_dialog_footer")
+}
+
+fn dialog_wanted_key() -> egui::Id {
+    egui::Id::new("phone_dialog_footer_wanted")
+}
+
+/// The open dialog sheet's pinned action row this frame, or None when no sheet has one. Asking for
+/// it also marks that the sheet has an action row, so the next frame reserves the space for it.
+pub(crate) fn footer(ctx: &Context) -> Option<Rect> {
+    ctx.data_mut(|d| d.insert_temp(dialog_wanted_key(), true));
+    ctx.data(|d| d.get_temp::<Rect>(dialog_footer_key()))
+}
+
+/// Touch sizing for a dialog's controls, set on the sheet's body Ui: 48 pt minimum height for
+/// buttons, checkboxes, radio buttons, combo boxes and sliders, and 16 pt text.
+pub(crate) fn touch_style(ui: &mut Ui) {
+    let style = ui.style_mut();
+    style.spacing.interact_size.y = TOUCH_H;
+    style.spacing.button_padding = vec2(12.0, 12.0);
+    for ts in [egui::TextStyle::Body, egui::TextStyle::Button] {
+        style.text_styles.insert(ts, theme::ui_font(16.0));
+    }
+}
+
+/// A single-line text field, 48 pt tall on the phone (egui's TextEdit ignores `interact_size`, so the
+/// height is its `min_size`). Unchanged on desktop.
+pub(crate) fn touch_edit<'t>(ui: &Ui, edit: egui::TextEdit<'t>) -> egui::TextEdit<'t> {
+    if active(ui.ctx()) { edit.min_size(vec2(0.0, TOUCH_H)).vertical_align(egui::Align::Center) } else { edit }
+}
+
+/// Shows a dialog as a bottom sheet on the phone: the full width of the screen, a title row with a
+/// close button, the body scrolling in the space left, and its action row pinned at the bottom (see
+/// `footer`). The sheet is as tall as its content was last frame, and the whole screen once that is
+/// over 85% of it. A tap on the dimmed screen above it, or Escape (Back), closes it. `body` returns
+/// true to close. Returns whether to close, and the sheet's response.
+pub(crate) fn dialog_sheet(ctx: &Context, id: egui::Id, title: &str, body: impl FnOnce(&mut Ui) -> bool) -> (bool, Response) {
+    let t = Tokens::get(ctx);
+    let screen = ctx.content_rect();
+    let max_h = screen.height() * DIALOG_FULL;
+    let wanted = ctx.data_mut(|d| {
+        let w = d.get_temp::<bool>(dialog_wanted_key()).unwrap_or(true);
+        d.insert_temp(dialog_wanted_key(), false);
+        w
+    });
+    let total = ctx.data(|d| d.get_temp::<f32>(dialog_height_key())).unwrap_or(max_h);
+    let full = total >= max_h;
+    let h = if full { screen.height() } else { total };
+    let rect = Rect::from_min_max(Pos2::new(screen.left(), screen.bottom() - h), screen.right_bottom());
+    let footer_h = if wanted { DIALOG_FOOTER_H } else { 0.0 };
+    let footer_rect = wanted.then(|| Rect::from_min_max(Pos2::new(rect.left(), rect.bottom() - DIALOG_FOOTER_H), rect.right_bottom()));
+    let body_rect = Rect::from_min_max(Pos2::new(rect.left(), rect.top() + DIALOG_TITLE_H), Pos2::new(rect.right(), rect.bottom() - footer_h));
+    ctx.data_mut(|d| match footer_rect {
+        Some(r) => {
+            d.insert_temp(dialog_footer_key(), r);
+        }
+        None => d.remove::<Rect>(dialog_footer_key()),
+    });
+    // The dimmed screen above the sheet: a tap there is Cancel.
+    let above = Rect::from_min_max(screen.min, Pos2::new(screen.right(), rect.top()));
+    let mut tapped_outside = false;
+    egui::Area::new(id.with("scrim")).order(Order::Foreground).fixed_pos(above.min).constrain(false).movable(false).show(ctx, |ui| {
+        let r = ui.allocate_rect(above, Sense::click());
+        ui.painter().rect_filled(above, 0.0, Color32::from_black_alpha(110));
+        tapped_outside = r.clicked();
+    });
+    let mut close = false;
+    let out = egui::Area::new(id).order(Order::Foreground).fixed_pos(rect.min).constrain(false).movable(false).show(ctx, |ui| {
+        // Claim the sheet's rect, so a tap on it does not reach the dimmed screen under it.
+        ui.allocate_rect(rect, Sense::click());
+        let radius = if full { CornerRadius::ZERO } else { CornerRadius { nw: DIALOG_R, ne: DIALOG_R, sw: 0, se: 0 } };
+        ui.painter().rect_filled(rect, radius, t.menu_bg);
+        let handle = Rect::from_center_size(Pos2::new(rect.center().x, rect.top() + 10.0), vec2(32.0, 4.0));
+        ui.painter().rect_filled(handle, CornerRadius::same(2), t.separator);
+        let title_rect = Rect::from_min_size(rect.min, vec2(rect.width(), DIALOG_TITLE_H));
+        let mut title_ui = ui.new_child(egui::UiBuilder::new().max_rect(title_rect.shrink2(vec2(DIALOG_GUTTER, 0.0))).layout(Layout::right_to_left(egui::Align::Center)));
+        if icon_button(&mut title_ui, t, Icon::Close, "Close", true).clicked() {
+            close = true;
+        }
+        let title_w = (title_rect.width() - 2.0 * DIALOG_GUTTER - ICON_BTN).max(0.0);
+        let title_text = egui::Label::new(egui::RichText::new(crate::i18n::current(ctx).tr(title)).font(theme::ui_bold(18.0)).color(t.text)).truncate();
+        ui.put(Rect::from_min_size(Pos2::new(title_rect.left() + DIALOG_GUTTER, title_rect.top()), vec2(title_w, title_rect.height())), title_text);
+        let mut body_ui = ui.new_child(egui::UiBuilder::new().max_rect(body_rect.shrink2(vec2(DIALOG_GUTTER, 0.0))).layout(Layout::top_down(egui::Align::Min)));
+        let scroll = egui::ScrollArea::vertical().id_salt(id.with("body")).auto_shrink([false, false]).max_height(body_rect.height()).show(&mut body_ui, |ui| {
+            touch_style(ui);
+            body(ui)
+        });
+        close |= scroll.inner;
+        let total_now = DIALOG_TITLE_H + scroll.content_size.y + DIALOG_GUTTER + footer_h;
+        ctx.data_mut(|d| d.insert_temp(dialog_height_key(), total_now));
+        if let Some(f) = footer_rect {
+            ui.painter().line_segment([f.left_top(), f.right_top()], egui::Stroke::new(1.0, t.separator));
+        }
+        if ui.input(|i| i.key_pressed(egui::Key::Escape)) && !egui::Popup::is_any_open(ui.ctx()) {
+            close = true;
+        }
+    });
+    (close || tapped_outside, out.response)
+}
+
+/// Up to three buttons side by side in the dialog sheet's pinned footer, equal widths, each 48 pt
+/// tall, in `labels` order. `primary` is the accent button; Enter presses it when `enter` is set.
+/// Returns the index clicked (outer None: no sheet footer is open, so the caller lays out inline).
+pub(crate) fn footer_row(ui: &mut Ui, labels: &[&str], primary: usize, enter: bool) -> Option<Option<usize>> {
+    let area = footer(ui.ctx())?;
+    let mut fui = ui.new_child(egui::UiBuilder::new().max_rect(area).layout(Layout::left_to_right(egui::Align::Center)));
+    fui.set_clip_rect(area);
+    let r = area.shrink2(vec2(DIALOG_GUTTER, 12.0));
+    let n = labels.len().max(1) as f32;
+    let gap = 8.0;
+    let w = ((r.width() - gap * (n - 1.0)) / n).max(0.0);
+    let t = Tokens::get(fui.ctx());
+    let mut clicked = None;
+    for (i, label) in labels.iter().enumerate() {
+        let rect = Rect::from_min_size(Pos2::new(r.left() + i as f32 * (w + gap), r.top()), vec2(w, TOUCH_H));
+        let btn = if i == primary {
+            egui::Button::new(egui::RichText::new(*label).color(t.on_accent)).fill(t.accent)
+        } else {
+            egui::Button::new(*label)
+        };
+        if fui.put(rect, btn.min_size(vec2(w, TOUCH_H))).clicked() {
+            clicked = Some(i);
+        }
+    }
+    if enter && clicked.is_none() && fui.input(|i| i.key_pressed(egui::Key::Enter)) {
+        clicked = Some(primary);
+    }
+    Some(clicked)
+}
+
+/// A message box on the phone: a bottom sheet with its warning disc and message, and OK pinned at
+/// the bottom. OK, Enter, Back, Escape and a tap on the dimmed screen all close it. Returns true to close.
+pub(crate) fn message_sheet(ctx: &Context, title: &str, msg: &str) -> bool {
+    let t = Tokens::get(ctx);
+    let ok = crate::i18n::current(ctx).tr("OK");
+    let (close, _) = dialog_sheet(ctx, egui::Id::new("message_box"), title, |ui| {
+        ui.horizontal(|ui| {
+            let (r, _) = ui.allocate_exact_size(vec2(36.0, 36.0), Sense::hover());
+            ui.painter().circle_filled(r.center(), 16.0, t.warning);
+            ui.painter().text(r.center(), egui::Align2::CENTER_CENTER, "!", theme::ui_bold(20.0), t.on_warning);
+            ui.add(egui::Label::new(msg).wrap());
+        });
+        ui.add_space(8.0);
+        // Before the footer exists (its first frame), OK is drawn in the body.
+        match footer_row(ui, &[ok], 0, true) {
+            Some(clicked) => clicked.is_some(),
+            None => ui.add_sized([ui.available_width(), TOUCH_H], egui::Button::new(ok)).clicked(),
+        }
+    });
+    close
 }

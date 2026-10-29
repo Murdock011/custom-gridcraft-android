@@ -514,26 +514,29 @@ pub fn message_box(app: &mut SheetApp, ctx: &egui::Context) {
     let Some((title, msg)) = app.message.clone() else { return };
     let title = app.ui.language.tr(&title).to_owned();
     let msg = app.ui.language.tr_error(&msg);
-    let mut close = false;
-    egui::Modal::new(egui::Id::new("message_box")).show(ctx, |ui| {
-        ui.set_width(380.0);
-        ui.horizontal(|ui| {
-            let (r, _) = ui.allocate_exact_size(vec2(36.0, 36.0), Sense::hover());
-            let t = Tokens::get(ui.ctx());
-            ui.painter().circle_filled(r.center(), 16.0, t.warning);
-            ui.painter().text(r.center(), Align2::CENTER_CENTER, "!", theme::ui_bold(20.0), t.on_warning);
-            ui.vertical(|ui| {
-                ui.label(egui::RichText::new(title).strong());
-                ui.add(egui::Label::new(msg).wrap());
+    // On the phone the message is a bottom sheet with OK pinned at the bottom (see `phone::message_sheet`).
+    let mut close = crate::phone::active(ctx) && crate::phone::message_sheet(ctx, &title, &msg);
+    if !crate::phone::active(ctx) {
+        egui::Modal::new(egui::Id::new("message_box")).show(ctx, |ui| {
+            ui.set_width(380.0);
+            ui.horizontal(|ui| {
+                let (r, _) = ui.allocate_exact_size(vec2(36.0, 36.0), Sense::hover());
+                let t = Tokens::get(ui.ctx());
+                ui.painter().circle_filled(r.center(), 16.0, t.warning);
+                ui.painter().text(r.center(), Align2::CENTER_CENTER, "!", theme::ui_bold(20.0), t.on_warning);
+                ui.vertical(|ui| {
+                    ui.label(egui::RichText::new(title).strong());
+                    ui.add(egui::Label::new(msg).wrap());
+                });
+            });
+            ui.add_space(8.0);
+            ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
+                if ui.button("  OK  ").clicked() || ui.input(|i| i.key_pressed(egui::Key::Enter) || i.key_pressed(egui::Key::Escape)) {
+                    close = true;
+                }
             });
         });
-        ui.add_space(8.0);
-        ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
-            if ui.button("  OK  ").clicked() || ui.input(|i| i.key_pressed(egui::Key::Enter) || i.key_pressed(egui::Key::Escape)) {
-                close = true;
-            }
-        });
-    });
+    }
     if close {
         app.message = None;
         // Back to the entry the message was about (a validation alert, a formula error), so it can

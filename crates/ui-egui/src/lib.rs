@@ -1301,10 +1301,11 @@ impl SheetApp {
     }
 
     /// Lays out the whole window.
-    /// Whether Android Back has something open to close first: a phone sheet or its palette, or the
-    /// Backstage. The host calls this each frame and closes the innermost part on Back.
+    /// Whether Android Back has something open to close first: a phone sheet or its palette, a dialog
+    /// or message (both bottom sheets on the phone), or the Backstage. The host calls this each frame
+    /// and closes the innermost part on Back.
     pub fn can_go_back(&self, ctx: &egui::Context) -> bool {
-        self.backstage.is_some() || self.editor.is_some() || phone::can_go_back(ctx)
+        self.backstage.is_some() || self.editor.is_some() || self.dialog.is_some() || self.message.is_some() || phone::can_go_back(ctx)
     }
 
     pub fn ui(&mut self, ui: &mut egui::Ui) {
