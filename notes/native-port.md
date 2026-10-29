@@ -230,7 +230,7 @@ After (`edit-after-*.png`):
 Code: `phone.rs` (`edit_bar`, `edit_button`, `track_edit`); `lib.rs` `can_go_back` also counts an open
 edit. Tests: `tests/it/phone_edit.rs` (✗ cancels without committing; ✓ commits and moves down).
 
-## Update 8: recovery after Android closes the app (device check pending)
+## Update 8: recovery after Android closes the app
 
 - Kotlin already calls `nativeFlushRecovery` from `onPause`/`onStop` (and on Close). Rust now sets a flag
   there (`recovery::request_flush`) and wakes the UI. The next frame (`Shell::logic`) writes a copy of
@@ -250,11 +250,16 @@ edit. Tests: `tests/it/phone_edit.rs` (✗ cancels without committing; ✓ commi
   module is not in this codebase), so this is a small one in the Android crate. No engine or UI-crate change.
 - Ceilings: one copy per document, rewritten in full (no incremental store). No timed refresh while
   editing: a process killed in the foreground (rare) loses edits since the last background or save.
-  Like WordCraft's flush, the sync runs on the next frame after onPause; this must be confirmed on a device.
+  Like WordCraft's flush, the sync runs on the next frame after onPause; confirmed on the emulator (x86_64).
 - Tests: `recovery::tests` (round trip, empty set, shrinking set, unrelated files kept, newline tidy,
   name parsing). `cargo clippy -p gridcraft-android --all-targets` clean. `build-native.sh x86_64` builds.
-- Device check (pending, emulator not used by this agent): type in A1, press HOME, `adb shell am kill
-  ai.storyteller.gridcraft.nativeapp` (or force-stop is not allowed: use `am kill`), relaunch from the
-  launcher, expect A1 to show the text, the title with the unsaved mark, and "Recovered unsaved changes".
-  Then Save (if the document had a content location) and expect the copy folder to be empty
-  (`run-as ai.storyteller.gridcraft.nativeapp ls files/recovery`).
+- Device check (x86_64 debug build, emulator-5554, 2026-10-29, `rec-*.png`):
+  - Type 42 into A1 and commit with Enter: the title shows the unsaved dot (`rec-1.png`).
+  - HOME, then `run-as ai.storyteller.gridcraft.native ls files/recovery` lists `doc-0.txt` and `doc-0.xlsx`;
+    `am kill` leaves no process (`pidof` empty).
+  - Relaunch: A1 = 42, the unsaved dot is back, and the dialog "Recovered unsaved changes" shows (`rec-2.png`).
+  - Save (app bar) then the system picker in Downloads: the title becomes `Book1 (1).xlsx` with no dot, and the
+    status dialog says "Saved Book1 (1).xlsx" (`rec-3.png`). The picker added " (1)" because Downloads already
+    had `Book1.xlsx`. `run-as ... ls files/recovery` is then empty.
+- Found while testing: the recovery dialog's OK is not in the UI-automator dump (app window only), so it
+  was tapped by position. The system picker's SAVE was found in the dump and tapped by its bounds.
