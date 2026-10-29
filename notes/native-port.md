@@ -191,4 +191,13 @@ pill with three sheets, the Sheets sheet, and the row actions for a sheet. The t
 Not done: no confirmation before Delete (desktop has none either); no emulator run; no keyboard
 handling on the phone yet (see Update 1).
 
-Not yet checked on the emulator (merge committed when work was paused, 2026-10-29). Next: build x86_64, install, check the pill, Sheets list, New sheet, switch, ⋯ Rename, and Back on the device.
+Checked on the emulator (x86_64 debug build, emulator-5554, 2026-10-29), no fixes needed:
+- Launch: one pill with the Sheet1 button and Home/Insert/Formulas/Data/View; no sheet-tab row (pill-dev-1).
+- Sheet button opens the Sheets list with Sheet1 checked and "New sheet" (pill-dev-2).
+- New sheet: a grid opens and the pill shows "Sheet2" (pill-dev-3).
+- Tapping the Sheet1 row switches back; the pill shows "Sheet1" (pill-dev-4).
+- ⋯ on Sheet1 opens Rename/Duplicate/Delete (pill-dev-5); Rename opens the "Rename Sheet" dialog (pill-dev-5b).
+- Cancel closes the dialog and also closes the Sheets list, returning to the grid. The list does not
+  stay open under the dialog (pill-dev-5c). Desktop and phone both route Cancel to the grid.
+- Back with the Sheets list open closes it; the app stays focused (pill-dev-6).
+- `logcat -d` has no panic or FATAL lines.
