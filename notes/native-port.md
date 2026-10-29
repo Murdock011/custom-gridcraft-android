@@ -146,6 +146,11 @@ and a non-xlsx open followed by Save.
   Backspace per letter and retyped it, so each keystroke sent a burst of Backspace presses. A run of
   `input text Hello` gave "Hllo" in A1 once. Fix in `app.rs::replace_composing`: erase and retype only
   after the common prefix.
-- Not yet verified on the device: the emulator dropped off adb (`adb devices` empty) during this pass,
+- Bold verified on the device (`~/.cache/gc-spike/v3-bold.png`): A1 bold, A2 regular, after the
+  Home sheet's Bold.
+- Typing: still lossy on the device (letters dropped, e.g. "Thursday" came out "Thursda"/"hurday").
+  Not fixed yet; the composing diff did not help. Checked earlier runs may have been contaminated by
+  another app in the foreground; retested cleanly after that.
+- Earlier note, superseded: the emulator dropped off adb (`adb devices` empty) during this pass,
   and it was not started again. Still to check: `v3-bold.png` (bold A1 next to regular A2), and typing
   "Hello" several times for lost letters. Italic on Android still draws regular (no italic Droid file).
