@@ -600,7 +600,24 @@ fn age(lang: Language, seconds: f64) -> String {
 /// A large clickable row (icon, title, one-line description).
 fn action_row(ui: &mut Ui, icon: Icon, title: &str, detail: &str) -> egui::Response {
     let t = Tokens::get(ui.ctx());
+    let phone = crate::phone::active(ui.ctx());
     let width = ui.available_width().min(CONTENT_W);
+    if phone {
+        // The detail wraps under the title, and the row grows with it (a 56 pt row at least).
+        let wrap = (width - 52.0 - 8.0).max(40.0);
+        let galley = ui.painter().layout(detail.to_string(), theme::ui_font(13.0), t.text_dim, wrap);
+        let height = (galley.size().y + 22.0 + 20.0).max(56.0);
+        let (rect, resp) = ui.allocate_exact_size(vec2(width, height), Sense::click());
+        resp.widget_info(|| egui::WidgetInfo::labeled(egui::WidgetType::Button, true, title));
+        let p = ui.painter();
+        if resp.hovered() {
+            p.rect_filled(rect, 4.0, t.hover);
+        }
+        icons::paint(p, Rect::from_center_size(pos2(rect.left() + 24.0, rect.top() + 26.0), vec2(24.0, 24.0)), icon, t.text);
+        p.text(pos2(rect.left() + 52.0, rect.top() + 14.0), Align2::LEFT_CENTER, title, theme::ui_bold(15.0), t.text);
+        p.galley(pos2(rect.left() + 52.0, rect.top() + 30.0), galley, t.text_dim);
+        return resp;
+    }
     let (rect, resp) = ui.allocate_exact_size(vec2(width, 56.0), Sense::click());
     resp.widget_info(|| egui::WidgetInfo::labeled(egui::WidgetType::Button, true, title));
     let p = ui.painter();
@@ -734,37 +751,48 @@ fn info(app: &mut SheetApp, ui: &mut Ui, bs: &mut Backstage) {
     }
     ui.add_space(22.0);
     section(ui, lang, "Properties");
-    // On a phone each label sits above its value, one column, so nothing runs off the screen. The
-    // field width is taken here, before the grid sizes its columns to the widest entry.
-    let phone = crate::phone::active(ui.ctx());
-    let field_w = if phone { ui.available_width() } else { 360.0 };
-    let columns = if phone { 1 } else { 2 };
-    egui::Grid::new("backstage_props").num_columns(columns).spacing(vec2(18.0, 8.0)).show(ui, |ui| {
-        ui.label(RichText::new(lang.tr("Location")).color(t.text_dim));
-        if phone {
-            ui.end_row();
+    if crate::phone::active(ui.ctx()) {
+        // A phone: each label sits directly above its value; the editable fields are 48 pt.
+        let location = path.clone().unwrap_or_else(|| lang.tr("Not saved yet").to_string());
+        for (label, value) in [("Location", location), ("Sheets", sheets.to_string())] {
+            ui.label(RichText::new(lang.tr(label)).color(t.text_dim));
+            ui.label(value);
+            ui.add_space(10.0);
         }
+        for (i, (key, label)) in PROPERTIES.iter().enumerate() {
+            let (Some(draft), Some(saved)) = (bs.props.get_mut(i), current.get(i)) else { continue };
+            ui.label(RichText::new(lang.tr(label)).color(t.text_dim));
+            let id = ui.make_persistent_id(("backstage_prop", *key));
+            if !ui.ctx().memory(|m| m.has_focus(id)) {
+                draft.clone_from(saved);
+            }
+            let field = egui::TextEdit::singleline(draft).id(id).desired_width(ui.available_width());
+            let resp = ui.add(crate::phone::touch_edit(ui, field));
+            if resp.lost_focus() && draft != saved {
+                let mut params = serde_json::Map::new();
+                params.insert((*key).to_string(), json!(draft.clone()));
+                app.run_or_alert("file.properties", Json::Object(params));
+            }
+            ui.add_space(10.0);
+        }
+        return;
+    }
+    egui::Grid::new("backstage_props").num_columns(2).spacing(vec2(18.0, 8.0)).show(ui, |ui| {
+        ui.label(RichText::new(lang.tr("Location")).color(t.text_dim));
         ui.label(path.as_deref().unwrap_or(lang.tr("Not saved yet")));
         ui.end_row();
         ui.label(RichText::new(lang.tr("Sheets")).color(t.text_dim));
-        if phone {
-            ui.end_row();
-        }
         ui.label(sheets.to_string());
         ui.end_row();
         for (i, (key, label)) in PROPERTIES.iter().enumerate() {
             let (Some(draft), Some(saved)) = (bs.props.get_mut(i), current.get(i)) else { continue };
             ui.label(RichText::new(lang.tr(label)).color(t.text_dim));
-            if phone {
-                ui.end_row();
-            }
             let id = ui.make_persistent_id(("backstage_prop", *key));
             // Show the workbook's value unless the field is being edited (undo, another window).
             if !ui.ctx().memory(|m| m.has_focus(id)) {
                 draft.clone_from(saved);
             }
-            let field = egui::TextEdit::singleline(draft).id(id).desired_width(field_w);
-            let resp = if phone { ui.add(crate::phone::touch_edit(ui, field)) } else { ui.add(field) };
+            let resp = ui.add(egui::TextEdit::singleline(draft).id(id).desired_width(360.0));
             if resp.lost_focus() && draft != saved {
                 let mut params = serde_json::Map::new();
                 params.insert((*key).to_string(), json!(draft.clone()));
@@ -1114,7 +1142,7 @@ fn toggle_row(ui: &mut Ui, t: Tokens, value: &mut bool, text: &str) -> egui::Res
     const SWITCH_W: f32 = 52.0;
     const SWITCH_H: f32 = 32.0;
     // The label wraps before the switch, so a long label never runs under it.
-    let text_w = (ui.available_width() - 16.0 - 16.0 - SWITCH_W - 16.0).max(40.0);
+    let text_w = (ui.available_width() - SWITCH_W - 16.0).max(40.0);
     let galley = ui.painter().layout(text.to_string(), theme::ui_font(16.0), t.text, text_w);
     let height = (galley.size().y + 24.0).max(48.0);
     let (r, mut resp) = ui.allocate_exact_size(vec2(ui.available_width(), height), Sense::click());
@@ -1129,9 +1157,9 @@ fn toggle_row(ui: &mut Ui, t: Tokens, value: &mut bool, text: &str) -> egui::Res
     } else if resp.hovered() {
         ui.painter().rect_filled(r, 0.0, t.hover);
     }
-    ui.painter().galley(pos2(r.left() + 16.0, r.center().y - galley.size().y / 2.0), galley, t.text);
+    ui.painter().galley(pos2(r.left(), r.center().y - galley.size().y / 2.0), galley, t.text);
     let anim = ui.ctx().animate_bool_responsive(resp.id, on);
-    let track = Rect::from_center_size(pos2(r.right() - 16.0 - SWITCH_W / 2.0, r.center().y), vec2(SWITCH_W, SWITCH_H));
+    let track = Rect::from_center_size(pos2(r.right() - SWITCH_W / 2.0, r.center().y), vec2(SWITCH_W, SWITCH_H));
     let (fill, edge, thumb) = if on { (t.accent, t.accent, t.on_accent) } else { (t.input_bg, t.text_dim, t.text_dim) };
     let edge_stroke = if on { Stroke::NONE } else { Stroke::new(2.0, edge) };
     let p = ui.painter();
