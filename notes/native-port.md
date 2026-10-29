@@ -476,3 +476,32 @@ B4 near (275,610).
   - Expected: pinch out on the middle of the grid zooms in and the cell under the midpoint stays put; a pinch
     selects nothing; two quick taps on a cell still edit it.
   - Not verified: this recipe is not run yet; the exact `sendevent` values depend on the device.
+
+## Update 15: Backstage and Options as phone pages
+
+Code: `backstage.rs` (`phone_bar`, `back_button`, `page_body`, `nav_panel`, `options`, `category_row`,
+`toggle_row`), `lib.rs` (`SheetApp::ui` draws the Backstage's own bar on a phone, the File drawer closes with
+it; `open_backstage` resets the Options category), `phone.rs` (`close_file_drawer`). Desktop keeps the 196 pt
+column, the 28 pt page heading, and the one-page Options with checkboxes.
+
+- Phone Backstage: no left column. A 56 pt top bar with a 48 pt Back and the page name. Back returns to the
+  sheet. Pages are full width with 16 pt gutters and 48 pt controls (`phone::touch_style`).
+- Open: a Browse row (56 pt, opens the system picker), then recent files as 48 pt rows.
+- New: blank workbook and the samples as two large tiles across.
+- Info: one column, each label above its field; Protect Workbook is a full-width row.
+- Save As: full-width type list and Browse row. Export: rows as before, full width.
+- Options on a phone: four 48 pt category rows (General, Editing, Save, Formulas) with chevrons. A category
+  opens full width under a "< Options" bar; that bar returns to the list (Back or Escape), and Back from the
+  list returns to the sheet. On/off settings are switch rows (`toggle_row`, copied in look from WordCraft's
+  `phone::toggle_row`); combo boxes are full width at 48 pt.
+- Ceilings: Print (unreachable from the phone's drawer) keeps its desktop side-by-side layout; Account too.
+  Action rows show their detail on one line and can run off the right edge for long text (Protect Workbook).
+  The category page's back is the top bar, not a row in the content.
+- Snapshot: `--dialog 'backstage={"page":"options"}' --category 1` opens a category (0 General, 1 Editing,
+  2 Save, 3 Formulas).
+- Tests: `tests/it/phone_backstage.rs` (Open shows Browse; Options list, category, Back, Back).
+- Checks: `cargo clippy -p gridcraft-ui-egui -p gridcraft-android --all-targets -- -D warnings` clean;
+  `cargo test -q -p gridcraft-ui-egui -p gridcraft-android -- --skip header_autofit` passes; `cargo xtask wasm`
+  passes. `cargo fmt --check` still flags `dialogs.rs` and `apps/gridcraft-android/src/{android,app}.rs`
+  (already unformatted before this change; not touched).
+
