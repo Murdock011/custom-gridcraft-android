@@ -2226,11 +2226,13 @@ fn insert_function(app: &mut SheetApp, ui: &mut egui::Ui, d: &mut Dialog, confir
         })
         .take(300)
         .collect();
+    // Phone: rows fill the sheet width and are 48 pt; desktop keeps the fixed 480 x 20 rows.
+    let (row_w, row_h) = if crate::phone::active(ui.ctx()) { (ui.available_width(), 48.0) } else { (480.0, 20.0) };
     egui::ScrollArea::vertical().max_height(260.0).show(ui, |ui| {
         for (i, f) in hits.iter().enumerate() {
             let name = locale.function_name(f["name"].as_str().unwrap_or(""));
             let category = language.tr(function_category_label(f["category"].as_str().unwrap_or("")));
-            let r = ui.add(egui::Button::selectable(i == d.list_index, format!("{name:<18} {category}")).min_size(vec2(480.0, 20.0)));
+            let r = ui.add(egui::Button::selectable(i == d.list_index, format!("{name:<18} {category}")).min_size(vec2(row_w, row_h)));
             if r.clicked() {
                 d.list_index = i;
             }
