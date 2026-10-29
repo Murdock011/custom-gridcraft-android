@@ -11,7 +11,7 @@
              comes to onNewIntent of this instance instead of starting a second one. -->
         <activity
             android:name="ai.storyteller.gridcraft.nativeapp.MainActivity"
-            android:configChanges="orientation|screenSize|screenLayout|keyboardHidden|keyboard|navigation|uiMode|layoutDirection"
+            android:configChanges="orientation|screenSize|screenLayout|smallestScreenSize|keyboardHidden|keyboard|navigation|uiMode|layoutDirection|fontScale|density|locale|touchscreen|colorMode"
             android:exported="true"
             android:launchMode="singleTask"
             android:windowSoftInputMode="adjustResize|stateAlwaysHidden">

@@ -459,10 +459,18 @@ class MainActivity : GameActivity() {
     }
 
     override fun onDestroy() {
+        // The UI loop ends with the activity. Let the last recovery flush run, then end the process; a new
+        // activity in this process is restarted in a fresh one (onCreate). The kill runs on its own thread:
+        // super.onDestroy() can wait on the native loop, and the main thread is what would post it.
+        Thread {
+            Thread.sleep(300)
+            android.os.Process.killProcess(android.os.Process.myPid())
+        }.start()
         clipboard.removePrimaryClipChangedListener(clipListener)
         handler.removeCallbacks(keyboardPoll)
         super.onDestroy()
     }
+
 
     private fun showKeyboard() {
         pullContext()

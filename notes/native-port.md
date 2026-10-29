@@ -289,3 +289,26 @@ edit. Tests: `tests/it/phone_edit.rs` (✗ cancels without committing; ✓ commi
 - Device check: NOT DONE. The emulator-5554 detached from adb during the run and did not come back
   (not restarted, per the rules). Pending: recovery message, Rename Sheet with the keyboard up,
   Format Cells (Number), Insert Function, Sort.
+
+## Update 11: relaunch in the same process
+
+- Bug: eframe starts its winit event loop once per process. When Android destroyed the activity but kept
+  the process (a font-scale or density change recreates the activity; memory pressure and Recents do the
+  same), the new activity ran `android_main` again, eframe failed with `EventLoop can't be recreated`, and
+  the window stayed black.
+- Repro (x86_64 emulator, `bug1-before.png`): edit A1, then `settings put system font_scale 1.3`. Logcat shows
+  `APP_CMD_DESTROY`, the process stays alive, and the activity is black.
+- Fix, in two parts:
+  - `AndroidManifest.xml`: `configChanges` now also lists `fontScale|density|locale|smallestScreenSize|touchscreen|colorMode`,
+    so these changes are handled in `onConfigurationChanged` and the activity is not recreated.
+  - `MainActivity.kt` `onDestroy`: a background thread ends the process 300 ms later (after the recovery flush).
+    The next launch is a cold start and restores unsaved work from recovery. The kill runs on its own thread
+    because `super.onDestroy()` can wait on the native loop.
+- Device check (`bug1-after.png`): after the font change the grid is drawn, A1 still shows 42 and the title has
+  the unsaved dot. Font scale reset to 1.0 afterwards.
+- Not verified on the device: the destroy path without a configuration change (memory pressure, Recents,
+  "Don't keep activities"). `always_finish_activities` did not destroy the activity on this emulator. The
+  kill-after-destroy code runs there, but its cold-start and recovery restore are unconfirmed.
+- Tried and dropped: relaunching from `onCreate` with an AlarmManager PendingIntent and killing the process. The
+  process died during the activity relaunch and nothing started again, so the window stayed black.
+- Rust is unchanged; `android_main` is not called twice now that the activity is not recreated.
