@@ -263,3 +263,29 @@ edit. Tests: `tests/it/phone_edit.rs` (✗ cancels without committing; ✓ commi
     had `Book1.xlsx`. `run-as ... ls files/recovery` is then empty.
 - Found while testing: the recovery dialog's OK is not in the UI-automator dump (app window only), so it
   was tapped by position. The system picker's SAVE was found in the dump and tapped by its bounds.
+
+## Update 10: dialogs as bottom sheets
+
+- Phone (`phone::active`): every dialog is a bottom sheet, full width, with a title row and Close, a
+  scrolling body in 16 pt gutters, and its buttons pinned at the bottom (48 pt tall, 12 pt above and below).
+  Desktop keeps the floating window and the same body code (`dialogs::show` draws the body once, as a closure).
+- `ok_cancel` (used by most forms) pins Cancel left and OK right. Save changes pins Don't Save, Cancel, Save.
+  Enter presses OK; Escape, Back and Close cancel; a tap on the dimmed screen above the sheet cancels.
+- Message boxes are a bottom sheet with the warning disc and message, and OK pinned (`phone::message_sheet`).
+  The desktop message box is unchanged.
+- Back closes an open dialog or message: `SheetApp::can_go_back` counts them, so the host sends Escape.
+- Single-line dialog text fields are 48 pt tall on the phone (`phone::touch_edit`). Body controls use
+  `phone::touch_style` (48 pt interact size, 16 pt text).
+- Helpers added to `phone.rs` (additive): `dialog_sheet`, `footer`, `footer_row`, `message_sheet`,
+  `touch_style`, `touch_edit`, `TOUCH_H`. The sheet's pinned row is reserved one frame after first use,
+  as in WordCraft's `phone::dialog_sheet`, so a dialog's first frame draws its buttons in the body.
+- Ceilings: the sheet is as tall as its content was last frame (the first frame of a sheet may be full
+  height); DragValue and ComboBox rows use egui sizing, not checked on the device; the keyboard relies on
+  the window's content rect shrinking with the soft keyboard, and the focused field's scroll into view
+  relies on egui's TextEdit scrolling its ScrollArea. Not yet confirmed on the device.
+- Tests: `cargo clippy -p gridcraft-ui-egui -p gridcraft-android` clean;
+  `cargo test -q -p gridcraft-ui-egui -p gridcraft-android -- --skip header_autofit` passes.
+  `build-native.sh x86_64` builds.
+- Device check: NOT DONE. The emulator-5554 detached from adb during the run and did not come back
+  (not restarted, per the rules). Pending: recovery message, Rename Sheet with the keyboard up,
+  Format Cells (Number), Insert Function, Sort.
