@@ -241,7 +241,11 @@ fn page_body(app: &mut SheetApp, ui: &mut Ui, bs: &mut Backstage, out: &mut Outc
 /// The phone's top bar: a Back button and the page's name. Back leaves an open Options category
 /// for its list, and otherwise returns to the sheet.
 fn phone_bar(ui: &mut Ui, bs: &Backstage, lang: Language, t: &Tokens, out: &mut Outcome) {
-    let title = lang.tr(bs.page.label());
+    // An open Options category shows its own name (Editing), and the back arrow returns to the list.
+    let title = match bs.options_category.and_then(|i| OPTION_CATEGORIES.get(i)) {
+        Some((label, _)) if bs.page == Page::Options => lang.tr(label),
+        _ => lang.tr(bs.page.label()),
+    };
     egui::Panel::top("backstage_bar").exact_size(BAR_H).frame(egui::Frame::NONE.fill(t.window).inner_margin(egui::Margin::symmetric(4, 0))).show(
         ui,
         |ui| {
@@ -1094,8 +1098,9 @@ fn options(app: &mut SheetApp, ui: &mut Ui, bs: &mut Backstage) {
         return;
     }
     let ctx = ui.ctx().clone();
-    // Escape (Back) from a category returns to the list; the sheet's own Escape waits for the next press.
-    if !egui::Popup::is_any_open(&ctx) && ctx.input_mut(|i| i.consume_key(Modifiers::NONE, Key::Escape)) {
+    // Escape (Back) from a category returns to the list. From the list Escape is left alone, so `show`
+    // closes the Backstage with it (the same as the top bar's Back).
+    if bs.options_category.is_some() && !egui::Popup::is_any_open(&ctx) && ctx.input_mut(|i| i.consume_key(Modifiers::NONE, Key::Escape)) {
         bs.options_category = None;
     }
     let Some(index) = bs.options_category else {

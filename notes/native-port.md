@@ -505,3 +505,18 @@ column, the 28 pt page heading, and the one-page Options with checkboxes.
   passes. `cargo fmt --check` still flags `dialogs.rs` and `apps/gridcraft-android/src/{android,app}.rs`
   (already unformatted before this change; not touched).
 
+
+### Update 15 follow-up: Back walks out of Options (code and device check)
+
+- Bug: Drawer → Options → Editing, then Android Back twice. Back #1 reached the list; Back #2 did nothing.
+  Root cause: `backstage::options()` called `consume_key(Escape)` on every frame, including the list. `show()`
+  then never saw the Escape that `can_go_back` (which counts an open Backstage) had asked for, so the view stayed.
+  Fix in the shared path: `options()` consumes Escape only while a category is open; from the list `show()`
+  closes the Backstage like the top-bar "‹".
+- The top bar on a category shows the category name (Editing, Save, …); its back arrow returns to the list.
+- Test: `phone_backstage::back_walks_out_of_options_to_the_sheet` (fails on the old code at the sheet assertion).
+- Checks: `cargo clippy -p gridcraft-ui-egui -p gridcraft-android --all-targets -- -D warnings` clean;
+  `cargo test -q -p gridcraft-ui-egui -p gridcraft-android -- --skip header_autofit` passes; `cargo xtask wasm` ok.
+- Device check (x86_64 emulator, 2026-10-30, `bs-*.png` in `~/.cache/gc-spike/`): Options → Editing shows
+  "Editing" in the bar (bs-a-editing); Back returns to the Options list (bs-b-options-list); Back again returns to
+  the sheet with the bottom pill (bs-c-sheet). Drawer → Open → Back returns to the sheet (bs-f-open, bs-g-after-open-back).

@@ -61,3 +61,22 @@ fn options_list_category_and_back_return_step_by_step() {
     h.run_steps(6);
     assert!(h.state().backstage.is_none(), "Back from the list returns to the sheet");
 }
+
+#[test]
+fn back_walks_out_of_options_to_the_sheet() {
+    let mut h = harness();
+    file_row(&mut h, "Options");
+    h.get_by_label("Editing").click();
+    h.run_steps(6);
+    assert!(h.query_all_by_label("Editing").next().is_some(), "the top bar names the category");
+
+    // Android Back (Escape) from the category returns to the list, then Back from the list returns to the sheet.
+    h.key_press(egui::Key::Escape);
+    h.run_steps(6);
+    assert_eq!(h.state().backstage.as_ref().and_then(|b| b.options_category), None, "Back returns to the list");
+    assert!(h.state().backstage.is_some(), "Options stays open");
+
+    h.key_press(egui::Key::Escape);
+    h.run_steps(6);
+    assert!(h.state().backstage.is_none(), "Back from the list returns to the sheet");
+}
