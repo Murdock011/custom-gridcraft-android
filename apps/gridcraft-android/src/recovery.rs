@@ -7,41 +7,10 @@
 
 use std::io;
 use std::path::Path;
-use std::sync::atomic::{AtomicU64, Ordering};
-use std::sync::{Condvar, Mutex};
 use std::time::{Duration, Instant};
 
 /// Edits must stop this long before the recovery copies are written (see `write_due`).
 pub const IDLE: Duration = Duration::from_secs(2);
-
-/// Flush requests from Kotlin: `ASKED` counts them, `DONE` is the last one the UI has written.
-static ASKED: AtomicU64 = AtomicU64::new(0);
-static DONE: Mutex<u64> = Mutex::new(0);
-static DONE_CV: Condvar = Condvar::new();
-
-/// Asks the UI to write the copies now, wakes it with `wake`, and waits up to `timeout` for it.
-/// A UI that never runs a frame (the window is gone) makes this wait the full `timeout`.
-pub fn request_and_wait(timeout: Duration, wake: impl FnOnce()) {
-    let n = ASKED.fetch_add(1, Ordering::SeqCst) + 1;
-    wake();
-    let Ok(done) = DONE.lock() else { return };
-    let _ = DONE_CV.wait_timeout_while(done, timeout, |d| *d < n);
-}
-
-/// The newest flush request not yet written, if any. Pass it to `flush_done` once the copies are written.
-pub fn flush_requested() -> Option<u64> {
-    let asked = ASKED.load(Ordering::SeqCst);
-    let done = DONE.lock().map_or(asked, |d| *d);
-    (asked > done).then_some(asked)
-}
-
-/// Marks the requests up to `n` written and releases the waiting Kotlin thread.
-pub fn flush_done(n: u64) {
-    if let Ok(mut done) = DONE.lock() {
-        *done = (*done).max(n);
-        DONE_CV.notify_all();
-    }
-}
 
 /// Whether the copies should be written now. `state` lists the dirty documents as (uid, revision),
 /// `written` is what the copies on disk hold, and `changed_at` is when `state` last changed.
@@ -135,6 +104,7 @@ fn tidy(s: &str) -> String {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use std::sync::atomic::Ordering;
 
     /// A fresh folder under the system temp dir (the tests share no state).
     fn scratch(tag: &str) -> std::path::PathBuf {
@@ -212,15 +182,6 @@ mod tests {
         assert!(write_due(&[(1, 6)], &dirty, at(10), at(12)), "the newer revision is written after idle");
         assert!(write_due(&[], &dirty, t0, at(2)), "a clean state removes the old copies");
         assert!(!write_due(&[], &[], t0, at(9)), "clean and no copies: nothing to do");
-    }
-
-    #[test]
-    fn a_flush_request_is_pending_until_it_is_done() {
-        // Only this test touches the flush counters, so the state it reads is its own.
-        let n = ASKED.fetch_add(1, Ordering::SeqCst) + 1;
-        assert_eq!(flush_requested(), Some(n));
-        flush_done(n);
-        assert_eq!(flush_requested(), None);
     }
 
     /// Fails the test on an I/O error (the crate's lints forbid `unwrap` and `panic!`, even in tests).

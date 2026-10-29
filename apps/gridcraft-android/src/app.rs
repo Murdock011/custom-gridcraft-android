@@ -2,12 +2,13 @@
 //! picker. Keeps the Android specifics (touch insets, night mode, clipboard) out of the UI crate.
 
 use std::sync::atomic::Ordering;
+use std::sync::{Arc, Mutex};
 use std::time::Instant;
 
 use egui::{Event, Key};
+use gridcraft_engine::model::Workbook;
 use gridcraft_engine::{DocState, Session, Trust, io};
 use gridcraft_ui_egui::{Inbox, Services, SheetApp};
-use std::sync::Arc;
 
 use crate::clip;
 use crate::files;
@@ -22,6 +23,52 @@ const KEYCODE_ENTER: i32 = 66;
 
 /// Most keys one `Delete` message may erase, so a hostile count can't flood the queue.
 const MAX_ERASE: usize = 256;
+
+/// A dirty document as its copy should hold it. The workbook is shared with the document, not copied.
+#[derive(Clone)]
+pub struct Pending {
+    name: String,
+    location: Option<String>,
+    wb: Arc<Workbook>,
+}
+
+/// What the copies should hold, set whenever the dirty documents change. The pause flush (a JNI call,
+/// with no frame to wait for) writes it from its own thread.
+static PENDING: Mutex<Vec<Pending>> = Mutex::new(Vec::new());
+/// Serializes the writes: the timed write and the pause flush may both run.
+static WRITE: Mutex<()> = Mutex::new(());
+
+/// The dirty documents of `session`, as the copies should hold them.
+fn pending_docs(session: &Session) -> Vec<Pending> {
+    session
+        .documents()
+        .iter()
+        .filter(|d| d.is_dirty())
+        .map(|d| Pending {
+            name: d.display_title(),
+            location: d.path.clone().filter(|l| files::parse_location(l).is_some()),
+            wb: d.wb.clone(),
+        })
+        .collect()
+}
+
+/// Writes the pending copies to the recovery folder, from any thread (the pause flush calls it from Java's
+/// thread). Failures are logged; editing carries on.
+pub fn write_pending() {
+    let Some(dir) = recovery::dir() else { return };
+    let _write = WRITE.lock().unwrap_or_else(|e| e.into_inner());
+    let pending = PENDING.lock().unwrap_or_else(|e| e.into_inner()).clone();
+    let mut copies = Vec::new();
+    for p in pending {
+        match io::save_bytes(&p.wb, "recovered.xlsx") {
+            Ok(bytes) => copies.push(recovery::Copy { name: p.name, location: p.location, bytes }),
+            Err(e) => log::warn!("recovery copy of {} not encoded: {e}", p.name),
+        }
+    }
+    if let Err(e) = recovery::save_all(&dir, &copies) {
+        log::warn!("recovery copies not written: {e}");
+    }
+}
 
 pub struct Shell {
     app: SheetApp,
@@ -71,6 +118,7 @@ impl Shell {
             ..Default::default()
         };
         let mut app = SheetApp::new(session, services);
+        *PENDING.lock().unwrap_or_else(|e| e.into_inner()) = pending_docs(&app.session);
         SheetApp::setup_context_for_language(ctx, app.ui.dark, app.ui.language);
         app.after_engine();
         if restored {
@@ -91,32 +139,32 @@ impl Shell {
         }
     }
 
-    /// The dirty documents as (uid, revision): what the recovery copies should hold.
+    /// The dirty documents as (uid, revision).
     fn dirty_state(&self) -> Vec<(u64, u64)> {
         self.app.session.documents().iter().filter(|d| d.is_dirty()).map(|d| (d.uid, d.revision)).collect()
     }
 
-    /// Makes the recovery folder match the dirty documents: a copy for each, none for the rest.
-    /// Runs on a flush request, once edits have paused (`recovery::write_due`), and when a document
-    /// with a copy was saved or closed. Failures are logged; editing carries on.
+    /// Notes each change to the dirty documents. The pending copies are updated at once, so the pause
+    /// flush writes the latest state even when no frame follows the edit. The timed write is scheduled
+    /// for when the edits pause.
+    fn track_recovery(&mut self, ctx: &egui::Context) {
+        #[allow(clippy::disallowed_methods)] // Android only: the clock is there
+        let now = Instant::now();
+        let state = self.dirty_state();
+        if state != self.seen {
+            *PENDING.lock().unwrap_or_else(|e| e.into_inner()) = pending_docs(&self.app.session);
+            self.seen = state;
+            self.changed_at = now;
+        }
+        if self.seen != self.written {
+            ctx.request_repaint_after(recovery::IDLE.saturating_sub(now.saturating_duration_since(self.changed_at)));
+        }
+    }
+
+    /// Writes the pending copies, and records the state they hold.
     fn sync_recovery(&mut self) {
-        let Some(dir) = recovery::dir() else { return };
-        let mut copies = Vec::new();
-        for d in self.app.session.documents().iter().filter(|d| d.is_dirty()) {
-            let bytes = match io::save_bytes(&d.wb, "recovered.xlsx") {
-                Ok(b) => b,
-                Err(e) => {
-                    log::warn!("recovery copy of {} not encoded: {e}", d.display_title());
-                    continue;
-                }
-            };
-            let location = d.path.clone().filter(|l| files::parse_location(l).is_some());
-            copies.push(recovery::Copy { name: d.display_title(), location, bytes });
-        }
-        self.written = self.dirty_state();
-        if let Err(e) = recovery::save_all(&dir, &copies) {
-            log::warn!("recovery copies not written: {e}");
-        }
+        write_pending();
+        self.written = self.seen.clone();
     }
 
     /// A document with a copy is now clean or gone, so its copy is out of date.
@@ -245,25 +293,12 @@ impl eframe::App for Shell {
         for (rev, loc) in files::drain_saved() {
             self.finish_save(rev, &loc);
         }
-        // Recovery copies: written on a flush request (Kotlin waits for it), once edits pause, or when a
-        // copy went stale. Otherwise the frame only compares the dirty state, which is cheap.
+        self.track_recovery(ctx);
+        // Recovery copies: written once edits pause, or when a copy went stale.
         #[allow(clippy::disallowed_methods)] // Android only: the clock is there
         let now = Instant::now();
-        let state = self.dirty_state();
-        if state != self.seen {
-            self.seen = state.clone();
-            self.changed_at = now;
-        }
-        let flush = recovery::flush_requested();
-        let due = recovery::write_due(&state, &self.written, self.changed_at, now);
-        if flush.is_some() || due || self.copy_is_stale() {
+        if recovery::write_due(&self.seen, &self.written, self.changed_at, now) || self.copy_is_stale() {
             self.sync_recovery();
-        } else if state != self.written {
-            // Edits are pending: wake the loop when they have been quiet long enough, even if no input comes.
-            ctx.request_repaint_after(recovery::IDLE.saturating_sub(now.saturating_duration_since(self.changed_at)));
-        }
-        if let Some(n) = flush {
-            recovery::flush_done(n);
         }
     }
 
@@ -297,5 +332,6 @@ impl eframe::App for Shell {
         if let Some(t) = copies.into_iter().last() {
             clip::copied(t);
         }
+        self.track_recovery(ui.ctx());
     }
 }

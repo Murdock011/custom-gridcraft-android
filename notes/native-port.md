@@ -388,22 +388,24 @@ B4 near (275,610).
 ## Update 12: recovery written while editing
 
 - Cause of the lost copy: `onPause`/`onStop` only set a flag, and the copy was written by the next frame. With the
-  window gone no frame runs, so the copy was never written. The 10:51 pass was a race with a frame that happened to run.
+  window gone no frame runs, so nothing was written. The 10:51 pass was a race with a frame that happened to run.
 - Fix, two parts (`recovery.rs`, `app.rs`, `android.rs`, `MainActivity.kt`):
-  - Write while working: each frame compares the dirty documents as (uid, revision). A change restarts a 2 s
-    idle timer (`recovery::write_due`, pure, unit-tested); the frame then writes the copies. `request_repaint_after`
-    wakes the loop when the timer runs out, so an idle window still writes. A background kill loses at most ~2 s.
-  - Pause flush does not depend on a future frame: `nativeFlushRecovery` requests a flush, wakes the UI and waits
-    up to 500 ms for the frame to write (`request_and_wait` / `flush_done`). If the window never draws again, the
-    wait times out and the debounced copy is the fallback.
-  - `onDestroy` now calls `nativeFlushRecovery()` before starting the kill thread (the 300 ms sleep is gone), so the
-    kill is ordered after the flush. Close's path already flushes before its kill.
+  - Write while working: each change to the dirty documents (uid, revision) restarts a 2 s idle timer
+    (`recovery::write_due`, pure, unit-tested). `track_recovery` also keeps the latest state in `app::PENDING`
+    (cheap Arc clones of the workbooks), so the copies' source is current as soon as the edit lands. When the timer
+    runs out, the frame writes the copies; `request_repaint_after` wakes the loop for that.
+  - Pause flush needs no frame: `nativeFlushRecovery` calls `app::write_pending()` on the calling thread. It encodes
+    the pending workbooks and writes them. A `WRITE` lock serializes it with the timed write.
+    (The first try waited up to 500 ms for a frame; the window does not draw while Java's main thread is blocked in
+    onPause, so it always timed out.)
+  - `onDestroy` flushes before the kill thread starts (the 300 ms sleep is gone), so the kill is ordered after the write.
 - Clippy (`-p gridcraft-android -p gridcraft-ui-egui --all-targets`) clean. Host tests pass; `header_autofit` is the known flake.
   `build-native.sh x86_64` builds.
-- Device check, scenario a (x86_64 emulator, 2026-10-30, debug build with temporary logging, since removed):
-  - Type 42 in A1, Enter, wait 4 s in the foreground: `run-as ... ls files/recovery` lists `doc-0.txt` and `doc-0.xlsx`.
-    Logcat shows the idle timer firing at about 2 s (`due=true` at idle 2013 ms), so the debounced copy works.
-  - Home, `am kill`, relaunch: A1 = 42, title `Book1 •`, dialog "Recovered unsaved changes" (`rec2-a.png`).
-  - Earlier "empty folder" result came from an emulator crash (qemu died 00:20), not from the timer.
-- Scenarios b (HOME right after typing) and c (Save clears the copy) are NOT RUN: the emulator dropped off adb again
-  during the reset. The final commit's code is what was built and installed for the scenario a run; the logging was removed afterwards and the tree matches the commit.
+- Device results (x86_64 emulator, 2026-10-30, final build):
+  - a (wait 4 s in the foreground, earlier build): `files/recovery` lists `doc-0.txt`, `doc-0.xlsx`; the timer fires at about 2 s.
+  - b (type 42, Enter, HOME 0.3 s later, `ls` right after HOME, no wait): `doc-0.txt`, `doc-0.xlsx` present. The pause flush writes
+    the copy with no frame. Kill and relaunch: A1 = 42, title `Book1 •` (`recb-3.png`).
+  - c (app-bar Save, system picker, SAVE): "Saved Book1 (2).xlsx", title clean, `ls files/recovery` empty (`recb-c6.png`).
+  - Note: the helper's focus check refuses taps while the system picker has focus. The picker SAVE was sent as raw
+    `adb shell input tap` inside the helper call.
+- Timing: a small workbook encodes and writes well under the 300 ms the Close path waits; no measurement beyond that.
