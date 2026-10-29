@@ -187,12 +187,9 @@ pub fn show(app: &mut SheetApp, ui: &mut Ui) {
                     out.page = Some(page);
                 }
             }
-            if nav_item(ui, Icon::Close, lang.tr("Close"), false, nav_text, nav_sel).clicked() {
+            if nav_item(ui, Icon::Close, lang.tr("Close"), false, nav_text, nav_sel).clicked() && app.close_file(ui.ctx()) {
                 // A cell still being edited is part of the workbook; Close keeps the unsaved prompt.
-                if app.commit_edit(0, 0, false, false) {
-                    app.run_or_alert("file.close", json!({}));
-                    out.close = true;
-                }
+                out.close = true;
             }
             // Bottom up: Account sits just above Options, as in Excel.
             ui.with_layout(egui::Layout::bottom_up(egui::Align::Min), |ui| {

@@ -224,6 +224,9 @@ pub struct Services {
     /// Web: hand PDF bytes to the browser's print flow directly (no download,
     /// no intermediate file) — opens the system print dialog on that PDF.
     pub print: Option<Box<dyn Fn(&[u8])>>,
+    /// Android: the window is the app. File › Close and Back with unsaved work ask about it, then end the
+    /// app (`SheetApp::quit_requested`) instead of closing one workbook.
+    pub close_quits: bool,
 }
 
 /// Shared queue of files read asynchronously (browser file picker, drag and drop).
@@ -319,6 +322,11 @@ pub struct SheetApp {
     /// Every unsaved workbook has been answered for quitting (or `app.quit` asked): the next
     /// window close goes through.
     pub allow_close: bool,
+    /// Every workbook is answered for and the window may close: the host ends the app (see `continue_quit`).
+    pub quit_requested: bool,
+    /// Android: the revision whose save was asked for by the Save changes prompt or File › Close. When that
+    /// save writes the workbook, the workbook closes and the app goes on to quit (see `save_finished`).
+    pub(crate) close_after_save: Option<u64>,
 }
 
 impl SheetApp {
@@ -365,6 +373,8 @@ impl SheetApp {
             tab_run: None,
             started: now_ms(),
             allow_close: false,
+            quit_requested: false,
+            close_after_save: None,
         }
     }
 
@@ -1177,6 +1187,7 @@ impl SheetApp {
             }
             None => {
                 self.allow_close = true;
+                self.quit_requested = true;
                 ctx.send_viewport_cmd(egui::ViewportCommand::Close);
             }
         }
@@ -1304,19 +1315,49 @@ impl SheetApp {
         self.ui.autosave = !self.ui.autosave;
     }
 
-    /// Lays out the whole window.
     /// Whether Android Back has something open to close first: a phone sheet or its palette, a dialog
-    /// or message (both bottom sheets on the phone), or the Backstage. The host calls this each frame
-    /// and closes the innermost part on Back.
+    /// or message (both bottom sheets on the phone), the File drawer, or the Backstage. The host calls
+    /// this each frame and closes the innermost part on Back. With unsaved work (Android) Back also
+    /// counts: with nothing else open it asks about the work (see `ui`).
     pub fn can_go_back(&self, ctx: &egui::Context) -> bool {
+        self.something_open(ctx) || self.leaves_with_prompt()
+    }
+
+    fn something_open(&self, ctx: &egui::Context) -> bool {
         self.backstage.is_some() || self.editor.is_some() || self.dialog.is_some() || self.message.is_some() || phone::can_go_back(ctx)
     }
 
-    /// File › Close: commits the cell being edited, then closes the active workbook (asking first
-    /// when it has unsaved changes).
-    pub(crate) fn close_file(&mut self) {
-        if self.commit_edit(0, 0, false, false) {
+    /// Android: leaving the app would lose unsaved work, so Back asks first.
+    fn leaves_with_prompt(&self) -> bool {
+        self.services.close_quits && self.session.documents().iter().any(|d| d.is_dirty())
+    }
+
+    /// File › Close: commits the cell being edited, then closes the active workbook, asking first when it
+    /// has unsaved changes. On Android (`close_quits`) the app ends once every workbook is answered for.
+    /// False when the cell being edited could not be committed.
+    pub(crate) fn close_file(&mut self, ctx: &egui::Context) -> bool {
+        if !self.commit_edit(0, 0, false, false) {
+            return false;
+        }
+        if self.services.close_quits {
+            self.continue_quit(ctx);
+        } else {
             self.run_or_alert("file.close", json!({}));
+        }
+        true
+    }
+
+    /// Android: a save of revision `rev` ended. `saved` says it wrote the workbook, which is clean now.
+    /// If the Save changes prompt or File › Close asked for that save, the workbook closes and the app
+    /// goes on to quit (or asks about the next unsaved workbook). A cancelled save leaves it open.
+    pub fn save_finished(&mut self, ctx: &egui::Context, rev: u64, saved: bool) {
+        if self.close_after_save != Some(rev) {
+            return;
+        }
+        self.close_after_save = None;
+        if saved {
+            self.run_or_alert("file.close", json!({"force": true}));
+            self.continue_quit(ctx);
         }
     }
 
@@ -1326,6 +1367,10 @@ impl SheetApp {
         if !self.fonts_ready || self.fonts_rebind {
             ctx.request_repaint();
             return;
+        }
+        // Android Back with nothing open and unsaved work: the Save changes prompt, then the app ends.
+        if self.leaves_with_prompt() && !self.something_open(&ctx) && ctx.input_mut(|i| i.consume_key(egui::Modifiers::NONE, egui::Key::Escape)) {
+            self.continue_quit(&ctx);
         }
         let t0 = now_ms();
         text_box::before_ui(self, &ctx);

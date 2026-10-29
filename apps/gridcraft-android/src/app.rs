@@ -115,6 +115,7 @@ impl Shell {
             download: Some(Box::new(|name: &str, bytes: &[u8]| files::save_as(name, bytes))),
             save_in_place: Some(Box::new(|loc: &str, bytes: &[u8]| files::save_in_place(loc, bytes))),
             paste_text: Some(Box::new(clip::text)),
+            close_quits: true,
             ..Default::default()
         };
         let mut app = SheetApp::new(session, services);
@@ -188,7 +189,13 @@ impl Shell {
     /// A save of revision `rev` to `loc` succeeded: if the active workbook is still that revision,
     /// it is clean now (the title drops "Edited", as after a desktop save) and lives at `loc`.
     /// Edits made since the save was asked for leave it dirty.
-    fn finish_save(&mut self, rev: u64, loc: &str) {
+    /// `outcome` is None when the save was cancelled or failed; otherwise the document's new location
+    /// (empty when it has none). The app is told whether the workbook was written (`save_finished`).
+    fn finish_save(&mut self, ctx: &egui::Context, rev: u64, outcome: Option<String>) {
+        let Some(loc) = outcome else {
+            self.app.save_finished(ctx, rev, false);
+            return;
+        };
         let saved = match self.app.session.active_mut() {
             Some(d) if d.revision == rev => {
                 d.saved = d.wb.clone();
@@ -197,8 +204,9 @@ impl Shell {
             _ => false,
         };
         if saved {
-            self.adopt(loc);
+            self.adopt(&loc);
         }
+        self.app.save_finished(ctx, rev, saved);
     }
 
     /// Turns the keyboard's messages into egui events for the next frame.
@@ -290,8 +298,8 @@ impl eframe::App for Shell {
         {
             self.adopt(&loc);
         }
-        for (rev, loc) in files::drain_saved() {
-            self.finish_save(rev, &loc);
+        for (rev, outcome) in files::drain_saved() {
+            self.finish_save(ctx, rev, outcome);
         }
         self.track_recovery(ctx);
         // Recovery copies: written once edits pause, or when a copy went stale.
@@ -333,5 +341,7 @@ impl eframe::App for Shell {
             clip::copied(t);
         }
         self.track_recovery(ui.ctx());
+        // Last, after the recovery state: the host ends the app once the copies can no longer hold a closed workbook.
+        ime::QUIT.store(self.app.quit_requested, Ordering::Relaxed);
     }
 }

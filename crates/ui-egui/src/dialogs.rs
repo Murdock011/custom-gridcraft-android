@@ -1478,6 +1478,9 @@ pub fn show(app: &mut SheetApp, ctx: &egui::Context) {
                                 if quitting {
                                     app.continue_quit(ui.ctx());
                                 }
+                            } else if quitting && app.services.close_quits {
+                                // Android: the save is the system's dialog and answers later (`save_finished`).
+                                app.close_after_save = app.session.active().map(|x| x.revision);
                             }
                             open = false;
                         }

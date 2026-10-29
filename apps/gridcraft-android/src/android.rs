@@ -87,14 +87,14 @@ pub extern "system" fn Java_ai_storyteller_gridcraft_nativeapp_MainActivity_nati
     ime::WANTS_KEYBOARD.load(Ordering::Relaxed) as jboolean
 }
 
-/// Whether Close asked to end the app. GridCraft has no unsaved-changes prompt on Android yet.
+/// Whether Close asked to end the app (see `ime::QUIT`). Unsaved work was answered for first.
 #[allow(unsafe_code)]
 #[unsafe(no_mangle)]
 pub extern "system" fn Java_ai_storyteller_gridcraft_nativeapp_MainActivity_nativeQuitRequested<'local>(
     _env: EnvUnowned<'local>,
     _this: JObject<'local>,
 ) -> jboolean {
-    false as jboolean
+    ime::QUIT.load(Ordering::Relaxed) as jboolean
 }
 
 /// Whether Android Back has a sheet, palette or Backstage to close. Kotlin sends Escape then.

@@ -364,7 +364,7 @@ pub fn top_bar(app: &mut SheetApp, ui: &mut Ui) {
 }
 
 /// Runs a File drawer row. The drawer closes first (see `file_drawer`).
-fn run_file_row(app: &mut SheetApp, row: FileRow) {
+fn run_file_row(app: &mut SheetApp, ctx: &Context, row: FileRow) {
     match row {
         FileRow::Page(page) => app.open_backstage(page),
         FileRow::Save => {
@@ -377,7 +377,9 @@ fn run_file_row(app: &mut SheetApp, row: FileRow) {
                 app.run_or_alert("file.saveAs", json!({}));
             }
         }
-        FileRow::Close => app.close_file(),
+        FileRow::Close => {
+            app.close_file(ctx);
+        }
     }
 }
 
@@ -423,7 +425,7 @@ fn file_drawer(app: &mut SheetApp, ctx: &Context) {
                 ui.painter().text(Pos2::new(pill.left() + 56.0, pill.center().y), Align2::LEFT_CENTER, lang.tr(label), font, t.text);
                 if resp.clicked() {
                     set_drawer(ctx, false);
-                    run_file_row(app, row);
+                    run_file_row(app, ctx, row);
                 }
             }
         });

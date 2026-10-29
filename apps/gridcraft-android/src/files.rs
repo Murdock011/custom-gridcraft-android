@@ -29,7 +29,7 @@ static FLIGHTS: Mutex<Vec<Flight>> = Mutex::new(Vec::new());
 static OPENED: Mutex<Vec<(String, String)>> = Mutex::new(Vec::new());
 /// Successful workbook saves: (the workbook revision that was saved, the document's location).
 /// The app marks that revision clean and adopts the location (plain Save writes there next time).
-static SAVED: Mutex<Vec<(u64, String)>> = Mutex::new(Vec::new());
+static SAVED: Mutex<Vec<(u64, Option<String>)>> = Mutex::new(Vec::new());
 /// The active workbook's revision at the start of this frame; a save queued now saves that state.
 static SAVE_REV: AtomicU64 = AtomicU64::new(0);
 /// Messages for the status line.
@@ -137,15 +137,22 @@ pub fn save_in_place(loc: &str, bytes: &[u8]) -> bool {
 pub fn save_done(ticket: u64, status: i32, msg: String, display: String) {
     let flight = FLIGHTS.lock().ok().and_then(|mut f| f.iter().position(|x| x.ticket == ticket).map(|i| f.swap_remove(i)));
     let Some(flight) = flight else { return };
-    match status {
+    // The revision's outcome for the app: the document's location when saved (empty when it has none),
+    // None when cancelled or failed (`app::Shell::finish_save`).
+    let outcome = match status {
         1 => {
             notice(format!("Saved {display}"));
-            if flight.adopt && !msg.is_empty() && let Ok(mut s) = SAVED.lock() {
-                s.push((flight.rev, location(&msg, &display)));
-            }
+            let loc = if flight.adopt && !msg.is_empty() { location(&msg, &display) } else { String::new() };
+            Some(loc)
         }
-        0 => {}
-        _ => notice(format!("Couldn't save {}: {msg}", flight.name)),
+        0 => None,
+        _ => {
+            notice(format!("Couldn't save {}: {msg}", flight.name));
+            None
+        }
+    };
+    if let Ok(mut s) = SAVED.lock() {
+        s.push((flight.rev, outcome));
     }
     crate::ime::wake();
 }
@@ -171,7 +178,7 @@ pub fn drain_notices() -> Vec<String> {
 }
 
 /// Successful saves since the last call: (revision saved, location).
-pub fn drain_saved() -> Vec<(u64, String)> {
+pub fn drain_saved() -> Vec<(u64, Option<String>)> {
     SAVED.lock().map(|mut s| s.drain(..).collect()).unwrap_or_default()
 }
 
