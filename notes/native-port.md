@@ -84,6 +84,7 @@ ribbon, title bar and status bar. Code: `crates/ui-egui/src/phone.rs`; hooks in 
   phone.
 - `header_autofit::table_filter_autofit_works_through_command_and_header_double_click` fails
   intermittently on the base commit too (pre-existing, not from the phone change).
+
 ## Update 2: system save dialog
 
 - Save As (`Services::download`) now queues a SAF create-document request (`ACTION_CREATE_DOCUMENT`,
@@ -111,3 +112,24 @@ for `gridcraft-android`, the host tests for `files` and `clip`, and the x86_64 d
 Also checked: `cargo xtask wasm` passes (own target dir). Still to do on a device: Save As to a new
 file, Save back to a picked file (title loses "Edited"), Cancel in the dialog, a read-only provider,
 and a non-xlsx open followed by Save.
+
+## Update 3: Back, fonts, save check
+
+- Android Back: `nativeCanGoBack` returns `ime::CAN_GO_BACK`, set each frame from `SheetApp::can_go_back`.
+  Kotlin sends Escape when it is true, so Back closes the open sheet or palette first and otherwise
+  leaves as before. Checked on the emulator: the Home sheet closed on Back and the app stayed focused.
+- Floating tab bar: the launch screen shows no black strip behind it.
+- Save As: File, then Save As, then Download (.xlsx) opens the system save dialog (`Book1.xlsx`). Tapping
+  Save writes the file, shows "Saved Book1.xlsx", and the title loses the unsaved dot. No panic in logcat.
+- Bold: NOT fixed. Root cause found in part: `candidates()` in `theme.rs` listed only desktop font
+  files (Carlito, Liberation, DejaVu, Calibri, Arial), so on Android the cell-bold role had no file and
+  fell back to the regular face. Android now uses `/system/fonts/DroidSans(-Bold).ttf`, and
+  `system_font_dirs` includes `/system/fonts`. On the device the bold chain is `sys-cell-bold`, so the
+  font is registered, yet A1 still renders the same pixels after Bold. `home.bold` with empty params
+  returns Ok, so the style change happens somewhere else. Next: check the cell style after Bold (a log in
+  `apply_style` or a unit test of `home.bold` on a SheetApp selection), and check whether the grid
+  caches its galleys across the style change.
+- Typing into the emulator is lossy (a `Hello` entered as `HI`, and later `Hllo`). Recheck the IME path
+  before trusting typed text in screenshots.
+- `header_autofit::table_filter_autofit_works_through_command_and_header_double_click` fails
+  intermittently (pre-existing).
