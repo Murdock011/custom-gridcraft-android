@@ -130,11 +130,10 @@ pub fn save_as(name: &str, bytes: &[u8]) {
     queue(line, Flight { ticket, name: name.to_string(), rev, adopt: keeps_location(name) });
 }
 
-/// Plain Save of a picked document: writes `bytes` over `loc`. Returns `false` when `loc` is not a
-/// content location, so the caller can fall back to the engine's own Save.
-pub fn save_in_place(loc: &str, bytes: &[u8]) -> bool {
+/// Plain Save of a picked document: writes `bytes` (the workbook at revision `rev`) over `loc`. Returns
+/// `false` when `loc` is not a content location, so the caller can fall back to the engine's own Save.
+pub fn save_in_place(loc: &str, bytes: &[u8], rev: u64) -> bool {
     let Some((uri, name)) = parse_location(loc) else { return false };
-    let rev = SAVE_REV.load(Ordering::Relaxed);
     let Some((ticket, path)) = stage(name, bytes) else {
         not_staged(rev);
         return true;
@@ -235,7 +234,7 @@ mod tests {
         // (a None outcome clears "close after save"), or a later plain Save could close the app.
         let rev = SAVE_REV.load(Ordering::Relaxed);
         save_as("Book1.xlsx", b"x");
-        assert!(save_in_place("content://d/u/Book1.xlsx", b"x"));
+        assert!(save_in_place("content://d/u/Book1.xlsx", b"x", rev));
         assert_eq!(drain_saved(), vec![(rev, None), (rev, None)], "a save that cannot be staged reports as failed");
         let (ok, ex) = (7_000_001, 7_000_002);
         queue("save".into(), Flight { ticket: ok, name: "Book1.xlsx".into(), rev: 5, adopt: keeps_location("Book1.xlsx") });

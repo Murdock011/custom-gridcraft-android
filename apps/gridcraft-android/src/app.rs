@@ -113,7 +113,7 @@ impl Shell {
             open_async: Some(Box::new(files::request_open)),
             inbox: Some(inbox.clone()),
             download: Some(Box::new(|name: &str, bytes: &[u8]| files::save_as(name, bytes))),
-            save_in_place: Some(Box::new(|loc: &str, bytes: &[u8]| files::save_in_place(loc, bytes))),
+            save_in_place: Some(Box::new(|loc: &str, bytes: &[u8], rev: u64| files::save_in_place(loc, bytes, rev))),
             paste_text: Some(Box::new(clip::text)),
             close_quits: true,
             ..Default::default()
