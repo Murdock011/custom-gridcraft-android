@@ -264,6 +264,35 @@ edit. Tests: `tests/it/phone_edit.rs` (✗ cancels without committing; ✓ commi
 - Found while testing: the recovery dialog's OK is not in the UI-automator dump (app window only), so it
   was tapped by position. The system picker's SAVE was found in the dump and tapped by its bounds.
 
+## Update 9: selection handles and long-press actions (device check pending)
+
+Code: `phone.rs` (`touch_gestures`, `action_bar`, `handle_range`), called from `grid::show` after the
+grid is painted and before its own input (`grid.rs`). `grid::scroll_by` is now `pub(crate)` for the
+handles' edge scroll.
+
+- Handles: when the phone has a selection, a 12 pt dot at the top-left and bottom-right corners, each
+  with a 44 pt touch area. Dragging one moves that corner and snaps to cells; the opposite corner stays
+  (`handle_range`). Near a cell edge the grid auto-scrolls. Dragging elsewhere still pans the grid.
+- Long press: a press held 500 ms without moving on a cell selects that cell (a press inside the current
+  area keeps it) and opens the action bar. The bar sits above the selection, or below it when there is no
+  room. Its buttons, in a horizontal scroll: Cut, Copy, Paste, Clear, Fill Down, Insert… and Delete…
+  (`edit.clearContents`, `edit.fillDown`, and the `insertCells` and `deleteCells` dialogs, which the
+  ribbon uses). A tap on an action runs it and closes the bar. A tap outside or Back closes it.
+- Tests: `tests/it/phone_touch.rs` (Clear clears, Delete opens its dialog, Copy fills the clipboard) and
+  unit tests of `handle_range` in `phone.rs`. The handle drag and the long-press timer are not covered by
+  kittest; check them on the device.
+- Snapshots: `~/.cache/gc-spike/sel-a-range-handles.png` (A1:B4 with handles) and
+  `~/.cache/gc-spike/sel-b-action-bar.png` (the bar open). `snapshot --phone-sheet actionbar` opens it.
+- Checks: `cargo clippy -p gridcraft-ui-egui --all-targets` clean; `cargo test -p gridcraft-ui-egui` passes
+  except the known `header_autofit` flake.
+
+Emulator recipe (not run here, another agent had the device): a 1080x2400 screen, cell A1 near (140,487),
+B4 near (275,610).
+1. Tap A1, then drag the top-left handle down-right: the area follows the finger, the bar is closed.
+2. Long-press B4 for about 600 ms: the bar opens below or above the area; Clear empties the area.
+3. Drag the bottom-right handle past the screen's bottom edge: the grid scrolls.
+4. Tap outside the bar, then Back: the bar closes and the app stays open.
+
 ## Update 10: dialogs as bottom sheets
 
 - Phone (`phone::active`): every dialog is a bottom sheet, full width, with a title row and Close, a
@@ -290,6 +319,21 @@ edit. Tests: `tests/it/phone_edit.rs` (✗ cancels without committing; ✓ commi
   (not restarted, per the rules). Pending: recovery message, Rename Sheet with the keyboard up,
   Format Cells (Number), Insert Function, Sort.
 
+### Update 10 device results (x86_64 emulator, 2026-10-29)
+
+- Recovery message: a bottom sheet with the warning disc and OK pinned full width (`dlg-recovery.png`). Passed.
+- Rename Sheet (sheet pill, then the sheet's options, then Rename): the sheet stays above the keyboard while typing
+  "Budget" and the field is 48 pt tall (`dlg-rename-kb.png`). The Cancel and OK buttons are about 46 pt tall on the
+  emulator, just under 48 pt: not fixed yet.
+- Format Cells: the tab row and the Number category overflowed the right edge (`dlg-format-cells.png`). Fixed:
+  the tab row scrolls sideways, the preset format buttons wrap, and the category and tab rows are 48 pt on the phone
+  (`dlg-format-cells2.png`). Commit a22880d2.
+- Insert Function: the rows were a fixed 480 pt wide and ran past the sheet. Fixed: rows fill the sheet width and are
+  48 pt tall (`dlg-insert-function2.png`). Commit 0b28bef9. The keyboard's number row shows above the search field.
+- Back: the first Back press with the keyboard up hid the keyboard; a later Back closed the dialog. A further Back left
+  the app to the home screen, which is expected with no dialog open.
+- Not done: Sort (the Data tab was covered by the Formula Builder during the run, and the sort commands have no dialog
+  to check on the phone yet).
 ## Update 11: relaunch in the same process
 
 - Bug: eframe starts its winit event loop once per process. When Android destroyed the activity but kept
@@ -312,19 +356,3 @@ edit. Tests: `tests/it/phone_edit.rs` (✗ cancels without committing; ✓ commi
 - Tried and dropped: relaunching from `onCreate` with an AlarmManager PendingIntent and killing the process. The
   process died during the activity relaunch and nothing started again, so the window stayed black.
 - Rust is unchanged; `android_main` is not called twice now that the activity is not recreated.
-
-### Update 10 device results (x86_64 emulator, 2026-10-29)
-
-- Recovery message: a bottom sheet with the warning disc and OK pinned full width (`dlg-recovery.png`). Passed.
-- Rename Sheet (sheet pill, then the sheet's options, then Rename): the sheet stays above the keyboard while typing
-  "Budget" and the field is 48 pt tall (`dlg-rename-kb.png`). The Cancel and OK buttons are about 46 pt tall on the
-  emulator, just under 48 pt: not fixed yet.
-- Format Cells: the tab row and the Number category overflowed the right edge (`dlg-format-cells.png`). Fixed:
-  the tab row scrolls sideways, the preset format buttons wrap, and the category and tab rows are 48 pt on the phone
-  (`dlg-format-cells2.png`). Commit a22880d2.
-- Insert Function: the rows were a fixed 480 pt wide and ran past the sheet. Fixed: rows fill the sheet width and are
-  48 pt tall (`dlg-insert-function2.png`). Commit 0b28bef9. The keyboard's number row shows above the search field.
-- Back: the first Back press with the keyboard up hid the keyboard; a later Back closed the dialog. A further Back left
-  the app to the home screen, which is expected with no dialog open.
-- Not done: Sort (the Data tab was covered by the Formula Builder during the run, and the sort commands have no dialog
-  to check on the phone yet).

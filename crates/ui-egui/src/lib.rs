@@ -34,6 +34,10 @@ mod phone;
 pub fn open_phone_sheet(ctx: &egui::Context, which: &str) {
     phone::open_by_name(ctx, which);
 }
+/// Whether the phone's action bar (opened by a long press on a cell) is open.
+pub fn phone_action_bar_open(ctx: &egui::Context) -> bool {
+    phone::action_bar_open(ctx)
+}
 pub mod pivot_pane;
 pub mod printing;
 pub mod ribbon;

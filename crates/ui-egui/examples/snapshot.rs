@@ -2,7 +2,7 @@
 //!
 //! `cargo run --release -p gridcraft-ui-egui --example snapshot -- [--sample sales] [--in file.xlsx]
 //!  [--size 1440x900] [--scale 2] [--cmd 'id={json}']... [--tab Insert] [--dark] [--language en|es|zh|ja|ko|ru|pt|de|cs|fr|tr]
-//!  [--dialog 'name={json}'] [--hf-edit header|footer] [--phone-sheet sheets|more|Home|actions:N] out.png`
+//!  [--dialog 'name={json}'] [--hf-edit header|footer] [--phone-sheet sheets|more|Home|actions:N|actionbar] out.png`
 //!
 //! `--size 412x915 --scale 2.625` renders the phone layout (the window is under 600 pt wide).
 
