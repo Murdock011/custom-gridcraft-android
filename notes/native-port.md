@@ -198,6 +198,6 @@ Checked on the emulator (x86_64 debug build, emulator-5554, 2026-10-29), no fixe
 - Tapping the Sheet1 row switches back; the pill shows "Sheet1" (pill-dev-4).
 - ⋯ on Sheet1 opens Rename/Duplicate/Delete (pill-dev-5); Rename opens the "Rename Sheet" dialog (pill-dev-5b).
 - Cancel closes the dialog and also closes the Sheets list, returning to the grid. The list does not
-  stay open under the dialog (pill-dev-5c). Desktop and phone both route Cancel to the grid.
+  stay open under the dialog (pill-dev-5c).
 - Back with the Sheets list open closes it; the app stays focused (pill-dev-6).
 - `logcat -d` has no panic or FATAL lines.
