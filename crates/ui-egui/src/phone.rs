@@ -299,7 +299,7 @@ const FILE_ROWS: [(&str, Icon, FileRow); 9] = [
     ("Open", Icon::OpenFolder, FileRow::Page(Page::Open)),
     ("Info", Icon::Info, FileRow::Page(Page::Info)),
     ("Save", Icon::Save, FileRow::Save),
-    ("Save As", Icon::Folder, FileRow::SaveAs),
+    ("Save As", Icon::SaveAs, FileRow::SaveAs),
     ("Export", Icon::Share, FileRow::Page(Page::Export)),
     ("Options", Icon::Settings, FileRow::Page(Page::Options)),
     ("Close", Icon::Close, FileRow::Close),

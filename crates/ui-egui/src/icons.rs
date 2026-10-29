@@ -55,6 +55,8 @@ pub enum Icon {
     Undo,
     Redo,
     Save,
+    /// Save As: the Save disk with a pen (line art).
+    SaveAs,
     Home,
     More,
     Chevron,
@@ -452,6 +454,13 @@ fn paint_with(p: &Painter, rect: Rect, icon: Icon, c: Color32, pal: &Palette) {
             g.rect(2.5, 2.5, 11.0, 11.0, None, Some(c));
             g.rect(5.0, 2.5, 6.0, 4.0, None, Some(c));
             g.rect(4.5, 9.0, 7.0, 4.5, None, Some(c));
+        }
+        // Save As: the Save disk with a pen writing on its label, line art in the text colour.
+        Icon::SaveAs => {
+            g.rect(2.5, 2.5, 9.5, 11.0, None, Some(c));
+            g.rect(5.0, 2.5, 5.0, 4.0, None, Some(c));
+            g.rect(4.5, 9.0, 5.5, 4.5, None, Some(c));
+            g.line(&[(9.5, 13.5), (14.0, 9.0), (15.0, 10.0), (10.5, 14.5), (9.5, 14.5), (9.5, 13.5)], c, 1.0);
         }
         Icon::Home => {
             g.line(&[(2.0, 8.0), (8.0, 2.5), (14.0, 8.0)], c, 1.2);

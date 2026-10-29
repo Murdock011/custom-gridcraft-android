@@ -113,11 +113,20 @@ fn queue(line: String, flight: Flight) {
     crate::ime::wake();
 }
 
+/// Reports a save of revision `rev` that never reached Kotlin as failed, so the app drops any
+/// "close after save" it was waiting for (`app::Shell::finish_save`).
+fn not_staged(rev: u64) {
+    if let Ok(mut s) = SAVED.lock() {
+        s.push((rev, None));
+    }
+    crate::ime::wake();
+}
+
 /// Save As: the system dialog creates a document named `name` holding `bytes`.
 pub fn save_as(name: &str, bytes: &[u8]) {
-    let Some((ticket, path)) = stage(name, bytes) else { return };
-    let line = format!("save\t{ticket}\t{}\t{path}", tidy(name));
     let rev = SAVE_REV.load(Ordering::Relaxed);
+    let Some((ticket, path)) = stage(name, bytes) else { return not_staged(rev) };
+    let line = format!("save\t{ticket}\t{}\t{path}", tidy(name));
     queue(line, Flight { ticket, name: name.to_string(), rev, adopt: keeps_location(name) });
 }
 
@@ -125,9 +134,12 @@ pub fn save_as(name: &str, bytes: &[u8]) {
 /// content location, so the caller can fall back to the engine's own Save.
 pub fn save_in_place(loc: &str, bytes: &[u8]) -> bool {
     let Some((uri, name)) = parse_location(loc) else { return false };
-    let Some((ticket, path)) = stage(name, bytes) else { return true };
-    let line = format!("write\t{ticket}\t{uri}\t{path}");
     let rev = SAVE_REV.load(Ordering::Relaxed);
+    let Some((ticket, path)) = stage(name, bytes) else {
+        not_staged(rev);
+        return true;
+    };
+    let line = format!("write\t{ticket}\t{uri}\t{path}");
     queue(line, Flight { ticket, name: name.to_string(), rev, adopt: true });
     true
 }
@@ -218,6 +230,13 @@ mod tests {
 
     #[test]
     fn a_save_as_of_a_workbook_is_adopted_and_an_export_is_not() {
+        // One test owns the saved queue, so the parallel test runner cannot drain it under us.
+        // No storage folder is set in tests, so staging fails: the app must hear that the save ended
+        // (a None outcome clears "close after save"), or a later plain Save could close the app.
+        let rev = SAVE_REV.load(Ordering::Relaxed);
+        save_as("Book1.xlsx", b"x");
+        assert!(save_in_place("content://d/u/Book1.xlsx", b"x"));
+        assert_eq!(drain_saved(), vec![(rev, None), (rev, None)], "a save that cannot be staged reports as failed");
         let (ok, ex) = (7_000_001, 7_000_002);
         queue("save".into(), Flight { ticket: ok, name: "Book1.xlsx".into(), rev: 5, adopt: keeps_location("Book1.xlsx") });
         queue("save".into(), Flight { ticket: ex, name: "Book1.csv".into(), rev: 5, adopt: keeps_location("Book1.csv") });
