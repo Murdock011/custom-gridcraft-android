@@ -48,11 +48,16 @@ far. When a release is made it will be on the
 - Opening spreadsheets through the system file picker (.xlsx, .xlsm, .xls, .xlsb, .ods, .csv,
   .txt). Not yet tested on a device.
 - Bold text, and typing with the on-screen keyboard (checked on the emulator).
+- Touch editing: one tap selects a cell, a double tap (or the formula bar) edits it, with large
+  cancel and confirm buttons above the keyboard; the edited cell stays visible.
+- Unsaved work survives Android closing the app in the background: it is reopened on the next
+  launch with a "Recovered unsaved changes" message.
 
 ## Known gaps
 
 - The keyboard doesn't move the tab bar or sheets out of the way yet.
-- No recovery of unsaved work if Android closes the app, and no unsaved-changes prompt on Back.
+- No unsaved-changes prompt on Back yet.
+- Messages and dialogs still use the small desktop style.
 - The app icon is a placeholder.
 - Not yet tried on a real phone.
 
