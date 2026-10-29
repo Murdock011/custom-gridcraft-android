@@ -201,3 +201,31 @@ Checked on the emulator (x86_64 debug build, emulator-5554, 2026-10-29), no fixe
   stay open under the dialog (pill-dev-5c).
 - Back with the Sheets list open closes it; the app stays focused (pill-dev-6).
 - `logcat -d` has no panic or FATAL lines.
+
+## Update 7: touch cell editing
+
+Before (x86_64 debug build, emulator-5554, 2026-10-29, `edit-before-*.png`):
+- Single tap on a cell selects it; no keyboard (`edit-before-1-single-tap.png`).
+- Formula bar tap opens the keyboard; the pill stays drawn above it (`edit-before-2-formulabar-tap.png`).
+- Two quick taps on a cell did not start an edit in two tries (`edit-before-3-double-tap.png`,
+  `edit-before-5-double-tap-b3.png`). Cause not found; the grid's existing 450 ms double-click rule is unchanged.
+- Typing starts an edit and shows the keyboard; the edited cell stays visible, the pill is still drawn
+  above the keyboard (`edit-before-4-typed.png`).
+
+After (`edit-after-*.png`):
+- Single tap selects, no keyboard (`edit-after-1-single-tap.png`).
+- Double tap starts the edit: the keyboard opens, the pill is hidden, and a 56 pt edit bar sits directly
+  above the keyboard with a red ✗ at the left and a green ✓ at the right, both 48 pt
+  (`edit-after-2-double-tap.png`).
+- Typing "123" into B3 shows in the cell (`edit-after-3-typed.png`); ✓ commits, moves to B4, closes the
+  keyboard and brings the pill back (`edit-after-4-confirmed.png`).
+- Row 30 (B30): the grid scrolls so the cell sits above the edit bar and keyboard (`edit-after-5-row30.png`).
+- ✗ on B30 cancels: the keyboard closes, the pill returns, B30 stays empty (`edit-after-6-cancel.png`).
+- Back: the first press only hides the keyboard. Android handles Back for the soft keyboard before the
+  activity sees it, so the edit stays open with the edit bar (`edit-after-8-back-cancelled.png` is the
+  second press). The second Back reaches Rust as Escape and cancels the edit, closing the keyboard and
+  bringing the pill back (`edit-after-8b-back-second.png`). Open: make the first Back cancel too; it
+  needs an IME-aware change in MainActivity.kt, which another agent is editing.
+
+Code: `phone.rs` (`edit_bar`, `edit_button`, `track_edit`); `lib.rs` `can_go_back` also counts an open
+edit. Tests: `tests/it/phone_edit.rs` (✗ cancels without committing; ✓ commits and moves down).
