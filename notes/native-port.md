@@ -133,3 +133,19 @@ and a non-xlsx open followed by Save.
   before trusting typed text in screenshots.
 - `header_autofit::table_filter_autofit_works_through_command_and_header_double_click` fails
   intermittently (pre-existing).
+
+## Update 4: bold root cause, typing fix (device check pending)
+
+- Bold, root cause: the emulator (Android 16 image) has no bold Droid file. `/system/fonts/DroidSans.ttf`
+  and `DroidSans-Bold.ttf` are both symlinks to `Roboto-Regular.ttf`, which is a variable font. The
+  phone's `home.bold` call is correct (unit test `phone_bold_sets_the_selected_cell_bold` passes), so the
+  style is set and the cell-bold role was bound, but its file drew regular weight. Fix in
+  `theme.rs::font_definitions_with`: on Android, bold roles set the variation coordinate `wght=700`
+  (static bold files have no `wght` axis and ignore it).
+- Typing, root cause (likely): `replace_composing` erased the whole previous composition with one
+  Backspace per letter and retyped it, so each keystroke sent a burst of Backspace presses. A run of
+  `input text Hello` gave "Hllo" in A1 once. Fix in `app.rs::replace_composing`: erase and retype only
+  after the common prefix.
+- Not yet verified on the device: the emulator dropped off adb (`adb devices` empty) during this pass,
+  and it was not started again. Still to check: `v3-bold.png` (bold A1 next to regular A2), and typing
+  "Hello" several times for lost letters. Italic on Android still draws regular (no italic Droid file).

@@ -114,13 +114,17 @@ impl Shell {
         }
     }
 
-    /// Replaces the keyboard's composing text with `text`: erase what was composed, type the new.
+    /// Replaces the keyboard's composing text with `text`. Only the part after the common prefix is
+    /// erased and typed again: a keystroke that extends the word ("H" to "He") sends just the new
+    /// letter, not a Backspace for every letter before it, which lost letters on the emulator.
     fn replace_composing(&mut self, text: &str) {
-        for _ in 0..self.composing.chars().count() {
+        let common = self.composing.chars().zip(text.chars()).take_while(|(a, b)| a == b).count();
+        for _ in common..self.composing.chars().count() {
             self.press(Key::Backspace);
         }
-        if !text.is_empty() {
-            self.pending.push(Event::Text(text.to_string()));
+        let added: String = text.chars().skip(common).collect();
+        if !added.is_empty() {
+            self.pending.push(Event::Text(added));
         }
         self.composing = text.to_string();
     }

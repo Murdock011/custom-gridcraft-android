@@ -607,6 +607,12 @@ pub fn font_definitions_with(language: crate::i18n::Language, used: &[String]) -
             if cfg!(target_os = "macos") && role == UI_BOLD {
                 fd.tweak.hinting = Some(false);
             }
+            // Current Android images have no bold Droid file: DroidSans(-Bold).ttf are symlinks to
+            // Roboto-Regular.ttf, a variable font, so the bold role would draw regular. Ask that
+            // font for weight 700 (static bold files have no wght axis and ignore it).
+            if cfg!(target_os = "android") && role.contains("bold") {
+                fd.tweak.coords = egui::epaint::text::VariationCoords::new([(b"wght", 700.0)]);
+            }
             let key = format!("sys-{role}");
             fonts.font_data.insert(key.clone(), Arc::new(fd));
             chain.push(key);
