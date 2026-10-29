@@ -192,9 +192,13 @@ impl Shell {
     /// `outcome` is None when the save was cancelled or failed; otherwise the document's new location
     /// (empty when it has none). The app is told whether the workbook was written (`save_finished`).
     fn finish_save(&mut self, ctx: &egui::Context, rev: u64, outcome: Option<String>) {
-        let Some(loc) = outcome else {
-            self.app.save_finished(ctx, rev, false);
-            return;
+        // An export (no location) or a failure leaves the workbook as it was, unsaved.
+        let loc = match outcome {
+            Some(loc) if !loc.is_empty() => loc,
+            _ => {
+                self.app.save_finished(ctx, rev, false);
+                return;
+            }
         };
         let saved = match self.app.session.active_mut() {
             Some(d) if d.revision == rev => {

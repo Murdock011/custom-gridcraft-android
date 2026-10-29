@@ -223,7 +223,8 @@ mod tests {
         queue("save".into(), Flight { ticket: ex, name: "Book1.csv".into(), rev: 5, adopt: keeps_location("Book1.csv") });
         save_done(ok, 1, "content://d/u".into(), "Book1.xlsx".into());
         save_done(ex, 1, "content://d/p".into(), "Book1.csv".into());
-        assert_eq!(drain_saved(), vec![(5, "content://d/u/Book1.xlsx".to_string())]);
+        // The export is reported with an empty location: it did not adopt one, and it does not clean the workbook.
+        assert_eq!(drain_saved(), vec![(5, Some("content://d/u/Book1.xlsx".to_string())), (5, Some(String::new()))]);
         assert!(drain_notices().iter().any(|n| n == "Saved Book1.csv"));
     }
 }

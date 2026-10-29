@@ -409,3 +409,30 @@ B4 near (275,610).
   - Note: the helper's focus check refuses taps while the system picker has focus. The picker SAVE was sent as raw
     `adb shell input tap` inside the helper call.
 - Timing: a small workbook encodes and writes well under the 300 ms the Close path waits; no measurement beyond that.
+
+## Update 13: File side drawer and unsaved prompt
+
+- Phone app bar: the first button is the menu (three bars, 48 pt), as in WordCraft. It opens the File
+  drawer: a 296 pt panel under the app bar with 48 pt rows, in WordCraft's order: Home, New, Open, Info,
+  Save, Save As, Export, Options, Close. Pages open the Backstage; Save, Save As and Close run the File
+  commands. Recover and Print are left out. Escape, Back and a press outside close it; the menu button
+  itself toggles it. Code: `phone.rs` (`file_drawer`, `run_file_row`, `take_pointer`). Tests:
+  `tests/it/phone_drawer.rs`.
+- Close (drawer and Backstage) and Back at the top level with unsaved changes open the Save changes sheet.
+  On Android `Services::close_quits` is set: Close and Back then end the app once every workbook is
+  answered for (`SheetApp::continue_quit`, `quit_requested`, `ime::QUIT`, read by the Kotlin poll).
+  Don't Save closes the workbook; Save runs the save and closes once it writes the file (`close_after_save`,
+  `save_finished`, `files::save_done` reports cancels); Cancel leaves everything open. Without unsaved work
+  Back still leaves the app (`moveTaskToBack`). Desktop and web keep the old Close (`close_quits` is false).
+  Tests: `tests/it/quit_prompt.rs`.
+- Checked on the emulator (x86_64 debug build): the drawer lists the nine rows; Save As opens the system
+  save dialog and Cancel returns to the sheet with the workbook open and unsaved; Back after typing a
+  value opens "Save Changes?"; Cancel keeps the sheet open; the drawer's Close opens the same sheet.
+- Not yet checked on the device: Don't Save (app gone, relaunch shows a blank workbook with no
+  recovery message) and Save then the system dialog closing the app. The emulator dropped off adb
+  during this pass and was not restarted.
+- Open: the Save As row's icon is the folder glyph, drawn in the accent colour (brown in this theme),
+  so it looks heavier than the other rows; pick a neutral glyph. The Backstage pages opened from the
+  drawer still use GridCraft's 196 pt side column on the phone (unchanged from before).
+- Open: if the system save cannot even be staged, the Save changes flag stays set until the next save
+  of that revision; a later plain Save could then close the app. Clear it on the stage failure.
