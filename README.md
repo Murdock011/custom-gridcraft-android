@@ -50,14 +50,16 @@ far. When a release is made it will be on the
 - Bold text, and typing with the on-screen keyboard (checked on the emulator).
 - Touch editing: one tap selects a cell, a double tap (or the formula bar) edits it, with large
   cancel and confirm buttons above the keyboard; the edited cell stays visible.
-- Unsaved work survives Android closing the app in the background: it is reopened on the next
-  launch with a "Recovered unsaved changes" message.
+- Unsaved work survives Android closing the app in the background: a recovery copy is kept
+  while you work and reopened on the next launch with a "Recovered unsaved changes" message.
+- Selection handles to drag a range, and a long-press action bar (Cut, Copy, Paste, Clear, and
+  More for Fill Down, Insert and Delete).
+- Dialogs and messages as bottom sheets with large buttons pinned at the bottom.
 
 ## Known gaps
 
 - The keyboard doesn't move the tab bar or sheets out of the way yet.
 - No unsaved-changes prompt on Back yet.
-- Messages and dialogs still use the small desktop style.
 - Not yet tried on a real phone.
 
 Work in progress is logged step by step in [notes/native-port.md](notes/native-port.md).
