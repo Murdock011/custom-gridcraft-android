@@ -208,7 +208,16 @@ pub fn take_pointer(ctx: &Context) {
         let rect = ctx.data(|d| d.get_temp::<Rect>(bar_rect_id()));
         matches!((pos, rect), (Some(p), Some(r)) if !r.contains(p))
     };
-    let outside = outside_sheet || outside_bar;
+    // A press on the menu button is its own (it toggles the drawer), so it does not close the drawer here.
+    let outside_drawer = drawer_open(ctx) && {
+        let rect = ctx.data(|d| d.get_temp::<Rect>(drawer_rect_id()));
+        let menu = ctx.data(|d| d.get_temp::<Rect>(menu_rect_id()));
+        matches!((pos, rect), (Some(p), Some(r)) if !r.contains(p) && !menu.is_some_and(|m| m.contains(p)))
+    };
+    if outside_drawer {
+        set_drawer(ctx, false);
+    }
+    let outside = outside_sheet || outside_bar || outside_drawer;
     if outside {
         close_all(ctx);
     }
@@ -217,7 +226,7 @@ pub fn take_pointer(ctx: &Context) {
 
 /// Whether Android Back has an open sheet (or its palette or row actions) to close first.
 pub fn can_go_back(ctx: &Context) -> bool {
-    menu_tab(ctx).is_some() || bar_open(ctx)
+    menu_tab(ctx).is_some() || bar_open(ctx) || drawer_open(ctx)
 }
 
 /// Escape or Back: closes the innermost open part first (the action bar, row actions, then the
@@ -251,7 +260,71 @@ pub fn open_by_name(ctx: &Context, which: &str) {
     }
 }
 
-/// The top app bar: File (the Backstage), the workbook's name, and Undo, Redo and Save.
+/// Whether the File drawer is open. Kept in egui's memory, as the other phone parts keep theirs.
+fn drawer_id() -> egui::Id {
+    egui::Id::new("phone_file_drawer_open")
+}
+
+fn drawer_open(ctx: &Context) -> bool {
+    ctx.data(|d| d.get_temp::<bool>(drawer_id())).unwrap_or(false)
+}
+
+fn set_drawer(ctx: &Context, open: bool) {
+    ctx.data_mut(|d| d.insert_temp(drawer_id(), open));
+}
+
+/// Where the menu button and the open drawer were drawn last frame (see `take_pointer`).
+fn menu_rect_id() -> egui::Id {
+    egui::Id::new("phone_menu_rect")
+}
+
+fn drawer_rect_id() -> egui::Id {
+    egui::Id::new("phone_file_drawer_rect")
+}
+
+/// The File drawer's rows, in WordCraft's order: label, icon and what the row does. Recover and
+/// Print are left out: GridCraft has no recovery page on the phone, and printing is off on Android.
+#[derive(Clone, Copy)]
+enum FileRow {
+    /// Opens a Backstage page.
+    Page(Page),
+    Save,
+    SaveAs,
+    Close,
+}
+
+const FILE_ROWS: [(&str, Icon, FileRow); 9] = [
+    ("Home", Icon::Home, FileRow::Page(Page::Home)),
+    ("New", Icon::NewFile, FileRow::Page(Page::New)),
+    ("Open", Icon::OpenFolder, FileRow::Page(Page::Open)),
+    ("Info", Icon::Info, FileRow::Page(Page::Info)),
+    ("Save", Icon::Save, FileRow::Save),
+    ("Save As", Icon::Folder, FileRow::SaveAs),
+    ("Export", Icon::Share, FileRow::Page(Page::Export)),
+    ("Options", Icon::Settings, FileRow::Page(Page::Options)),
+    ("Close", Icon::Close, FileRow::Close),
+];
+
+/// The drawer's width, as WordCraft's (296 pt).
+const DRAWER_W: f32 = 296.0;
+
+/// A menu button: three bars, the navigation drawer's icon, in the same 48 pt target as the others.
+fn menu_button(ui: &mut Ui, t: Tokens, tip: &str) -> Response {
+    let (r, resp) = ui.allocate_exact_size(vec2(ICON_BTN, ICON_BTN), Sense::click());
+    if resp.is_pointer_button_down_on() {
+        ui.painter().rect_filled(r, ICON_BTN / 2.0, t.pressed);
+    } else if resp.hovered() {
+        ui.painter().rect_filled(r, ICON_BTN / 2.0, t.hover);
+    }
+    let stroke = Stroke::new(2.0, t.text);
+    for dy in [-6.0, 0.0, 6.0] {
+        ui.painter().hline(r.x_range().shrink(13.0), r.center().y + dy, stroke);
+    }
+    resp.widget_info(|| egui::WidgetInfo::labeled(egui::WidgetType::Button, true, tip));
+    resp.on_hover_text(tip)
+}
+
+/// The top app bar: the menu button (the File drawer), the workbook's name, and Undo, Redo and Save.
 pub fn top_bar(app: &mut SheetApp, ui: &mut Ui) {
     let ctx = ui.ctx().clone();
     let t = Tokens::get(&ctx);
@@ -261,8 +334,10 @@ pub fn top_bar(app: &mut SheetApp, ui: &mut Ui) {
     let can_redo = cmd::can_redo(&app.session).is_ok();
     Panel::top("phone_top_bar").exact_size(APP_BAR_H).frame(Frame::NONE.fill(t.window).inner_margin(Margin::symmetric(4, 0))).show(ui, |ui| {
         ui.horizontal_centered(|ui| {
-            if icon_button(ui, t, Icon::Folder, lang.tr("File"), true).clicked() {
-                app.open_backstage(Page::Home);
+            let menu = menu_button(ui, t, lang.tr("Menu"));
+            ctx.data_mut(|d| d.insert_temp(menu_rect_id(), menu.rect));
+            if menu.clicked() {
+                set_drawer(&ctx, !drawer_open(&ctx));
             }
             // The name gets the width the three icons on the right leave, and is cut short.
             let name = if dirty { format!("{title} •") } else { title };
@@ -285,6 +360,75 @@ pub fn top_bar(app: &mut SheetApp, ui: &mut Ui) {
             });
         });
     });
+    file_drawer(app, &ctx);
+}
+
+/// Runs a File drawer row. The drawer closes first (see `file_drawer`).
+fn run_file_row(app: &mut SheetApp, row: FileRow) {
+    match row {
+        FileRow::Page(page) => app.open_backstage(page),
+        FileRow::Save => {
+            if app.commit_edit(0, 0, false, false) {
+                app.run_or_alert("file.save", json!({}));
+            }
+        }
+        FileRow::SaveAs => {
+            if app.commit_edit(0, 0, false, false) {
+                app.run_or_alert("file.saveAs", json!({}));
+            }
+        }
+        FileRow::Close => app.close_file(),
+    }
+}
+
+/// The File drawer: the File actions as 48 pt rows in a panel under the app bar, from its left edge
+/// (WordCraft's navigation drawer). It floats over the page, so the page keeps its width. A row
+/// closes it, as does Escape, Back, or a press outside it (see `take_pointer`).
+fn file_drawer(app: &mut SheetApp, ctx: &Context) {
+    if !drawer_open(ctx) {
+        return;
+    }
+    if ctx.input_mut(|i| i.consume_key(egui::Modifiers::NONE, egui::Key::Escape)) {
+        set_drawer(ctx, false);
+        return;
+    }
+    let t = Tokens::get(ctx);
+    let lang = app.ui.language;
+    let current = app.backstage.as_ref().map(|b| b.page);
+    let height = ctx.content_rect().height() - APP_BAR_H;
+    let shadow = egui::Shadow { offset: [0, 6], blur: 18, spread: 0, color: Color32::from_black_alpha(80) };
+    let area = egui::Area::new(egui::Id::new("phone_file_drawer")).anchor(egui::Align2::LEFT_TOP, vec2(0.0, APP_BAR_H)).order(Order::Foreground).show(ctx, |ui| {
+        Frame::NONE.fill(t.ribbon).shadow(shadow).inner_margin(Margin::symmetric(0, 16)).show(ui, |ui| {
+            ui.set_width(DRAWER_W);
+            ui.set_min_height(height - 32.0);
+            ui.spacing_mut().item_spacing.y = 0.0;
+            for (label, icon, row) in FILE_ROWS {
+                let on_page = matches!(row, FileRow::Page(p) if current == Some(p));
+                let (r, resp) = ui.allocate_exact_size(vec2(ui.available_width(), ROW_H), Sense::click());
+                resp.widget_info(|| egui::WidgetInfo::labeled(egui::WidgetType::Button, true, label));
+                // The open Backstage page is a tinted pill, as Material's drawer marks its current item.
+                let fill = if on_page {
+                    t.accent_soft
+                } else if resp.is_pointer_button_down_on() {
+                    t.pressed
+                } else if resp.hovered() {
+                    t.hover
+                } else {
+                    Color32::TRANSPARENT
+                };
+                let pill = r.shrink2(vec2(12.0, 0.0));
+                ui.painter().rect_filled(pill, CornerRadius::same(24), fill);
+                icons::paint(ui.painter(), Rect::from_center_size(Pos2::new(pill.left() + 24.0, pill.center().y), vec2(20.0, 20.0)), icon, t.text);
+                let font = if on_page { theme::ui_bold(15.0) } else { theme::ui_font(15.0) };
+                ui.painter().text(Pos2::new(pill.left() + 56.0, pill.center().y), Align2::LEFT_CENTER, lang.tr(label), font, t.text);
+                if resp.clicked() {
+                    set_drawer(ctx, false);
+                    run_file_row(app, row);
+                }
+            }
+        });
+    });
+    ctx.data_mut(|d| d.insert_temp(drawer_rect_id(), area.response.rect));
 }
 
 /// Whether all the command tabs fit beside the sheet button. If not, the last one moves into More.

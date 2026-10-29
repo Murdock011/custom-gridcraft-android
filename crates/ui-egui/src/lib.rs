@@ -1312,6 +1312,14 @@ impl SheetApp {
         self.backstage.is_some() || self.editor.is_some() || self.dialog.is_some() || self.message.is_some() || phone::can_go_back(ctx)
     }
 
+    /// File › Close: commits the cell being edited, then closes the active workbook (asking first
+    /// when it has unsaved changes).
+    pub(crate) fn close_file(&mut self) {
+        if self.commit_edit(0, 0, false, false) {
+            self.run_or_alert("file.close", json!({}));
+        }
+    }
+
     pub fn ui(&mut self, ui: &mut egui::Ui) {
         let ctx = ui.ctx().clone();
         self.poll_printing(&ctx);
