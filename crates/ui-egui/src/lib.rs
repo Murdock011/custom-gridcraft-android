@@ -204,6 +204,9 @@ pub struct Services {
     pub paste_text: Option<Box<dyn FnMut() -> Option<String>>>,
     /// Web: deliver a file to the user (name, bytes).
     pub download: Option<Box<dyn Fn(&str, &[u8])>>,
+    /// Android: write plain Save over the workbook's own file (its `path`, a content URI) and return
+    /// `true`, or return `false` to let Save go on to Save As. Without it Save always asks for a path.
+    pub save_in_place: Option<Box<dyn Fn(&str, &[u8]) -> bool>>,
     /// Web: start an asynchronous file pick; the bytes arrive later in `inbox`.
     pub open_async: Option<Box<dyn Fn()>>,
     /// Files delivered asynchronously (name, bytes), opened on the next frame.
@@ -422,6 +425,16 @@ impl SheetApp {
             )
         {
             self.commit_text_box_edit()?;
+        }
+        if id == "file.save"
+            && params.get("path").is_none()
+            && let Some(write) = &self.services.save_in_place
+            && let Some(path) = self.session.active().and_then(|d| d.path.clone())
+            && let Ok(r) = self.session.run("file.saveBytes", json!({"format": "xlsx"}))
+            && let Some(bytes) = r.get("base64").and_then(Json::as_str).and_then(gridcraft_engine::io::base64_decode)
+            && write(&path, &bytes)
+        {
+            return Ok(json!({"saved": true}));
         }
         if let Some(r) = self.run_ui_command(id, &params) {
             return r;

@@ -27,6 +27,8 @@ pub struct Shell {
     /// The keyboard's composing text, which is replaced as the user types (see `replace_composing`).
     composing: String,
     inbox: Inbox,
+    /// Locations of the documents queued for the inbox in this frame (see `logic`).
+    opening: Vec<String>,
 }
 
 impl Shell {
@@ -37,14 +39,43 @@ impl Shell {
         let services = Services {
             open_async: Some(Box::new(files::request_open)),
             inbox: Some(inbox.clone()),
-            download: Some(Box::new(|name: &str, bytes: &[u8]| files::save_download(name, bytes))),
+            download: Some(Box::new(|name: &str, bytes: &[u8]| files::save_as(name, bytes))),
+            save_in_place: Some(Box::new(|loc: &str, bytes: &[u8]| files::save_in_place(loc, bytes))),
             paste_text: Some(Box::new(clip::text)),
             ..Default::default()
         };
         let mut app = SheetApp::new(session, services);
         SheetApp::setup_context_for_language(ctx, app.ui.dark, app.ui.language);
         app.after_engine();
-        Shell { app, pending: Vec::new(), composing: String::new(), inbox }
+        Shell { app, pending: Vec::new(), composing: String::new(), inbox, opening: Vec::new() }
+    }
+
+    /// The document at `loc` lives there now: plain Save writes back to it. Only `.xlsx` keeps a
+    /// location (see `files::keeps_location`); the active document is the one that just changed.
+    fn adopt(&mut self, loc: &str) {
+        let Some((_, name)) = files::parse_location(loc) else { return };
+        if !files::keeps_location(name) {
+            return;
+        }
+        if let Some(d) = self.app.session.active_mut() {
+            d.path = Some(loc.to_string());
+        }
+    }
+
+    /// A save of revision `rev` to `loc` succeeded: if the active workbook is still that revision,
+    /// it is clean now (the title drops "Edited", as after a desktop save) and lives at `loc`.
+    /// Edits made since the save was asked for leave it dirty.
+    fn finish_save(&mut self, rev: u64, loc: &str) {
+        let saved = match self.app.session.active_mut() {
+            Some(d) if d.revision == rev => {
+                d.saved = d.wb.clone();
+                true
+            }
+            _ => false,
+        };
+        if saved {
+            self.adopt(loc);
+        }
     }
 
     /// Turns the keyboard's messages into egui events for the next frame.
@@ -102,9 +133,10 @@ impl Shell {
 
     /// Files picked since the last frame go to the UI's inbox; notices go to its message box.
     fn drain_files(&mut self) {
-        let opened = files::drain_opened();
-        if !opened.is_empty() {
-            self.inbox.lock().unwrap_or_else(|e| e.into_inner()).extend(opened);
+        for (loc, bytes) in files::drain_opened() {
+            let name = files::parse_location(&loc).map_or_else(|| loc.clone(), |(_, n)| n.to_string());
+            self.inbox.lock().unwrap_or_else(|e| e.into_inner()).push((name, bytes));
+            self.opening.push(loc);
         }
         for msg in files::drain_notices() {
             self.app.message = Some(("GridCraft".into(), msg));
@@ -119,7 +151,21 @@ impl eframe::App for Shell {
         if !self.pending.is_empty() {
             ctx.request_repaint();
         }
+        // Saves queued during this frame's input save this revision.
+        files::set_revision(self.app.session.active().map_or(0, |d| d.revision));
+        // Inbox documents open inside `logic`: the one that became active keeps its location.
+        let before = self.app.session.active().map(|d| d.uid);
         self.app.logic(ctx);
+        let after = self.app.session.active().map(|d| d.uid);
+        let opened = std::mem::take(&mut self.opening);
+        if before != after
+            && let Some(loc) = opened.last().cloned()
+        {
+            self.adopt(&loc);
+        }
+        for (rev, loc) in files::drain_saved() {
+            self.finish_save(rev, &loc);
+        }
     }
 
     fn raw_input_hook(&mut self, ctx: &egui::Context, raw: &mut egui::RawInput) {

@@ -84,3 +84,30 @@ ribbon, title bar and status bar. Code: `crates/ui-egui/src/phone.rs`; hooks in 
   phone.
 - `header_autofit::table_filter_autofit_works_through_command_and_header_double_click` fails
   intermittently on the base commit too (pre-existing, not from the phone change).
+## Update 2: system save dialog
+
+- Save As (`Services::download`) now queues a SAF create-document request (`ACTION_CREATE_DOCUMENT`,
+  `.xlsx` MIME, name from the workbook title). The bytes are staged in a cache file in the app folder
+  and copied to the chosen URI in `MainActivity.kt`. Cancel does nothing; failures go to the message
+  box. Nothing is written to private storage any more.
+- Save on a workbook opened from the picker (or shared in) writes back to its content URI. A picked
+  `.xlsx` gets its URI as the document `path`, so `file.save` finds it. Only `.xlsx` keeps a
+  location: CSV, ODS and other formats open as copies and Save asks where to put the workbook.
+  A successful Save As of an `.xlsx` also adopts the new URI, so the next Save writes there.
+- `ui-egui`: new optional `Services::save_in_place(path, bytes) -> bool`, checked first in
+  `run_command` for `file.save` without a path. Desktop and web leave it unset, so they are unchanged.
+- A successful save (Save As or write-back) marks the revision it saved as clean, so the title
+  drops "Edited". The revision is the one current when the save was asked for: edits made after
+  that leave the workbook dirty. Failures and cancels change nothing. No shared-crate change for this.
+- Removed the WordCraft leftovers: Read Aloud (TTS, `nativeTakeSpeech`/`nativeSpeechEvent`), print
+  (`print` requests, `printPdf`), the Recent `read` request and the picture picker type.
+  `grep -ri wordcraft apps/gridcraft-android packaging/android-native` is empty.
+- Failures: Save, write-back and open errors show on the message box. The JNI export
+  `nativeSaveDone` was declared in Kotlin but missing in Rust; it now exists.
+- Autosave stays off on Android: it would call the engine save with a content URI, which fails.
+
+Not tested on a device: the emulator was not used (another agent had it). Checked: clippy clean
+for `gridcraft-android`, the host tests for `files` and `clip`, and the x86_64 debug APK build.
+Also checked: `cargo xtask wasm` passes (own target dir). Still to do on a device: Save As to a new
+file, Save back to a picked file (title loses "Edited"), Cancel in the dialog, a read-only provider,
+and a non-xlsx open followed by Save.
