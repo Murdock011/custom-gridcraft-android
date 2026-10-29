@@ -149,3 +149,27 @@ and a non-xlsx open followed by Save.
 - Not yet verified on the device: the emulator dropped off adb (`adb devices` empty) during this pass,
   and it was not started again. Still to check: `v3-bold.png` (bold A1 next to regular A2), and typing
   "Hello" several times for lost letters. Italic on Android still draws regular (no italic Droid file).
+
+## Update 5: bottom pill + sheet list
+
+The phone drops the sheet tab row (`tabs::sheet_tabs` is not drawn on the phone). The bottom bar is
+now one rounded pill (`phone.rs`):
+
+- Sheet button at the left (48 pt tall, 96 pt wide): the sheet icon and the active sheet's name, cut
+  with an ellipsis. Tapping it opens the Sheets sheet.
+- A thin divider, then the command tabs (Home, Insert, Formulas, Data, View) as icons with short
+  labels. If the five do not fit at 52 pt each (narrow screens), View moves into a More (⋯) tab that
+  opens a small sheet listing it.
+- Sheets sheet (title "Sheets", Close): one 48 pt row per visible sheet, the active one in the accent
+  with a check. Tap a row to switch to it and close. The ⋯ button (48 pt) opens the row actions:
+  Rename (the `renameSheet` dialog, now taking a `sheet` index), Duplicate (`sheet.move` copy after
+  it), Delete (`home.deleteSheet`, disabled when there is one sheet). "New sheet" is the last row.
+- Back and tap-outside close the innermost part first: row actions, then the palette, then the sheet.
+- Desktop layout is unchanged.
+
+Checked offscreen (`snapshot --size 412x915 --scale 2.625 --phone-sheet ...`), not on the emulator:
+pill with three sheets, the Sheets sheet, and the row actions for a sheet. The test
+`phone_sheets::tapping_a_sheet_in_the_sheets_sheet_makes_it_active` taps the sheet button and a row.
+
+Not done: no confirmation before Delete (desktop has none either); no emulator run; no keyboard
+handling on the phone yet (see Update 1).

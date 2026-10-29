@@ -28,6 +28,12 @@ pub mod outline;
 pub mod panes;
 pub mod paper_view;
 mod phone;
+
+/// Opens a phone sheet by name for the snapshot tool: `sheets`, `more`, a tab (`Home`, `Insert`, ...)
+/// or `actions:N` (sheet N's row actions in the Sheets sheet).
+pub fn open_phone_sheet(ctx: &egui::Context, which: &str) {
+    phone::open_by_name(ctx, which);
+}
 pub mod pivot_pane;
 pub mod printing;
 pub mod ribbon;
@@ -1343,7 +1349,9 @@ impl SheetApp {
             if self.ui.status_bar && !phone {
                 tabs::status_bar(self, ui);
             }
-            tabs::sheet_tabs(self, ui);
+            if !phone {
+                tabs::sheet_tabs(self, ui);
+            }
             if phone {
                 phone::bottom_bar(self, ui);
             }

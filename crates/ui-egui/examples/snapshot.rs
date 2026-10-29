@@ -2,7 +2,9 @@
 //!
 //! `cargo run --release -p gridcraft-ui-egui --example snapshot -- [--sample sales] [--in file.xlsx]
 //!  [--size 1440x900] [--scale 2] [--cmd 'id={json}']... [--tab Insert] [--dark] [--language en|es|zh|ja|ko|ru|pt|de|cs|fr|tr]
-//!  [--dialog 'name={json}'] [--hf-edit header|footer] out.png`
+//!  [--dialog 'name={json}'] [--hf-edit header|footer] [--phone-sheet sheets|more|Home|actions:N] out.png`
+//!
+//! `--size 412x915 --scale 2.625` renders the phone layout (the window is under 600 pt wide).
 
 use gridcraft_engine::Session;
 use gridcraft_ui_egui::SheetApp;
@@ -10,6 +12,7 @@ use serde_json::json;
 
 fn main() {
     let args: Vec<String> = std::env::args().skip(1).collect();
+    let mut phone_sheet: Option<String> = None;
     let mut sample = None;
     let mut input = None;
     let mut size = (1440.0f32, 900.0f32);
@@ -71,6 +74,10 @@ fn main() {
                 i += 1;
                 hf_edit = args.get(i).cloned();
             }
+            "--phone-sheet" => {
+                i += 1;
+                phone_sheet = args.get(i).cloned();
+            }
             "--language" => {
                 i += 1;
                 language = args.get(i).cloned();
@@ -101,6 +108,10 @@ fn main() {
             move |ui, app: &mut SheetApp| {
                 let ctx = ui.ctx().clone();
                 app.logic(&ctx);
+                // Set every frame: the state lives in the egui context, which the first frames rebuild.
+                if let Some(which) = &phone_sheet {
+                    gridcraft_ui_egui::open_phone_sheet(&ctx, which);
+                }
                 app.ui(ui);
             },
             {
