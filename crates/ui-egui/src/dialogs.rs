@@ -2018,7 +2018,7 @@ fn format_cells(app: &mut SheetApp, ui: &mut egui::Ui, d: &mut Dialog, confirm: 
                 cols[1].label(egui::RichText::new(preview).font(theme::ui_font(15.0)));
                 cols[1].add_space(8.0);
                 cols[1].label(lang.tr("Type (custom format code):"));
-                cols[1].text_edit_singleline(&mut code);
+                cols[1].add(crate::phone::touch_edit(&cols[1], egui::TextEdit::singleline(&mut code)));
                 cols[1].horizontal_wrapped(|ui| {
                     for c in [
                         "0",

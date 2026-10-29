@@ -787,7 +787,9 @@ pub(crate) fn dialog_sheet(ctx: &Context, id: egui::Id, title: &str, body: impl 
 pub(crate) fn footer_row(ui: &mut Ui, labels: &[&str], primary: usize, enter: bool) -> Option<Option<usize>> {
     let area = footer(ui.ctx())?;
     let mut fui = ui.new_child(egui::UiBuilder::new().max_rect(area).layout(Layout::left_to_right(egui::Align::Center)));
-    fui.set_clip_rect(area);
+    // Clip to the footer's width, but at least the full footer height: with the keyboard up the stored area can
+    // be shorter than the 48 pt buttons and cut their bottoms off.
+    fui.set_clip_rect(Rect::from_min_size(area.min, vec2(area.width(), DIALOG_FOOTER_H.max(area.height()))));
     let r = area.shrink2(vec2(DIALOG_GUTTER, 12.0));
     let n = labels.len().max(1) as f32;
     let gap = 8.0;
