@@ -356,3 +356,19 @@ B4 near (275,610).
 - Tried and dropped: relaunching from `onCreate` with an AlarmManager PendingIntent and killing the process. The
   process died during the activity relaunch and nothing started again, so the window stayed black.
 - Rust is unchanged; `android_main` is not called twice now that the activity is not recreated.
+
+### Update 10 follow-up (code only, device check pending)
+
+- Footer buttons: `phone::footer_row` clips to the footer's width and at least `DIALOG_FOOTER_H`, so 48 pt buttons are
+  not cut when the keyboard shortens the stored footer area. The first try clipped to the caller's rect and hid the
+  recovery sheet's OK, so it was reverted. Pending: device check of the recovery sheet and Rename Sheet with the keyboard.
+- Format Cells "Type (custom format code)" field uses `phone::touch_edit` (48 pt).
+- Sort: not checked on the device (the emulator detached).
+
+### Update 9 follow-up (code only, device check pending)
+
+- The action bar shows four actions and "More" (`BAR_VISIBLE`); Fill Down, Insert and Delete are 48 pt rows
+  under the bar, in the same frame, so the bar never scrolls sideways. Test `delete_in_the_action_bar...`
+  goes through More.
+- Merged `phone-touch-select` into custom-android (`bbda12c3`); worktree removed, branch kept.
+- Pending device check (sel-dev-*.png): handle drag A1 to C4, long-press B2, More, Clear, Back closes the bar.
