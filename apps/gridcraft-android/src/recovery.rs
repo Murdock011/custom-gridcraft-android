@@ -1,0 +1,181 @@
+//! Recovery copies of unsaved workbooks, so work survives Android closing GridCraft in the background.
+//!
+//! A copy is `doc-N.xlsx` (the workbook) and `doc-N.txt` (two lines: the display name, then the
+//! document's content location if it has one). They live in `<app files>/recovery`. `save_all`
+//! makes the folder match the dirty documents; `load_all` reads them back at launch. `app.rs`
+//! decides when to sync (background, a save, a close) and never lets a failure block editing.
+
+use std::io;
+use std::path::Path;
+use std::sync::atomic::{AtomicBool, Ordering};
+
+/// Set by Kotlin when the activity is backgrounded (`nativeFlushRecovery`); the next frame syncs.
+static FLUSH: AtomicBool = AtomicBool::new(false);
+
+pub fn request_flush() {
+    FLUSH.store(true, Ordering::Relaxed);
+}
+
+/// Whether a background flush was asked for since the last call.
+pub fn take_flush() -> bool {
+    FLUSH.swap(false, Ordering::Relaxed)
+}
+
+/// One unsaved workbook: the bytes are an `.xlsx` file.
+#[derive(Debug, PartialEq)]
+pub struct Copy {
+    pub name: String,
+    pub location: Option<String>,
+    pub bytes: Vec<u8>,
+}
+
+/// `<app files>/recovery`, or `None` before the app's files folder is known.
+pub fn dir() -> Option<std::path::PathBuf> {
+    crate::files::DIR.get().map(|d| d.join("recovery"))
+}
+
+/// Makes `dir` hold exactly `copies`: copy N goes to `doc-N`, and any other `doc-*` file is removed.
+/// Each file is written under a temporary name first, so a failed write keeps the old copy.
+pub fn save_all(dir: &Path, copies: &[Copy]) -> io::Result<()> {
+    if !copies.is_empty() {
+        std::fs::create_dir_all(dir)?;
+    }
+    for (i, c) in copies.iter().enumerate() {
+        let (xlsx, note) = slot(dir, i);
+        let text = format!("{}\n{}\n", tidy(&c.name), tidy(c.location.as_deref().unwrap_or("")));
+        write_atomic(&xlsx, &c.bytes)?;
+        write_atomic(&note, text.as_bytes())?;
+    }
+    let Ok(entries) = std::fs::read_dir(dir) else { return Ok(()) };
+    for entry in entries.flatten() {
+        let file = entry.file_name();
+        if parse(&file.to_string_lossy()).is_some_and(|(n, _)| n >= copies.len()) {
+            std::fs::remove_file(entry.path())?;
+        }
+    }
+    Ok(())
+}
+
+/// The copies in `dir`, in order. A copy whose workbook can't be read is skipped.
+pub fn load_all(dir: &Path) -> Vec<Copy> {
+    let Ok(entries) = std::fs::read_dir(dir) else { return Vec::new() };
+    let mut indices: Vec<usize> =
+        entries.flatten().filter_map(|e| parse(&e.file_name().to_string_lossy()).filter(|(_, ext)| *ext == ".xlsx").map(|(n, _)| n)).collect();
+    indices.sort_unstable();
+    indices
+        .into_iter()
+        .filter_map(|i| {
+            let (xlsx, note) = slot(dir, i);
+            let bytes = std::fs::read(&xlsx).ok()?;
+            let text = std::fs::read_to_string(&note).unwrap_or_default();
+            let mut lines = text.lines();
+            let name = lines.next().filter(|s| !s.trim().is_empty()).unwrap_or("Book1.xlsx").to_string();
+            let location = lines.next().filter(|s| !s.is_empty()).map(str::to_string);
+            Some(Copy { name, location, bytes })
+        })
+        .collect()
+}
+
+fn slot(dir: &Path, i: usize) -> (std::path::PathBuf, std::path::PathBuf) {
+    (dir.join(format!("doc-{i}.xlsx")), dir.join(format!("doc-{i}.txt")))
+}
+
+/// The copy number and the rest of a `doc-N.ext` file name (`".xlsx"`), or `None` for any other name.
+/// Temporary files start with a dot, so they never match.
+fn parse(file: &str) -> Option<(usize, &str)> {
+    let rest = file.strip_prefix("doc-")?;
+    let digits = rest.find(|c: char| !c.is_ascii_digit()).unwrap_or(rest.len());
+    let n = rest[..digits].parse().ok()?;
+    let ext = &rest[digits..];
+    ext.starts_with('.').then_some((n, ext))
+}
+
+fn write_atomic(path: &Path, bytes: &[u8]) -> io::Result<()> {
+    let file = path.file_name().map(|f| f.to_string_lossy().into_owned()).unwrap_or_default();
+    let tmp = path.with_file_name(format!(".{file}.tmp"));
+    std::fs::write(&tmp, bytes)?;
+    std::fs::rename(&tmp, path)
+}
+
+/// Newlines and other control characters become spaces, so each note line stays one line.
+fn tidy(s: &str) -> String {
+    s.chars().map(|c| if c.is_control() { ' ' } else { c }).collect()
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    /// A fresh folder under the system temp dir (the tests share no state).
+    fn scratch(tag: &str) -> std::path::PathBuf {
+        static N: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(0);
+        let n = N.fetch_add(1, Ordering::Relaxed);
+        let dir = std::env::temp_dir().join(format!("gc-recovery-{tag}-{}-{n}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&dir);
+        dir
+    }
+
+    fn copy(name: &str, location: Option<&str>, bytes: &[u8]) -> Copy {
+        Copy { name: name.into(), location: location.map(Into::into), bytes: bytes.to_vec() }
+    }
+
+    #[test]
+    fn copies_round_trip_with_their_name_location_and_bytes() {
+        let dir = scratch("round");
+        let copies = vec![copy("quokka.xlsx", Some("content://a/doc/1/quokka.xlsx"), b"one"), copy("Book1.xlsx", None, b"two")];
+        save_all(&dir, &copies).expect_or_fail();
+        assert_eq!(load_all(&dir), copies);
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn an_empty_set_removes_every_copy_and_keeps_other_files() {
+        let dir = scratch("empty");
+        save_all(&dir, &[copy("a.xlsx", None, b"x"), copy("b.xlsx", None, b"y")]).expect_or_fail();
+        std::fs::write(dir.join("notes.txt"), b"keep").expect_or_fail();
+        save_all(&dir, &[]).expect_or_fail();
+        assert!(load_all(&dir).is_empty());
+        assert!(dir.join("notes.txt").exists(), "only copy files are removed");
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn a_smaller_set_drops_the_extra_copies() {
+        let dir = scratch("smaller");
+        save_all(&dir, &[copy("a.xlsx", None, b"a"), copy("b.xlsx", None, b"b"), copy("c.xlsx", None, b"c")]).expect_or_fail();
+        save_all(&dir, &[copy("b.xlsx", None, b"b2")]).expect_or_fail();
+        assert_eq!(load_all(&dir), vec![copy("b.xlsx", None, b"b2")]);
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn a_newline_in_the_name_cannot_split_the_note() {
+        let dir = scratch("tidy");
+        save_all(&dir, &[copy("odd\nname.xlsx", Some("content://x/y/odd name.xlsx"), b"z")]).expect_or_fail();
+        let loaded = load_all(&dir);
+        assert_eq!(loaded[0].name, "odd name.xlsx");
+        assert_eq!(loaded[0].location.as_deref(), Some("content://x/y/odd name.xlsx"));
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn only_copy_file_names_are_parsed() {
+        assert_eq!(parse("doc-12.xlsx"), Some((12, ".xlsx")));
+        assert_eq!(parse("doc-0.txt"), Some((0, ".txt")));
+        assert_eq!(parse(".doc-1.xlsx.tmp"), None, "temporary files are not copies");
+        assert_eq!(parse("doc-x.xlsx"), None);
+        assert_eq!(parse("doc-3"), None, "needs an extension");
+        assert_eq!(load_all(Path::new("/nonexistent/gc-recovery")), Vec::new(), "a missing folder has no copies");
+    }
+
+    /// Fails the test on an I/O error (the crate's lints forbid `unwrap` and `panic!`, even in tests).
+    trait ExpectOrFail {
+        fn expect_or_fail(self);
+    }
+
+    impl<T, E: std::fmt::Debug> ExpectOrFail for Result<T, E> {
+        fn expect_or_fail(self) {
+            assert!(self.is_ok(), "io error in test: {:?}", self.err());
+        }
+    }
+}

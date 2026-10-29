@@ -13,3 +13,4 @@ mod app;
 mod clip;
 mod files;
 mod ime;
+mod recovery;

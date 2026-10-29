@@ -4,12 +4,14 @@
 use std::sync::atomic::Ordering;
 
 use egui::{Event, Key};
-use gridcraft_engine::Session;
+use gridcraft_engine::{DocState, Session, Trust, io};
 use gridcraft_ui_egui::{Inbox, Services, SheetApp};
+use std::sync::Arc;
 
 use crate::clip;
 use crate::files;
 use crate::ime::{self, Msg};
+use crate::recovery;
 
 /// Android KeyEvent codes the keyboard sends as key presses.
 const KEYCODE_ESCAPE: i32 = 111;
@@ -29,12 +31,32 @@ pub struct Shell {
     inbox: Inbox,
     /// Locations of the documents queued for the inbox in this frame (see `logic`).
     opening: Vec<String>,
+    /// Uids of the documents that have a recovery copy on disk (see `sync_recovery`).
+    copied: Vec<u64>,
 }
 
 impl Shell {
     pub fn new(ctx: &egui::Context) -> Shell {
+        // Unsaved work from a previous run comes back first; a blank book is made only without it.
         let mut session = Session::new();
-        session.new_workbook();
+        let mut restored = false;
+        for c in recovery::dir().map(|d| recovery::load_all(&d)).unwrap_or_default() {
+            let Ok((wb, _)) = io::open_bytes("recovered.xlsx", &c.bytes) else {
+                log::warn!("recovery copy {} can't be read", c.name);
+                continue;
+            };
+            // Plain Save writes back to the original location, if it was one Save can write to.
+            let path = c.location.filter(|l| files::parse_location(l).is_some_and(|(_, n)| files::keeps_location(n)));
+            let mut doc = DocState::new(wb, path, c.name, Trust::FromFile);
+            // The copy holds changes the file does not: the document starts dirty.
+            doc.wb = Arc::new((*doc.wb).clone());
+            session.add_document(doc);
+            restored = true;
+        }
+        if !restored {
+            session.new_workbook();
+        }
+        let copied = session.documents().iter().filter(|d| d.is_dirty()).map(|d| d.uid).collect();
         let inbox = Inbox::default();
         let services = Services {
             open_async: Some(Box::new(files::request_open)),
@@ -47,7 +69,39 @@ impl Shell {
         let mut app = SheetApp::new(session, services);
         SheetApp::setup_context_for_language(ctx, app.ui.dark, app.ui.language);
         app.after_engine();
-        Shell { app, pending: Vec::new(), composing: String::new(), inbox, opening: Vec::new() }
+        if restored {
+            app.message = Some(("GridCraft".into(), "Recovered unsaved changes".into()));
+        }
+        Shell { app, pending: Vec::new(), composing: String::new(), inbox, opening: Vec::new(), copied }
+    }
+
+    /// Makes the recovery folder match the dirty documents: a copy for each, none for the rest.
+    /// Runs when the app is backgrounded, and when a document with a copy was saved or closed.
+    /// Failures are logged; editing carries on.
+    fn sync_recovery(&mut self) {
+        let Some(dir) = recovery::dir() else { return };
+        let mut copies = Vec::new();
+        for d in self.app.session.documents().iter().filter(|d| d.is_dirty()) {
+            let bytes = match io::save_bytes(&d.wb, "recovered.xlsx") {
+                Ok(b) => b,
+                Err(e) => {
+                    log::warn!("recovery copy of {} not encoded: {e}", d.display_title());
+                    continue;
+                }
+            };
+            let location = d.path.clone().filter(|l| files::parse_location(l).is_some());
+            copies.push(recovery::Copy { name: d.display_title(), location, bytes });
+        }
+        self.copied = self.app.session.documents().iter().filter(|d| d.is_dirty()).map(|d| d.uid).collect();
+        if let Err(e) = recovery::save_all(&dir, &copies) {
+            log::warn!("recovery copies not written: {e}");
+        }
+    }
+
+    /// A document with a copy is now clean or gone, so its copy is out of date.
+    fn copy_is_stale(&self) -> bool {
+        let docs = self.app.session.documents();
+        self.copied.iter().any(|uid| docs.iter().find(|d| d.uid == *uid).is_none_or(|d| !d.is_dirty()))
     }
 
     /// The document at `loc` lives there now: plain Save writes back to it. Only `.xlsx` keeps a
@@ -169,6 +223,11 @@ impl eframe::App for Shell {
         }
         for (rev, loc) in files::drain_saved() {
             self.finish_save(rev, &loc);
+        }
+        // Read the flag first: it must be cleared even when a sync is due anyway.
+        let flushed = recovery::take_flush();
+        if flushed || self.copy_is_stale() {
+            self.sync_recovery();
         }
     }
 
