@@ -69,6 +69,7 @@ mod phone_bold;
 mod phone_drawer;
 mod quit_prompt;
 mod phone_edit;
+mod phone_pinch;
 mod phone_touch;
 mod phone_sheets;
 mod pivot_pane;

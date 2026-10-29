@@ -190,6 +190,42 @@ pub struct GridState {
     pub wheel_zoom: Option<WheelZoom>,
     /// A one-finger touch drag in progress: it pans the sheet instead of selecting.
     pub touch_pan: bool,
+    /// A two-finger pinch on the phone in progress (see [`Pinch`]).
+    pub pinch: Option<Pinch>,
+}
+
+/// A two-finger pinch on the phone: the zoom in percent, unrounded (the sheet stores it rounded),
+/// and the sheet point under the fingers' centre, which stays there while the pinch goes on.
+/// `centre` is the fingers' centre on screen, as the last frame with the fingers saw it.
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub struct Pinch {
+    pub place: (u64, usize),
+    pub zoom: f32,
+    pub anchor: egui::Vec2,
+    pub centre: Pos2,
+}
+
+/// The zoom percentage a pinch takes `zoom` to when the fingers' distance changes by `factor`
+/// (1 is no change), kept within the sheet's 10 to 400 percent.
+pub fn pinch_zoom(zoom: f32, factor: f32) -> f32 {
+    if factor.is_finite() && factor > 0.0 { (zoom * factor).clamp(10.0, 400.0) } else { zoom }
+}
+
+/// Points per sheet unit at `zoom` percent, as `show` draws the sheet.
+fn sheet_scale(zoom: f32) -> f32 {
+    zoom / 100.0 * DISPLAY_SCALE
+}
+
+/// The sheet point (in sheet units) under `anchor`, a point in points from the cells' top-left,
+/// with the sheet scrolled to `scroll` at `zoom` percent.
+pub fn pinch_point(scroll: egui::Vec2, anchor: egui::Vec2, zoom: f32) -> egui::Vec2 {
+    scroll + anchor / sheet_scale(zoom)
+}
+
+/// The scroll that puts sheet point `point` under `anchor` at `zoom` percent. Never past the top or
+/// left edge: a pinch out near the corner keeps the sheet's first row and column in view.
+pub fn pinch_scroll(point: egui::Vec2, anchor: egui::Vec2, zoom: f32) -> egui::Vec2 {
+    (point - anchor / sheet_scale(zoom)).max(egui::Vec2::ZERO)
 }
 
 /// Ctrl+wheel zoom for one (doc uid, sheet). egui eases a notch in over several frames and
@@ -622,7 +658,43 @@ pub fn show(app: &mut SheetApp, ui: &mut egui::Ui) {
     };
     // Scrolling.
     let (scroll_delta, zoom_delta, modifiers, now) = ui.input(|i| (i.smooth_scroll_delta, i.zoom_delta(), i.modifiers, i.time));
-    if (resp.hovered() || resp.contains_pointer()) && !crate::text_box::contains_pointer(app, ui.ctx()) {
+    // Two fingers on the phone pinch-zoom the sheet about the point between them, and their drag
+    // pans it. A pinch is not a wheel notch, so the wheel code below leaves those fingers alone.
+    let two_fingers = if crate::phone::active(ui.ctx()) { ui.input(|i| i.multi_touch()) } else { None };
+    let fingers = two_fingers.filter(|m| m.num_touches >= 2 && rect.contains(m.center_pos) && !paper && !app.can_go_back(ui.ctx()));
+    let engaged = app.grid.pinch.filter(|p| p.place == place);
+    // A pinch starts once the fingers move, so a quick double tap (no movement) still edits.
+    let starting = fingers.filter(|m| (m.zoom_delta - 1.0).abs() > 0.005 || m.translation_delta.length() > 0.5);
+    if engaged.is_some() || starting.is_some() {
+        let zoom_now = sh.zoom as f32;
+        let centre = match (fingers, engaged) {
+            (Some(m), _) => m.center_pos,
+            (None, Some(p)) => p.centre,
+            (None, None) => Pos2::ZERO,
+        };
+        // Re-anchored every frame, the last one included: a zoom step takes effect a frame later.
+        let g = make_geo(app, view.scroll);
+        let anchor = g.mirror_pos(centre) - g.cells.min;
+        let mut p = engaged.unwrap_or(Pinch { place, zoom: zoom_now, anchor: pinch_point(view.scroll, anchor, zoom_now), centre });
+        p.centre = centre;
+        view.scroll = pinch_scroll(p.anchor, anchor, zoom_now);
+        if let Some(m) = fingers {
+            p.zoom = pinch_zoom(p.zoom, m.zoom_delta);
+            // The zoom is stored as the zoom commands store it (rounded, and not an undo step).
+            let percent = p.zoom.round() as u16;
+            if percent != sh.zoom {
+                let _ = app.session.run("view.zoom", json!({"percent": percent}));
+                ui.ctx().request_repaint();
+            }
+        }
+        app.grid.pinch = Some(p);
+    }
+    // Until every finger is up, a pinch takes the grid's gestures, the release included (its click).
+    let pinch_busy = app.grid.pinch.is_some_and(|p| p.place == place);
+    if !ui.input(|i| i.any_touches()) {
+        app.grid.pinch = None;
+    }
+    if (resp.hovered() || resp.contains_pointer()) && two_fingers.is_none() && !crate::text_box::contains_pointer(app, ui.ctx()) {
         if zoom_delta != 1.0 {
             // egui's zoom factor is e^(speed × points); one notch is `line_scroll_speed` points.
             let notch = ui.ctx().options(|o| o.input_options.scroll_zoom_speed * o.input_options.line_scroll_speed);
@@ -807,7 +879,7 @@ pub fn show(app: &mut SheetApp, ui: &mut egui::Ui) {
         crate::paper_view::paint_rulers(app, &painter, rect, &geo, &t);
     }
     // Interaction. Phone handles and long presses take their presses first (see `phone::touch_gestures`).
-    let gesture = crate::phone::touch_gestures(app, ui, &geo, sh);
+    let gesture = pinch_busy || crate::phone::touch_gestures(app, ui, &geo, sh);
     let previous_popups = (app.grid.filter_menu, app.grid.list_picker, app.grid.header_menu, app.grid.fill_menu);
     // A pan the grid never saw end (it was hidden mid-drag) must not swallow the next press.
     if app.grid.touch_pan && !resp.dragged() && !resp.drag_stopped() {
@@ -4182,6 +4254,38 @@ mod tests {
         for index in [0, 57, 255] {
             assert_eq!(numfmt_color(F::Indexed(index)), Color32::BLACK);
         }
+    }
+
+    #[test]
+    fn pinch_keeps_the_point_under_the_fingers_fixed() {
+        // Zoom 100% to 200% about a point 120 pt right and 80 pt down from the cells' corner, with
+        // the sheet scrolled to (30, 40): the sheet point under the fingers stays under them.
+        let (anchor, scroll) = (egui::vec2(120.0, 80.0), egui::vec2(30.0, 40.0));
+        let zoom = pinch_zoom(100.0, 2.0);
+        assert_eq!(zoom, 200.0);
+        let point = pinch_point(scroll, anchor, 100.0);
+        let moved = pinch_scroll(point, anchor, zoom);
+        assert!((pinch_point(moved, anchor, zoom) - point).length() < 1e-3, "{moved:?} keeps {point:?}");
+        // At 200% the same sheet point is twice as far from the corner in points, so the scroll moves.
+        assert!(moved.x > scroll.x - 0.5 && moved.y > 0.0, "scroll after pinch out: {moved:?}");
+    }
+
+    #[test]
+    fn pinch_zoom_is_clamped_to_the_sheet_range() {
+        assert_eq!(pinch_zoom(300.0, 2.0), 400.0, "spreading past 400% stops at 400%");
+        assert_eq!(pinch_zoom(15.0, 0.5), 10.0, "pinching past 10% stops at 10%");
+        assert_eq!(pinch_zoom(120.0, 1.0), 120.0, "no change leaves the zoom");
+        assert_eq!(pinch_zoom(120.0, f32::NAN), 120.0, "a bad factor is ignored");
+    }
+
+    #[test]
+    fn pinch_out_at_the_top_left_never_scrolls_past_the_first_row_and_column() {
+        // The anchor is 5 pt in from the corner at 200%: zooming out to 100% would need a negative scroll.
+        let anchor = egui::vec2(5.0, 5.0);
+        let scroll = pinch_scroll(egui::Vec2::ZERO, anchor, 200.0);
+        assert_eq!(scroll, egui::Vec2::ZERO, "the first row and column stay in view");
+        let scroll = pinch_scroll(pinch_point(egui::Vec2::ZERO, anchor, 200.0), anchor, 100.0);
+        assert!(scroll.min_elem() >= 0.0, "never negative: {scroll:?}");
     }
 
     #[test]

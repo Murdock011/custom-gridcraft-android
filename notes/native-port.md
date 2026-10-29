@@ -436,3 +436,37 @@ B4 near (275,610).
   drawer still use GridCraft's 196 pt side column on the phone (unchanged from before).
 - Open: if the system save cannot even be staged, the Save changes flag stays set until the next save
   of that revision; a later plain Save could then close the app. Clear it on the stage failure.
+
+## Update 14: pinch zoom
+
+- Two fingers on the grid zoom the sheet on the phone (`phone::active`). The zoom follows the fingers'
+  spread with egui's `multi_touch().zoom_delta`, is clamped to 10–400%, and keeps the sheet point under
+  the fingers' centre fixed; moving the two fingers pans the sheet. Code: `grid.rs` (`Pinch`, `pinch_zoom`,
+  `pinch_point`, `pinch_scroll`, the block at the top of the scroll section in `show`).
+- The zoom is stored each frame with `view.zoom`, as the zoom slider does (rounded, no undo step). The scroll
+  is re-anchored every frame, the last one included, because a zoom step takes effect the frame after it is set.
+- While a pinch is on, and until every finger is up (the release included, so its click does not fire), the grid
+  takes no selection, handle or long-press gesture (`pinch_busy` skips `phone::touch_gestures`). Desktop and the
+  wheel's Ctrl zoom are unchanged; the wheel code skips a frame that has two touches on the phone.
+- A pinch starts only once the fingers move, so a quick double tap, or two fingers held still, still tap.
+- No pinch while a sheet, dialog, action bar or the in-cell editor is open (`SheetApp::can_go_back`).
+- Ceilings: the action bar and selection handles are not drawn while fingers are down during a pinch (they come
+  back after). Page Layout view does not pinch. The anchor uses the sheet's cell origin, so it is exact for
+  frozen panes too (the frozen region is at the origin's scale).
+- Tests: unit tests `pinch_keeps_the_point_under_the_fingers_fixed`, `pinch_zoom_is_clamped_to_the_sheet_range`,
+  `pinch_out_at_the_top_left_never_scrolls_past_the_first_row_and_column` (grid.rs); kittest
+  `tests/it/phone_pinch.rs` injects two touches (`egui::Event::Touch` with two `TouchId`s): spreading two
+  fingers zooms 100% to 200% with the sheet point under the centre kept within 2 pt and no selection change;
+  still fingers do not zoom; two quick taps still tap and do not zoom.
+- Checks: `cargo clippy -p gridcraft-ui-egui --all-targets` clean; `cargo test -q -p gridcraft-ui-egui -- --skip
+  header_autofit` passes; `cargo xtask wasm` passes.
+- Device check: NOT DONE (the emulator is shared; no pinch was run). Recipe to try after merging:
+  - `adb shell input` has no multi-touch (`tap`, `swipe`, `draganddrop`, `text`, `keyevent` only), so two
+    fingers need `sendevent` on the touch device or UiAutomator (`UiObject2.pinchOpen`/`pinchClose`).
+  - Find the touch node: `adb shell getevent -lp` (look for ABS_MT_POSITION_X/Y). Then write two type-B slots
+    with `adb shell sendevent /dev/input/eventN <type> <code> <value>`: `EV_ABS ABS_MT_SLOT 0`, `ABS_MT_TRACKING_ID`,
+    `ABS_MT_POSITION_X/Y` for each finger, `SYN_REPORT`, then move both apart over ~10 steps, then lift with
+    `ABS_MT_TRACKING_ID -1`. The coordinates are in the touch device's range, not pixels; scale them from `getevent -lp`.
+  - Expected: pinch out on the middle of the grid zooms in and the cell under the midpoint stays put; a pinch
+    selects nothing; two quick taps on a cell still edit it.
+  - Not verified: this recipe is not run yet; the exact `sendevent` values depend on the device.
