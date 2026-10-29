@@ -55,11 +55,12 @@ far. When a release is made it will be on the
 - Selection handles to drag a range, and a long-press action bar (Cut, Copy, Paste, Clear, and
   More for Fill Down, Insert and Delete).
 - Dialogs and messages as bottom sheets with large buttons pinned at the bottom.
+- A File side drawer (Home, New, Open, Info, Save, Save As, Export, Options, Close); Close and
+  Back ask before discarding unsaved changes.
 
 ## Known gaps
 
-- The keyboard doesn't move the tab bar or sheets out of the way yet.
-- No unsaved-changes prompt on Back yet.
+- Pinch to zoom is built and tested in code, but not yet tried with real fingers on a device.
 - Not yet tried on a real phone.
 
 Work in progress is logged step by step in [notes/native-port.md](notes/native-port.md).
