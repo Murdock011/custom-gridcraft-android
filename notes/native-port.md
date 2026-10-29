@@ -520,3 +520,40 @@ column, the 28 pt page heading, and the one-page Options with checkboxes.
 - Device check (x86_64 emulator, 2026-10-30, `bs-*.png` in `~/.cache/gc-spike/`): Options → Editing shows
   "Editing" in the bar (bs-a-editing); Back returns to the Options list (bs-b-options-list); Back again returns to
   the sheet with the bottom pill (bs-c-sheet). Drawer → Open → Back returns to the sheet (bs-f-open, bs-g-after-open-back).
+
+## Update 16: opening files on the device
+
+Checked on the x86_64 emulator (2026-10-30). Test files made by our CLI (`test-open.xlsx`, `test-second.xlsx`)
+and LibreOffice (`test-open.ods`, `test-open.csv`) in `/sdcard/Download`, screenshots `open-*`, `v2-*`, `v3-*`,
+`v4-*`, `f3-*` in `~/.cache/gc-spike/`.
+
+- In-app Open: drawer, Open, Browse, picker, `test-open.xlsx`: opens, title is the file name, A1/B2 shown. Pass.
+- Plain Save of a picked `.xlsx`: rewrites the same file with no picker ("Saved test-open.xlsx"); the file on
+  disk changed (checked with `adb pull` and `gridcraft-cli cat`). Pass.
+- Fixed: after that Save the title kept its unsaved dot. The Save bytes include a cell edit still in progress,
+  which is committed inside the same command, so the revision taken at the start of the frame was older than
+  the one written. The dirty state then stayed, and a relaunch restored a "Recovered unsaved changes" copy.
+  Fix: the revision of the saved bytes is passed to `save_in_place` (commit b1b1f874).
+- Fixed: a VIEW intent grants read access only (`--grant-read-uri-permission`). Plain Save then failed with
+  "has no access to content://…", with no way to save. Now the write falls back to the system Save dialog
+  (the Save As path) with the same name; the workbook adopts the new location (commit 9c2a59c1). On the device
+  the dialog suggests `test-open (1).xlsx` because the name exists; the file was not overwritten.
+- VIEW cold start (`am start -a VIEW -d content://media/external/downloads/<id>`): opens with the title and
+  data. Pass.
+- VIEW warm start (app running, clean workbook): opens `test-second.xlsx` as the active workbook. The previous
+  workbook stays open, but the phone has no document switcher, so it is only reachable by closing the new one.
+- CSV: cold VIEW opens with the grid (`f3-1-csv-cold.png`). ODS: cold VIEW opens with the info bar about data-only
+  import (`f3-2-ods-cold.png`); the title is `… (imported).xlsx`, and Save asks for a new .xlsx. Pass.
+
+Open problems (not fixed):
+- Warm VIEW while a cell is being edited: the typed text that was not committed is dropped when the second
+  workbook opens (the edit bar was cancelled). A typed-but-uncommitted value is lost.
+- Warm VIEW has no switcher on the phone: the first workbook is still open, but nothing on the phone lists or
+  switches to it. A touch-friendly choice (switch list, or ask "Save changes?" before opening) is not built.
+- A read-only VIEW document saved through the fallback gets " (1)" in the name (Android's create rule), not an
+  overwrite.
+- Typing "Edited" with `input text` on the emulator kept only "Ed" (the rest arrived before the keyboard was
+  ready). Not reproduced by hand; the IME path is unchanged.
+
+Checks: `cargo clippy -p gridcraft-ui-egui -p gridcraft-android --all-targets -- -D warnings` clean;
+`cargo test -q -p gridcraft-ui-egui -p gridcraft-android -- --skip header_autofit` passes.
