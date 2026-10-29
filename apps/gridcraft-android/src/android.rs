@@ -97,14 +97,14 @@ pub extern "system" fn Java_ai_storyteller_gridcraft_nativeapp_MainActivity_nati
     false as jboolean
 }
 
-/// Whether Android Back has something to close. GridCraft has no sheets or menus to close yet.
+/// Whether Android Back has a sheet, palette or Backstage to close. Kotlin sends Escape then.
 #[allow(unsafe_code)]
 #[unsafe(no_mangle)]
 pub extern "system" fn Java_ai_storyteller_gridcraft_nativeapp_MainActivity_nativeCanGoBack<'local>(
     _env: EnvUnowned<'local>,
     _this: JObject<'local>,
 ) -> jboolean {
-    false as jboolean
+    ime::CAN_GO_BACK.load(Ordering::Relaxed) as jboolean
 }
 
 /// The next file request for Kotlin (see `files::take_request`); empty when there is none.

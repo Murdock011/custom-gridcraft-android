@@ -26,6 +26,8 @@ static TAKEN: AtomicU64 = AtomicU64::new(0);
 
 /// Whether egui wants the soft keyboard (a text position has focus). Kotlin polls it.
 pub static WANTS_KEYBOARD: AtomicBool = AtomicBool::new(false);
+/// Whether Android Back has a sheet, palette or Backstage to close (`SheetApp::can_go_back`).
+pub static CAN_GO_BACK: AtomicBool = AtomicBool::new(false);
 /// The system's night mode, from Kotlin.
 pub static NIGHT: AtomicBool = AtomicBool::new(false);
 /// Left and top padding of the surface in pixels (set by Kotlin); touch positions arrive in window
