@@ -262,9 +262,16 @@ class MainActivity : GameActivity() {
                 val out = contentResolver.openOutputStream(uri, "wt") ?: throw java.io.FileNotFoundException(f[2])
                 out.use { o -> src.inputStream().use { it.copyTo(o) } }
                 nativeSaveDone(ticket, 1, f[2], displayName(uri))
+                src.delete()
+            } catch (e: SecurityException) {
+                // The open grant was read-only (a VIEW from another app): ask where to save, as Save As does.
+                saveTicket = ticket
+                saveSource = f[3]
+                filesBusy = true
+                createDoc.launch(Pair(displayName(uri), XLSX_MIME))
+                return
             } catch (e: Exception) {
                 nativeSaveDone(ticket, -1, e.message ?: e.toString(), "")
-            } finally {
                 src.delete()
             }
             nextFile()
