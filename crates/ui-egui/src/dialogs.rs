@@ -238,13 +238,19 @@ impl Dialog {
                 vec![Number { key: "width", label: "Standard column width (pixels):" }],
                 json!({"width": 64}),
             ),
-            "renameSheet" => Dialog::form(
-                "renameSheet",
-                "Rename Sheet",
-                "sheet.rename",
-                vec![Text { key: "name", label: "Name:" }],
-                json!({"name": app.session.active().and_then(|d| d.wb.active().map(|s| s.name.clone()))}),
-            ),
+            "renameSheet" => {
+                // A sheet named by its index (the phone's row actions) renames that sheet, else the active one.
+                let sheet = params.get("sheet").and_then(|s| s.as_u64()).and_then(|s| usize::try_from(s).ok());
+                let name = app.session.active().and_then(|d| match sheet {
+                    Some(i) => d.wb.sheets.get(i).map(|s| s.name.clone()),
+                    None => d.wb.active().map(|s| s.name.clone()),
+                });
+                let mut d = Dialog::form("renameSheet", "Rename Sheet", "sheet.rename", vec![Text { key: "name", label: "Name:" }], json!({"name": name}));
+                if let Some(s) = params.get("sheet") {
+                    d.values.insert("sheet".into(), s.clone());
+                }
+                d
+            }
             "moveSheet" => {
                 let sheets: Vec<String> = app.session.active().map(|d| d.wb.sheets.iter().map(|s| s.name.clone()).collect()).unwrap_or_default();
                 let mut d = Dialog::form(
