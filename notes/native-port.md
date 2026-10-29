@@ -434,8 +434,14 @@ B4 near (275,610).
 - Open: the Save As row's icon is the folder glyph, drawn in the accent colour (brown in this theme),
   so it looks heavier than the other rows; pick a neutral glyph. The Backstage pages opened from the
   drawer still use GridCraft's 196 pt side column on the phone (unchanged from before).
-- Open: if the system save cannot even be staged, the Save changes flag stays set until the next save
-  of that revision; a later plain Save could then close the app. Clear it on the stage failure.
+- Fixed (2026-10-30): a save that cannot be staged now reports as failed (`files::not_staged`), so the
+  Save changes close flag clears. Test: `files::tests::a_save_as_of_a_workbook_is_adopted_and_an_export_is_not`.
+- Fixed (2026-10-30): the Save As row uses its own line-art glyph (`Icon::SaveAs`) in the text colour.
+  Device check (x86_64, 2026-10-30): drawer shows nine rows, Save As glyph matches the others;
+  Close opens Save Changes?; Don't Save tapped, PID empty right after (app ended).
+- Device check not finished: the emulator left adb while this pass ran. Not checked: the recovery
+  folder listing (`run-as ... ls files/recovery` timed out), the relaunch shot (blank workbook, no
+  recovery message), and Save then the system dialog closing the app.
 
 ## Update 14: pinch zoom
 
