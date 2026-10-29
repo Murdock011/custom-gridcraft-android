@@ -58,7 +58,6 @@ far. When a release is made it will be on the
 - The keyboard doesn't move the tab bar or sheets out of the way yet.
 - No unsaved-changes prompt on Back yet.
 - Messages and dialogs still use the small desktop style.
-- The app icon is a placeholder.
 - Not yet tried on a real phone.
 
 Work in progress is logged step by step in [notes/native-port.md](notes/native-port.md).
@@ -96,7 +95,9 @@ re-apply this fork's on top.
 All of GridCraft itself, the spreadsheet engine, formulas, file formats and desktop interface, is
 the work of the ArtCraft team and the GridCraft contributors. This fork keeps their licence:
 MIT OR Apache-2.0, at your option ([LICENSE-MIT](LICENSE-MIT), [LICENSE-APACHE](LICENSE-APACHE)).
-Asset credits are in [ATTRIBUTION.md](ATTRIBUTION.md). The original project's README is kept in
+Asset credits are in [ATTRIBUTION.md](ATTRIBUTION.md). The app icon includes the Android robot,
+reproduced or modified from work created and shared by Google and used according to terms
+described in the Creative Commons 3.0 Attribution License. The original project's README is kept in
 [docs/UPSTREAM-README.md](docs/UPSTREAM-README.md).
 
 Names, logos and branding of GridCraft and ArtCraft belong to their owners; their use here only
