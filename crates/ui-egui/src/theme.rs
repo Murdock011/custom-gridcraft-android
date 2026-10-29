@@ -431,6 +431,20 @@ fn candidates(role: &str) -> Vec<(String, u32)> {
     let lin = ["/usr/share/fonts/truetype", "/usr/share/fonts", "/usr/local/share/fonts", "/usr/share/fonts/TTF", "/usr/share/fonts/chromeos"];
     let mut v: Vec<(String, u32)> = Vec::new();
     let mut add = |s: String, i: u32| v.push((s, i));
+    // Android keeps its fonts flat in /system/fonts, with no Carlito, Liberation or DejaVu. Without
+    // these the bold role had no file and fell back to regular (the Bold button did nothing).
+    if cfg!(target_os = "android") {
+        let file = match role {
+            "ui" | "cell" | "cell-italic" => Some("DroidSans.ttf"),
+            "ui-bold" | "cell-bold" | "cell-bold-italic" => Some("DroidSans-Bold.ttf"),
+            "serif" => Some("NotoSerif-Regular.ttf"),
+            "mono" => Some("DroidSansMono.ttf"),
+            _ => None,
+        };
+        if let Some(f) = file {
+            add(format!("/system/fonts/{f}"), 0);
+        }
+    }
     match role {
         "ui" => {
             add(format!("{mac_sys}/SFNS.ttf"), 0);
