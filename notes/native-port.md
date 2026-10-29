@@ -264,7 +264,7 @@ edit. Tests: `tests/it/phone_edit.rs` (✗ cancels without committing; ✓ commi
 - Found while testing: the recovery dialog's OK is not in the UI-automator dump (app window only), so it
   was tapped by position. The system picker's SAVE was found in the dump and tapped by its bounds.
 
-## Update 9: selection handles and long-press actions (device check pending)
+## Update 9: selection handles and long-press actions (device checked 2026-10-30)
 
 Code: `phone.rs` (`touch_gestures`, `action_bar`, `handle_range`), called from `grid::show` after the
 grid is painted and before its own input (`grid.rs`). `grid::scroll_by` is now `pub(crate)` for the
@@ -359,11 +359,11 @@ B4 near (275,610).
 
 ### Update 10 follow-up (code only, device check pending)
 
-- Footer buttons: `phone::footer_row` clips to the footer's width and at least `DIALOG_FOOTER_H`, so 48 pt buttons are
-  not cut when the keyboard shortens the stored footer area. The first try clipped to the caller's rect and hid the
-  recovery sheet's OK, so it was reverted. Pending: device check of the recovery sheet and Rename Sheet with the keyboard.
+- Footer buttons: device-checked 2026-10-30. Rename Sheet with the keyboard up shows Cancel and OK fully, 120 px tall
+  (chk-2d), which is 48 pt at the app's 2.5 px per point (the 126 px figure assumed 420 dpi). The recovery sheet check
+  failed: see the recovery bug below.
 - Format Cells "Type (custom format code)" field uses `phone::touch_edit` (48 pt).
-- Sort: not checked on the device (the emulator detached).
+- Sort: checked on the device 2026-10-30. Data lists Sort A to Z, Sort Z to A and Filter as full-width 48 pt rows (chk-3a).
 
 ### Update 9 follow-up (code only, device check pending)
 
@@ -371,4 +371,16 @@ B4 near (275,610).
   under the bar, in the same frame, so the bar never scrolls sideways. Test `delete_in_the_action_bar...`
   goes through More.
 - Merged `phone-touch-select` into custom-android (`bbda12c3`); worktree removed, branch kept.
-- Pending device check (sel-dev-*.png): handle drag A1 to C4, long-press B2, More, Clear, Back closes the bar.
+- Device check (x86_64 emulator, 2026-10-30, `chk-*.png`): passed. Handle drag A1 to C4 selects A1:C4 (chk-4). Long-press
+  B2 opens Cut, Copy, Paste, Clear, More (chk-5). More adds Fill Down, Insert and Delete (chk-6). Clear empties A1:A3
+  (chk-7). Back closes the bar and the app stays open (chk-8d). A long-press at A2 right after a previous gesture
+  did not open the bar; a second press did, so the 700 ms hold is timing-sensitive.
+
+### Recovery copies are not written when GridCraft is backgrounded (open, 2026-10-30)
+
+- Repro (x86_64 emulator): tap A1, type 42, Enter, then Home. `files/recovery` is never created, with or without
+  `am kill` after it. Logcat shows the activity paused (`visible=false`).
+- Cause: `MainActivity.onPause`/`onStop` call `nativeFlushRecovery`, which only sets `recovery::FLUSH`. The copy is
+  written by `Shell::ui`'s `sync_recovery` on the next frame, and no frame runs while the activity is stopped.
+- Not fixed here (needs a design change): either write the copy on each edit, or make the JNI call write from the
+  shared state. Until then, unsaved work is lost when Android kills GridCraft in the background.
