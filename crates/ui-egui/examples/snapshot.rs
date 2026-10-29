@@ -2,7 +2,10 @@
 //!
 //! `cargo run --release -p gridcraft-ui-egui --example snapshot -- [--sample sales] [--in file.xlsx]
 //!  [--size 1440x900] [--scale 2] [--cmd 'id={json}']... [--tab Insert] [--dark] [--language en|es|zh|ja|ko|ru|pt|de|cs|fr|tr]
-//!  [--dialog 'name={json}'] [--hf-edit header|footer] [--phone-sheet sheets|more|Home|actions:N|actionbar] out.png`
+//!  [--dialog 'name={json}'] [--category 0-3] [--hf-edit header|footer] [--phone-sheet sheets|more|Home|actions:N|actionbar] out.png`
+//!
+//! `--category N` opens Options category N (0 General, 1 Editing, 2 Save, 3 Formulas) on a phone,
+//! after `--dialog 'backstage={"page":"options"}'`.
 //!
 //! `--size 412x915 --scale 2.625` renders the phone layout (the window is under 600 pt wide).
 
@@ -25,6 +28,7 @@ fn main() {
     let mut dialog: Option<String> = None;
     let mut language: Option<String> = None;
     let mut hf_edit: Option<String> = None;
+    let mut category: Option<usize> = None;
     let mut out = "snapshot.png".to_string();
     let mut i = 0;
     while i < args.len() {
@@ -73,6 +77,10 @@ fn main() {
             "--hf-edit" => {
                 i += 1;
                 hf_edit = args.get(i).cloned();
+            }
+            "--category" => {
+                i += 1;
+                category = args.get(i).and_then(|s| s.parse().ok());
             }
             "--phone-sheet" => {
                 i += 1;
@@ -131,6 +139,9 @@ fn main() {
                     let (name, p) =
                         d.split_once('=').map(|(a, b)| (a, serde_json::from_str(b).unwrap_or(json!({})))).unwrap_or((d.as_str(), json!({})));
                     app.open_dialog(name, p);
+                }
+                if let (Some(c), Some(b)) = (category, app.backstage.as_mut()) {
+                    b.options_category = Some(c);
                 }
                 // Page Layout view: edit the first page's centre header (or footer) section.
                 let active = app.session.active().and_then(|d| d.wb.active().cloned().map(|s| (d.wb.active_sheet, s)));

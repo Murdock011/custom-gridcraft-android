@@ -24,6 +24,9 @@ use crate::theme::{self, Tokens};
 const NAV_W: f32 = 196.0;
 /// Width of the content column (pages are left-aligned like a document, not stretched).
 const CONTENT_W: f32 = 760.0;
+/// The phone's top bar, and its 48 pt Back button (the touch target).
+const BAR_H: f32 = 56.0;
+const BACK_H: f32 = 48.0;
 
 /// A Backstage page.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -120,6 +123,9 @@ pub struct Backstage {
     pub save_format: &'static str,
     /// Home and Open: when the recent workbooks were last changed.
     recent: RecentFiles,
+    /// Options on a phone: the category open (an index into [`OPTION_CATEGORIES`]), or `None` for
+    /// the category list. Reset when another page is opened (see `open_backstage`).
+    pub options_category: Option<usize>,
 }
 
 /// Save As file types: (extension, label). The first is the workbook itself; the others are
@@ -138,15 +144,21 @@ impl Backstage {
             preview: None,
             save_format: "xlsx",
             recent: RecentFiles::default(),
+            options_category: None,
         }
     }
 }
+
+/// Options on a phone: the category list's rows, with their icons. Each opens its own page.
+const OPTION_CATEGORIES: [(&str, Icon); 4] = [("General", Icon::Settings), ("Editing", Icon::Pen), ("Save", Icon::Save), ("Formulas", Icon::Fx)];
 
 /// What a click asked for, applied after drawing.
 #[derive(Default)]
 struct Outcome {
     close: bool,
     page: Option<Page>,
+    /// Phone Options: Back from a category to the category list.
+    leave_category: bool,
 }
 
 /// Draws the Backstage view in place of the ribbon, formula bar, grid and sheet tabs.
@@ -157,7 +169,115 @@ pub fn show(app: &mut SheetApp, ui: &mut Ui) {
     let typing = ctx.text_edit_focused();
     let t = Tokens::get(&ctx);
     let lang = app.ui.language;
+    let phone = crate::phone::active(&ctx);
     let mut out = Outcome::default();
+    if phone {
+        phone_bar(ui, &bs, lang, &t, &mut out);
+    } else {
+        nav_panel(app, ui, &bs, &mut out, &t);
+    }
+    egui::CentralPanel::default().frame(egui::Frame::NONE.fill(t.ribbon)).show(ui, |ui| {
+        // A phone page is full width with 16 pt gutters: the top bar carries the page's name.
+        let margin =
+            if phone { egui::Margin { left: 16, right: 16, top: 8, bottom: 24 } } else { egui::Margin { left: 44, right: 32, top: 26, bottom: 32 } };
+        egui::ScrollArea::vertical().auto_shrink([false, false]).show(ui, |ui| {
+            egui::Frame::NONE.inner_margin(margin).show(ui, |ui| {
+                if !phone {
+                    ui.set_max_width(CONTENT_W);
+                }
+                if !phone {
+                    ui.label(RichText::new(lang.tr(bs.page.label())).font(theme::ui_font(28.0)).color(t.text));
+                    ui.add_space(18.0);
+                }
+                if phone {
+                    ui.scope(|ui| {
+                        crate::phone::touch_style(ui);
+                        page_body(app, ui, &mut bs, &mut out);
+                    });
+                } else {
+                    page_body(app, ui, &mut bs, &mut out);
+                }
+            });
+        });
+    });
+    if !typing
+        && app.dialog.is_none()
+        && app.message.is_none()
+        && !egui::Popup::is_any_open(&ctx)
+        && ctx.input_mut(|i| i.consume_key(Modifiers::NONE, Key::Escape))
+    {
+        out.close = true;
+    }
+    if let Some(page) = out.page {
+        bs.page = page;
+        bs.options_category = None;
+    }
+    if out.leave_category {
+        bs.options_category = None;
+    }
+    // A command run from a page may itself have opened (or replaced) the view; keep that.
+    if out.close {
+        app.backstage = None;
+    } else if app.backstage.is_none() {
+        app.backstage = Some(bs);
+    }
+}
+
+/// The page's body, drawn under the heading (desktop) or the top bar (phone).
+fn page_body(app: &mut SheetApp, ui: &mut Ui, bs: &mut Backstage, out: &mut Outcome) {
+    match bs.page {
+        Page::Home => home(app, ui, bs, out),
+        Page::New => new_page(app, ui, out),
+        Page::Open => open_page(app, ui, bs, out),
+        Page::Info => info(app, ui, bs),
+        Page::SaveAs => save_as(app, ui, bs, out),
+        Page::Print => print(app, ui, bs, out),
+        Page::Export => export(app, ui, out),
+        Page::Options => options(app, ui, bs),
+        Page::Account => account(app, ui),
+    }
+}
+
+/// The phone's top bar: a Back button and the page's name. Back leaves an open Options category
+/// for its list, and otherwise returns to the sheet.
+fn phone_bar(ui: &mut Ui, bs: &Backstage, lang: Language, t: &Tokens, out: &mut Outcome) {
+    let title = lang.tr(bs.page.label());
+    egui::Panel::top("backstage_bar").exact_size(BAR_H).frame(egui::Frame::NONE.fill(t.window).inner_margin(egui::Margin::symmetric(4, 0))).show(
+        ui,
+        |ui| {
+            ui.horizontal_centered(|ui| {
+                if back_button(ui, *t, lang.tr("Back")).clicked() {
+                    if bs.page == Page::Options && bs.options_category.is_some() {
+                        out.leave_category = true;
+                    } else {
+                        out.close = true;
+                    }
+                }
+                ui.add_sized(
+                    vec2(ui.available_width(), BACK_H),
+                    egui::Label::new(RichText::new(title).font(theme::ui_bold(18.0)).color(t.text)).truncate(),
+                );
+            });
+        },
+    );
+}
+
+/// A 48 pt Back button with the chevron, as the phone's other icon buttons.
+fn back_button(ui: &mut Ui, t: Tokens, tip: &str) -> egui::Response {
+    let (r, resp) = ui.allocate_exact_size(vec2(BACK_H, BACK_H), Sense::click());
+    if resp.is_pointer_button_down_on() {
+        ui.painter().rect_filled(r, BACK_H / 2.0, t.pressed);
+    } else if resp.hovered() {
+        ui.painter().rect_filled(r, BACK_H / 2.0, t.hover);
+    }
+    icons::paint(ui.painter(), Rect::from_center_size(r.center(), vec2(24.0, 24.0)), Icon::Back, t.text);
+    resp.widget_info(|| egui::WidgetInfo::labeled(egui::WidgetType::Button, true, tip));
+    resp.on_hover_text(tip)
+}
+
+/// The desktop's navigation column. A phone has none: the File drawer takes its place.
+fn nav_panel(app: &mut SheetApp, ui: &mut Ui, bs: &Backstage, out: &mut Outcome, t: &Tokens) {
+    let lang = app.ui.language;
     let (nav_bg, nav_text, nav_sel) =
         if t.dark { (t.accent_soft, t.text, Color32::from_white_alpha(30)) } else { (t.accent, Color32::WHITE, Color32::from_black_alpha(46)) };
     egui::Panel::left("backstage_nav")
@@ -180,7 +300,7 @@ pub fn show(app: &mut SheetApp, ui: &mut Ui) {
                 out.page = Some(Page::Info);
             }
             if nav_item(ui, Icon::Save, lang.tr("Save"), false, nav_text, nav_sel).clicked() {
-                save(app, &mut out);
+                save(app, out);
             }
             for page in [Page::SaveAs, Page::Print, Page::Export] {
                 if nav_item(ui, page.icon(), lang.tr(page.label()), bs.page == page, nav_text, nav_sel).clicked() {
@@ -200,43 +320,6 @@ pub fn show(app: &mut SheetApp, ui: &mut Ui) {
                 }
             });
         });
-    egui::CentralPanel::default().frame(egui::Frame::NONE.fill(t.ribbon)).show(ui, |ui| {
-        egui::ScrollArea::vertical().auto_shrink([false, false]).show(ui, |ui| {
-            egui::Frame::NONE.inner_margin(egui::Margin { left: 44, right: 32, top: 26, bottom: 32 }).show(ui, |ui| {
-                ui.set_max_width(CONTENT_W);
-                ui.label(RichText::new(lang.tr(bs.page.label())).font(theme::ui_font(28.0)).color(t.text));
-                ui.add_space(18.0);
-                match bs.page {
-                    Page::Home => home(app, ui, &mut bs, &mut out),
-                    Page::New => new_page(app, ui, &mut out),
-                    Page::Open => open_page(app, ui, &mut bs, &mut out),
-                    Page::Info => info(app, ui, &mut bs),
-                    Page::SaveAs => save_as(app, ui, &mut bs, &mut out),
-                    Page::Print => print(app, ui, &mut bs, &mut out),
-                    Page::Export => export(app, ui, &mut out),
-                    Page::Options => options(app, ui),
-                    Page::Account => account(app, ui),
-                }
-            });
-        });
-    });
-    if !typing
-        && app.dialog.is_none()
-        && app.message.is_none()
-        && !egui::Popup::is_any_open(&ctx)
-        && ctx.input_mut(|i| i.consume_key(Modifiers::NONE, Key::Escape))
-    {
-        out.close = true;
-    }
-    if let Some(page) = out.page {
-        bs.page = page;
-    }
-    // A command run from a page may itself have opened (or replaced) the view; keep that.
-    if out.close {
-        app.backstage = None;
-    } else if app.backstage.is_none() {
-        app.backstage = Some(bs);
-    }
 }
 
 /// Save: saves a workbook that has a file and returns to the sheet; a new workbook goes to the
@@ -291,12 +374,14 @@ fn dim(ui: &mut Ui, text: &str) {
 }
 
 /// A new-workbook tile: a small sheet drawn in code over its name.
-fn tile(ui: &mut Ui, label: &str, sample: Option<usize>) -> egui::Response {
+fn tile(ui: &mut Ui, label: &str, sample: Option<usize>, width: f32) -> egui::Response {
     let t = Tokens::get(ui.ctx());
-    let (rect, resp) = ui.allocate_exact_size(vec2(150.0, 140.0), Sense::click());
+    // The thumbnail keeps the desktop's 150 x 104 proportions at any width.
+    let thumb_h = width * 104.0 / 150.0;
+    let (rect, resp) = ui.allocate_exact_size(vec2(width, thumb_h + 36.0), Sense::click());
     resp.widget_info(|| egui::WidgetInfo::labeled(egui::WidgetType::Button, true, label));
     let p = ui.painter();
-    let thumb = Rect::from_min_size(rect.min, vec2(rect.width(), 104.0));
+    let thumb = Rect::from_min_size(rect.min, vec2(rect.width(), thumb_h));
     p.rect_filled(thumb, 4.0, t.grid_bg);
     let edge = if resp.hovered() { Stroke::new(2.0, t.accent) } else { Stroke::new(1.0, t.ribbon_border) };
     let inner = thumb.shrink(10.0);
@@ -331,14 +416,17 @@ fn tile(ui: &mut Ui, label: &str, sample: Option<usize>) -> egui::Response {
 /// Blank workbook and the built-in samples.
 fn new_tiles(app: &mut SheetApp, ui: &mut Ui, out: &mut Outcome) {
     let lang = app.ui.language;
+    // A phone shows two large tiles across; the desktop's are a fixed 150 pt.
+    let phone = crate::phone::active(ui.ctx());
+    let (gap, width) = if phone { (16.0, (ui.available_width() - 17.0) / 2.0) } else { (18.0, 150.0) };
     ui.horizontal_wrapped(|ui| {
-        ui.spacing_mut().item_spacing = vec2(18.0, 14.0);
-        if tile(ui, lang.tr("Blank workbook"), None).clicked() {
+        ui.spacing_mut().item_spacing = vec2(gap, 14.0);
+        if tile(ui, lang.tr("Blank workbook"), None, width).clicked() {
             app.run_or_alert("file.new", json!({}));
             out.close = true;
         }
         for (i, (name, title)) in gridcraft_engine::sample::SAMPLES.iter().enumerate() {
-            if tile(ui, title, Some(i)).clicked() {
+            if tile(ui, title, Some(i), width).clicked() {
                 app.run_or_alert("file.new", json!({"sample": name}));
                 out.close = true;
             }
@@ -367,6 +455,9 @@ fn recent_list(app: &mut SheetApp, ui: &mut Ui, bs: &mut Backstage, out: &mut Ou
         return;
     }
     let width = ui.available_width().min(CONTENT_W);
+    // A phone row is a 48 pt touch target with larger text.
+    let phone = crate::phone::active(ui.ctx());
+    let (row_h, name_size, folder_size) = if phone { (48.0, 15.0, 12.5) } else { (44.0, 13.5, 11.5) };
     // What the file system has said so far; the rest arrives in later frames (see `RecentFiles`).
     let known = bs.recent.known(ui.ctx(), &app.ui.recent);
     // The web build has no files to ask about, and a narrow window leaves the names their room.
@@ -384,7 +475,7 @@ fn recent_list(app: &mut SheetApp, ui: &mut Ui, bs: &mut Backstage, out: &mut Ou
     let now = crate::now_ms() / 1000.0;
     for path in app.ui.recent.iter().take(limit).cloned().collect::<Vec<_>>() {
         let (name, folder) = split_path(&path);
-        let (rect, resp) = ui.allocate_exact_size(vec2(width, 44.0), Sense::click());
+        let (rect, resp) = ui.allocate_exact_size(vec2(width, row_h), Sense::click());
         resp.widget_info(|| egui::WidgetInfo::labeled(egui::WidgetType::Button, true, &name));
         let p = ui.painter();
         if resp.hovered() {
@@ -394,8 +485,8 @@ fn recent_list(app: &mut SheetApp, ui: &mut Ui, bs: &mut Backstage, out: &mut Ou
         // A long name or folder stops short of the column instead of running under it.
         let room = if modified_w > 0.0 { rect.right() - modified_w - 14.0 } else { rect.right() };
         let text = p.with_clip_rect(Rect::from_min_max(rect.min, pos2(room, rect.bottom())).intersect(p.clip_rect()));
-        text.text(pos2(rect.left() + 42.0, rect.center().y - 8.0), Align2::LEFT_CENTER, &name, theme::ui_font(13.5), t.text);
-        text.text(pos2(rect.left() + 42.0, rect.center().y + 9.0), Align2::LEFT_CENTER, &folder, theme::ui_font(11.5), t.text_dim);
+        text.text(pos2(rect.left() + 42.0, rect.center().y - 8.0), Align2::LEFT_CENTER, &name, theme::ui_font(name_size), t.text);
+        text.text(pos2(rect.left() + 42.0, rect.center().y + 9.0), Align2::LEFT_CENTER, &folder, theme::ui_font(folder_size), t.text_dim);
         if modified_w > 0.0 {
             let (words, color) = match known.get(&path) {
                 Some(Modified::At(seconds)) => (age(lang, now - seconds), t.text_dim),
@@ -547,7 +638,8 @@ fn home(app: &mut SheetApp, ui: &mut Ui, bs: &mut Backstage, out: &mut Outcome) 
     recent_list(app, ui, bs, out, 8);
     if app.ui.recent.len() > 8 {
         ui.add_space(6.0);
-        if ui.link(lang.tr("More workbooks")).clicked() {
+        let more = if crate::phone::active(ui.ctx()) { ui.button(lang.tr("More workbooks")) } else { ui.link(lang.tr("More workbooks")) };
+        if more.clicked() {
             out.page = Some(Page::Open);
         }
     }
@@ -559,7 +651,12 @@ fn new_page(app: &mut SheetApp, ui: &mut Ui, out: &mut Outcome) {
 
 fn open_page(app: &mut SheetApp, ui: &mut Ui, bs: &mut Backstage, out: &mut Outcome) {
     let lang = app.ui.language;
-    if square_button(ui, Icon::OpenFolder, lang.tr("Browse…")).clicked() {
+    let browse = if crate::phone::active(ui.ctx()) {
+        action_row(ui, Icon::OpenFolder, lang.tr("Browse…"), lang.tr("Open a workbook from this device."))
+    } else {
+        square_button(ui, Icon::OpenFolder, lang.tr("Browse…"))
+    };
+    if browse.clicked() {
         let before = app.session.active().map(|d| d.uid);
         app.open_dialog("open", json!({}));
         // Desktop pickers return at once; the web picker delivers later (see `SheetApp::logic`).
@@ -613,40 +710,61 @@ fn info(app: &mut SheetApp, ui: &mut Ui, bs: &mut Backstage) {
         });
     });
     ui.add_space(18.0);
-    ui.horizontal(|ui| {
-        if square_button(ui, Icon::Lock, lang.tr("Protect Workbook")).clicked() {
+    let text = if protected {
+        "Sheet structure is locked: sheets can't be added, moved, renamed or deleted."
+    } else {
+        "Lock the sheet structure so sheets can't be added, moved, renamed or deleted."
+    };
+    if crate::phone::active(ui.ctx()) {
+        if action_row(ui, Icon::Lock, lang.tr("Protect Workbook"), lang.tr(text)).clicked() {
             protect_workbook(app);
         }
-        ui.add_space(12.0);
-        ui.vertical(|ui| {
-            ui.add_space(14.0);
-            ui.label(RichText::new(lang.tr("Protect Workbook")).font(theme::ui_bold(13.5)).color(t.text));
-            let text = if protected {
-                "Sheet structure is locked: sheets can't be added, moved, renamed or deleted."
-            } else {
-                "Lock the sheet structure so sheets can't be added, moved, renamed or deleted."
-            };
-            dim(ui, lang.tr(text));
+    } else {
+        ui.horizontal(|ui| {
+            if square_button(ui, Icon::Lock, lang.tr("Protect Workbook")).clicked() {
+                protect_workbook(app);
+            }
+            ui.add_space(12.0);
+            ui.vertical(|ui| {
+                ui.add_space(14.0);
+                ui.label(RichText::new(lang.tr("Protect Workbook")).font(theme::ui_bold(13.5)).color(t.text));
+                dim(ui, lang.tr(text));
+            });
         });
-    });
+    }
     ui.add_space(22.0);
     section(ui, lang, "Properties");
-    egui::Grid::new("backstage_props").num_columns(2).spacing(vec2(18.0, 8.0)).show(ui, |ui| {
+    // On a phone each label sits above its value, one column, so nothing runs off the screen. The
+    // field width is taken here, before the grid sizes its columns to the widest entry.
+    let phone = crate::phone::active(ui.ctx());
+    let field_w = if phone { ui.available_width() } else { 360.0 };
+    let columns = if phone { 1 } else { 2 };
+    egui::Grid::new("backstage_props").num_columns(columns).spacing(vec2(18.0, 8.0)).show(ui, |ui| {
         ui.label(RichText::new(lang.tr("Location")).color(t.text_dim));
+        if phone {
+            ui.end_row();
+        }
         ui.label(path.as_deref().unwrap_or(lang.tr("Not saved yet")));
         ui.end_row();
         ui.label(RichText::new(lang.tr("Sheets")).color(t.text_dim));
+        if phone {
+            ui.end_row();
+        }
         ui.label(sheets.to_string());
         ui.end_row();
         for (i, (key, label)) in PROPERTIES.iter().enumerate() {
             let (Some(draft), Some(saved)) = (bs.props.get_mut(i), current.get(i)) else { continue };
             ui.label(RichText::new(lang.tr(label)).color(t.text_dim));
+            if phone {
+                ui.end_row();
+            }
             let id = ui.make_persistent_id(("backstage_prop", *key));
             // Show the workbook's value unless the field is being edited (undo, another window).
             if !ui.ctx().memory(|m| m.has_focus(id)) {
                 draft.clone_from(saved);
             }
-            let resp = ui.add(egui::TextEdit::singleline(draft).id(id).desired_width(360.0));
+            let field = egui::TextEdit::singleline(draft).id(id).desired_width(field_w);
+            let resp = if phone { ui.add(crate::phone::touch_edit(ui, field)) } else { ui.add(field) };
             if resp.lost_focus() && draft != saved {
                 let mut params = serde_json::Map::new();
                 params.insert((*key).to_string(), json!(draft.clone()));
@@ -665,7 +783,8 @@ fn save_as(app: &mut SheetApp, ui: &mut Ui, bs: &mut Backstage, out: &mut Outcom
     let current = SAVE_TYPES.iter().find(|(ext, _)| *ext == fmt).map_or("Excel Workbook (*.xlsx)", |(_, label)| *label);
     ui.horizontal(|ui| {
         ui.label(lang.tr("Save as type"));
-        egui::ComboBox::from_id_salt("backstage_save_type").width(280.0).selected_text(lang.tr(current)).show_ui(ui, |ui| {
+        let width = if crate::phone::active(ui.ctx()) { ui.available_width() } else { 280.0 };
+        egui::ComboBox::from_id_salt("backstage_save_type").width(width).selected_text(lang.tr(current)).show_ui(ui, |ui| {
             for (ext, label) in SAVE_TYPES {
                 if ui.selectable_label(fmt == ext, lang.tr(label)).clicked() {
                     bs.save_format = ext;
@@ -677,7 +796,9 @@ fn save_as(app: &mut SheetApp, ui: &mut Ui, bs: &mut Backstage, out: &mut Outcom
     // Desktop: the system Save dialog. Web: the file downloads.
     let web = app.services.pick_save.is_none() && app.services.download.is_some();
     let label = if web { format!("{} (.{fmt})", lang.tr("Download")) } else { lang.tr("Browse…").to_string() };
-    if square_button(ui, Icon::OpenFolder, &label).clicked() && app.commit_edit(0, 0, false, false) {
+    let browse =
+        if crate::phone::active(ui.ctx()) { action_row(ui, Icon::OpenFolder, &label, "") } else { square_button(ui, Icon::OpenFolder, &label) };
+    if browse.clicked() && app.commit_edit(0, 0, false, false) {
         if fmt == "xlsx" {
             let before = app.session.active().map(|d| (d.path.clone(), d.is_dirty()));
             app.open_dialog("saveAs", json!({}));
@@ -932,18 +1053,114 @@ pub fn export_as(app: &mut SheetApp, fmt: &str) -> bool {
     }
 }
 
-fn options(app: &mut SheetApp, ui: &mut Ui) {
+/// Options: on the desktop, every section on one page. On a phone, a list of categories, and each
+/// category opens as its own page (`bs.options_category`).
+fn options(app: &mut SheetApp, ui: &mut Ui, bs: &mut Backstage) {
+    if !crate::phone::active(ui.ctx()) {
+        options_general(app, ui);
+        ui.add_space(18.0);
+        options_editing(app, ui);
+        ui.add_space(18.0);
+        options_save(app, ui);
+        options_formulas(app, ui);
+        return;
+    }
+    let ctx = ui.ctx().clone();
+    // Escape (Back) from a category returns to the list; the sheet's own Escape waits for the next press.
+    if !egui::Popup::is_any_open(&ctx) && ctx.input_mut(|i| i.consume_key(Modifiers::NONE, Key::Escape)) {
+        bs.options_category = None;
+    }
+    let Some(index) = bs.options_category else {
+        let t = Tokens::get(&ctx);
+        let lang = app.ui.language;
+        for (i, (label, icon)) in OPTION_CATEGORIES.iter().enumerate() {
+            if category_row(ui, t, lang.tr(label), *icon).clicked() {
+                bs.options_category = Some(i);
+            }
+        }
+        return;
+    };
+    match index {
+        0 => options_general(app, ui),
+        1 => options_editing(app, ui),
+        2 => options_save(app, ui),
+        _ => options_formulas(app, ui),
+    }
+}
+
+/// A 48 pt category row with its icon and a chevron (the phone's Options list).
+fn category_row(ui: &mut Ui, t: Tokens, label: &str, icon: Icon) -> egui::Response {
+    let (r, resp) = ui.allocate_exact_size(vec2(ui.available_width(), 48.0), Sense::click());
+    resp.widget_info(|| egui::WidgetInfo::labeled(egui::WidgetType::Button, true, label));
+    let p = ui.painter();
+    if resp.is_pointer_button_down_on() {
+        p.rect_filled(r, 0.0, t.pressed);
+    } else if resp.hovered() {
+        p.rect_filled(r, 0.0, t.hover);
+    }
+    icons::paint(p, Rect::from_center_size(pos2(r.left() + 24.0, r.center().y), vec2(24.0, 24.0)), icon, t.text);
+    p.text(pos2(r.left() + 60.0, r.center().y), Align2::LEFT_CENTER, label, theme::ui_font(16.0), t.text);
+    let c = pos2(r.right() - 28.0, r.center().y);
+    let stroke = Stroke::new(2.0, t.text_dim);
+    p.line_segment([c + vec2(-3.0, -6.0), c + vec2(3.0, 0.0)], stroke);
+    p.line_segment([c + vec2(3.0, 0.0), c + vec2(-3.0, 6.0)], stroke);
+    resp
+}
+
+/// A switch row (the phone's on/off settings): the label wraps before the switch, the whole row is
+/// the touch target, and the thumb slides across as the switch turns on. Copied in look from
+/// WordCraft's `phone::toggle_row` (52 x 32 pt track, 16 pt off and 24 pt on thumb).
+fn toggle_row(ui: &mut Ui, t: Tokens, value: &mut bool, text: &str) -> egui::Response {
+    const SWITCH_W: f32 = 52.0;
+    const SWITCH_H: f32 = 32.0;
+    // The label wraps before the switch, so a long label never runs under it.
+    let text_w = (ui.available_width() - 16.0 - 16.0 - SWITCH_W - 16.0).max(40.0);
+    let galley = ui.painter().layout(text.to_string(), theme::ui_font(16.0), t.text, text_w);
+    let height = (galley.size().y + 24.0).max(48.0);
+    let (r, mut resp) = ui.allocate_exact_size(vec2(ui.available_width(), height), Sense::click());
+    if resp.clicked() {
+        *value = !*value;
+        resp.mark_changed();
+    }
+    let on = *value;
+    resp.widget_info(|| egui::WidgetInfo::selected(egui::WidgetType::Checkbox, true, on, text));
+    if resp.is_pointer_button_down_on() {
+        ui.painter().rect_filled(r, 0.0, t.pressed);
+    } else if resp.hovered() {
+        ui.painter().rect_filled(r, 0.0, t.hover);
+    }
+    ui.painter().galley(pos2(r.left() + 16.0, r.center().y - galley.size().y / 2.0), galley, t.text);
+    let anim = ui.ctx().animate_bool_responsive(resp.id, on);
+    let track = Rect::from_center_size(pos2(r.right() - 16.0 - SWITCH_W / 2.0, r.center().y), vec2(SWITCH_W, SWITCH_H));
+    let (fill, edge, thumb) = if on { (t.accent, t.accent, t.on_accent) } else { (t.input_bg, t.text_dim, t.text_dim) };
+    let edge_stroke = if on { Stroke::NONE } else { Stroke::new(2.0, edge) };
+    let p = ui.painter();
+    p.rect(track, egui::CornerRadius::same((SWITCH_H / 2.0) as u8), fill, edge_stroke, StrokeKind::Inside);
+    let x = track.left() + 16.0 + (SWITCH_W - 32.0) * anim;
+    p.circle_filled(pos2(x, track.center().y), 8.0 + 4.0 * anim, thumb);
+    resp
+}
+
+/// Options › General: the look and language, and the formula bar.
+fn options_general(app: &mut SheetApp, ui: &mut Ui) {
     let lang = app.ui.language;
+    let phone = crate::phone::active(ui.ctx());
+    let t = Tokens::get(ui.ctx());
     section(ui, lang, "Options|General");
-    egui::Grid::new("backstage_options_general").num_columns(2).spacing(vec2(18.0, 10.0)).show(ui, |ui| {
+    let columns = if phone { 1 } else { 2 };
+    egui::Grid::new("backstage_options_general").num_columns(columns).spacing(vec2(18.0, 10.0)).show(ui, |ui| {
         ui.label(lang.tr("Display theme"));
+        if phone {
+            ui.end_row();
+        }
         let mode = app.ui.theme_mode();
         let current = match mode {
             "system" => "System",
             "dark" => "Dark",
             _ => "Light",
         };
-        egui::ComboBox::from_id_salt("backstage_theme").width(160.0).selected_text(lang.tr(current)).show_ui(ui, |ui| {
+        let width = if phone { ui.available_width() } else { 160.0 };
+        egui::ComboBox::from_id_salt("backstage_theme").width(width).selected_text(lang.tr(current)).show_ui(ui, |ui| {
             for (value, label) in [("system", "System"), ("light", "Light"), ("dark", "Dark")] {
                 if ui.selectable_label(mode == value, lang.tr(label)).clicked() {
                     app.run_or_alert("view.theme", json!({"mode": value}));
@@ -952,7 +1169,11 @@ fn options(app: &mut SheetApp, ui: &mut Ui) {
         });
         ui.end_row();
         ui.label(lang.tr("Interface language"));
-        egui::ComboBox::from_id_salt("backstage_language").width(160.0).selected_text(lang.name()).show_ui(ui, |ui| {
+        if phone {
+            ui.end_row();
+        }
+        let width = if phone { ui.available_width() } else { 160.0 };
+        egui::ComboBox::from_id_salt("backstage_language").width(width).selected_text(lang.name()).show_ui(ui, |ui| {
             for l in i18n::Language::for_picker() {
                 if ui.selectable_label(l == lang, l.name()).clicked() {
                     app.run_or_alert("app.language.set", json!({"language": l.code()}));
@@ -963,21 +1184,51 @@ fn options(app: &mut SheetApp, ui: &mut Ui) {
     });
     ui.add_space(6.0);
     let mut formula_bar = app.session.prefs.formula_bar;
-    if ui.checkbox(&mut formula_bar, lang.tr("Show formula bar")).changed() {
+    let changed = if phone {
+        toggle_row(ui, t, &mut formula_bar, lang.tr("Show formula bar")).changed()
+    } else {
+        ui.checkbox(&mut formula_bar, lang.tr("Show formula bar")).changed()
+    };
+    if changed {
         app.run_or_alert("view.formulaBar", json!({"on": formula_bar}));
     }
-    ui.add_space(18.0);
+}
+
+/// Options › Editing: AutoComplete for cell values.
+fn options_editing(app: &mut SheetApp, ui: &mut Ui) {
+    let lang = app.ui.language;
+    let t = Tokens::get(ui.ctx());
     section(ui, lang, "Options|Editing");
     let mut autocomplete = app.ui.autocomplete;
-    if ui.checkbox(&mut autocomplete, lang.tr("Enable AutoComplete for cell values")).changed() {
+    let changed = if crate::phone::active(ui.ctx()) {
+        toggle_row(ui, t, &mut autocomplete, lang.tr("Enable AutoComplete for cell values")).changed()
+    } else {
+        ui.checkbox(&mut autocomplete, lang.tr("Enable AutoComplete for cell values")).changed()
+    };
+    if changed {
         app.run_or_alert("options.autoComplete", json!({"on": autocomplete}));
     }
-    ui.add_space(18.0);
+}
+
+/// Options › Save: AutoSave for .xlsx workbooks.
+fn options_save(app: &mut SheetApp, ui: &mut Ui) {
+    let lang = app.ui.language;
+    let t = Tokens::get(ui.ctx());
     section(ui, lang, "Options|Save");
     let mut autosave = app.ui.autosave;
-    if ui.checkbox(&mut autosave, lang.tr("Save .xlsx workbooks automatically after every change")).changed() {
+    let text = lang.tr("Save .xlsx workbooks automatically after every change");
+    let changed =
+        if crate::phone::active(ui.ctx()) { toggle_row(ui, t, &mut autosave, text).changed() } else { ui.checkbox(&mut autosave, text).changed() };
+    if changed {
         app.toggle_autosave();
     }
+}
+
+/// Options › Formulas: the workbook's calculation mode and iterative calculation. Needs an open
+/// workbook; without one the section is left out.
+fn options_formulas(app: &mut SheetApp, ui: &mut Ui) {
+    let lang = app.ui.language;
+    let t = Tokens::get(ui.ctx());
     let Some(calc) = app.session.active().map(|d| d.wb.calc.clone()) else { return };
     ui.add_space(18.0);
     section(ui, lang, "Formulas");
@@ -994,7 +1245,10 @@ fn options(app: &mut SheetApp, ui: &mut Ui) {
     }
     ui.add_space(4.0);
     let mut iterative = calc.iterative;
-    if ui.checkbox(&mut iterative, lang.tr("Enable iterative calculation")).changed() {
+    let text = lang.tr("Enable iterative calculation");
+    let changed =
+        if crate::phone::active(ui.ctx()) { toggle_row(ui, t, &mut iterative, text).changed() } else { ui.checkbox(&mut iterative, text).changed() };
+    if changed {
         app.run_or_alert("formulas.calculationOptions", json!({"iterative": iterative}));
     }
     ui.add_space(6.0);

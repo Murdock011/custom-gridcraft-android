@@ -4,7 +4,10 @@
 //! sheets, add one, or rename, duplicate or delete one. The grid keeps its canvas. Every control runs
 //! a command id, so the phone chrome adds no behaviour of its own.
 
-use egui::{Align2, Color32, Context, CornerRadius, FontId, Frame, Layout, Margin, Order, Painter, Panel, Pos2, Rect, Response, Sense, Stroke, StrokeKind, Ui, vec2};
+use egui::{
+    Align2, Color32, Context, CornerRadius, FontId, Frame, Layout, Margin, Order, Painter, Panel, Pos2, Rect, Response, Sense, Stroke, StrokeKind,
+    Ui, vec2,
+};
 use gridcraft_engine::cmd;
 use gridcraft_engine::core::{CellRef, RangeRef};
 use gridcraft_engine::model::{Sheet, Visibility};
@@ -41,7 +44,8 @@ const PILL_SPARE: f32 = 4.0 + SHEET_BTN_W + 4.0 + 4.0 + 8.0;
 const MIN_TAB_W: f32 = 52.0;
 
 /// The bar's command tabs, with their icons. Each opens a bottom sheet of its rows.
-const TABS: [(&str, Icon); 5] = [("Home", Icon::Home), ("Insert", Icon::Insert), ("Formulas", Icon::Fx), ("Data", Icon::SortFilter), ("View", Icon::Gridlines)];
+const TABS: [(&str, Icon); 5] =
+    [("Home", Icon::Home), ("Insert", Icon::Insert), ("Formulas", Icon::Fx), ("Data", Icon::SortFilter), ("View", Icon::Gridlines)];
 /// On a bar too narrow for every tab, the tabs from this index on are listed in More.
 const NARROW_TABS: usize = TABS.len() - 1;
 /// Menu states past the command tabs: the More list and the Sheets sheet.
@@ -342,10 +346,7 @@ pub fn top_bar(app: &mut SheetApp, ui: &mut Ui) {
             // The name gets the width the three icons on the right leave, and is cut short.
             let name = if dirty { format!("{title} •") } else { title };
             let name_w = (ui.available_width() - 3.0 * ICON_BTN - 8.0).max(0.0);
-            ui.add_sized(
-                vec2(name_w, ICON_BTN),
-                egui::Label::new(egui::RichText::new(name).font(theme::ui_bold(18.0)).color(t.text)).truncate(),
-            );
+            ui.add_sized(vec2(name_w, ICON_BTN), egui::Label::new(egui::RichText::new(name).font(theme::ui_bold(18.0)).color(t.text)).truncate());
             // Right to left: Save is added first so it sits at the far end.
             ui.with_layout(Layout::right_to_left(egui::Align::Center), |ui| {
                 if icon_button(ui, t, Icon::Save, lang.tr("Save"), true).clicked() && app.commit_edit(0, 0, false, false) {
@@ -361,6 +362,11 @@ pub fn top_bar(app: &mut SheetApp, ui: &mut Ui) {
         });
     });
     file_drawer(app, &ctx);
+}
+
+/// Closes the File drawer (it is not drawn while Backstage is open).
+pub(crate) fn close_file_drawer(ctx: &Context) {
+    set_drawer(ctx, false);
 }
 
 /// Runs a File drawer row. The drawer closes first (see `file_drawer`).
@@ -399,37 +405,45 @@ fn file_drawer(app: &mut SheetApp, ctx: &Context) {
     let current = app.backstage.as_ref().map(|b| b.page);
     let height = ctx.content_rect().height() - APP_BAR_H;
     let shadow = egui::Shadow { offset: [0, 6], blur: 18, spread: 0, color: Color32::from_black_alpha(80) };
-    let area = egui::Area::new(egui::Id::new("phone_file_drawer")).anchor(egui::Align2::LEFT_TOP, vec2(0.0, APP_BAR_H)).order(Order::Foreground).show(ctx, |ui| {
-        Frame::NONE.fill(t.ribbon).shadow(shadow).inner_margin(Margin::symmetric(0, 16)).show(ui, |ui| {
-            ui.set_width(DRAWER_W);
-            ui.set_min_height(height - 32.0);
-            ui.spacing_mut().item_spacing.y = 0.0;
-            for (label, icon, row) in FILE_ROWS {
-                let on_page = matches!(row, FileRow::Page(p) if current == Some(p));
-                let (r, resp) = ui.allocate_exact_size(vec2(ui.available_width(), ROW_H), Sense::click());
-                resp.widget_info(|| egui::WidgetInfo::labeled(egui::WidgetType::Button, true, label));
-                // The open Backstage page is a tinted pill, as Material's drawer marks its current item.
-                let fill = if on_page {
-                    t.accent_soft
-                } else if resp.is_pointer_button_down_on() {
-                    t.pressed
-                } else if resp.hovered() {
-                    t.hover
-                } else {
-                    Color32::TRANSPARENT
-                };
-                let pill = r.shrink2(vec2(12.0, 0.0));
-                ui.painter().rect_filled(pill, CornerRadius::same(24), fill);
-                icons::paint(ui.painter(), Rect::from_center_size(Pos2::new(pill.left() + 24.0, pill.center().y), vec2(20.0, 20.0)), icon, t.text);
-                let font = if on_page { theme::ui_bold(15.0) } else { theme::ui_font(15.0) };
-                ui.painter().text(Pos2::new(pill.left() + 56.0, pill.center().y), Align2::LEFT_CENTER, lang.tr(label), font, t.text);
-                if resp.clicked() {
-                    set_drawer(ctx, false);
-                    run_file_row(app, ctx, row);
+    let area = egui::Area::new(egui::Id::new("phone_file_drawer"))
+        .anchor(egui::Align2::LEFT_TOP, vec2(0.0, APP_BAR_H))
+        .order(Order::Foreground)
+        .show(ctx, |ui| {
+            Frame::NONE.fill(t.ribbon).shadow(shadow).inner_margin(Margin::symmetric(0, 16)).show(ui, |ui| {
+                ui.set_width(DRAWER_W);
+                ui.set_min_height(height - 32.0);
+                ui.spacing_mut().item_spacing.y = 0.0;
+                for (label, icon, row) in FILE_ROWS {
+                    let on_page = matches!(row, FileRow::Page(p) if current == Some(p));
+                    let (r, resp) = ui.allocate_exact_size(vec2(ui.available_width(), ROW_H), Sense::click());
+                    resp.widget_info(|| egui::WidgetInfo::labeled(egui::WidgetType::Button, true, label));
+                    // The open Backstage page is a tinted pill, as Material's drawer marks its current item.
+                    let fill = if on_page {
+                        t.accent_soft
+                    } else if resp.is_pointer_button_down_on() {
+                        t.pressed
+                    } else if resp.hovered() {
+                        t.hover
+                    } else {
+                        Color32::TRANSPARENT
+                    };
+                    let pill = r.shrink2(vec2(12.0, 0.0));
+                    ui.painter().rect_filled(pill, CornerRadius::same(24), fill);
+                    icons::paint(
+                        ui.painter(),
+                        Rect::from_center_size(Pos2::new(pill.left() + 24.0, pill.center().y), vec2(20.0, 20.0)),
+                        icon,
+                        t.text,
+                    );
+                    let font = if on_page { theme::ui_bold(15.0) } else { theme::ui_font(15.0) };
+                    ui.painter().text(Pos2::new(pill.left() + 56.0, pill.center().y), Align2::LEFT_CENTER, lang.tr(label), font, t.text);
+                    if resp.clicked() {
+                        set_drawer(ctx, false);
+                        run_file_row(app, ctx, row);
+                    }
                 }
-            }
+            });
         });
-    });
     ctx.data_mut(|d| d.insert_temp(drawer_rect_id(), area.response.rect));
 }
 
@@ -606,12 +620,7 @@ fn sheet_panel(app: &mut SheetApp, ui: &mut Ui, title: &str, body: impl FnOnce(&
     let height = (screen_h * 0.55).clamp(260.0, 520.0).min(screen_h * 0.85);
     let panel = Panel::bottom("phone_sheet")
         .exact_size(height)
-        .frame(
-            Frame::NONE
-                .fill(t.menu_bg)
-                .corner_radius(CornerRadius { nw: 16, ne: 16, sw: 0, se: 0 })
-                .inner_margin(Margin::symmetric(16, 0)),
-        )
+        .frame(Frame::NONE.fill(t.menu_bg).corner_radius(CornerRadius { nw: 16, ne: 16, sw: 0, se: 0 }).inner_margin(Margin::symmetric(16, 0)))
         .show(ui, |ui| {
             ui.add_space(8.0);
             let (handle, _) = ui.allocate_exact_size(vec2(32.0, 4.0), Sense::hover());
@@ -915,18 +924,25 @@ pub(crate) fn dialog_sheet(ctx: &Context, id: egui::Id, title: &str, body: impl 
         let handle = Rect::from_center_size(Pos2::new(rect.center().x, rect.top() + 10.0), vec2(32.0, 4.0));
         ui.painter().rect_filled(handle, CornerRadius::same(2), t.separator);
         let title_rect = Rect::from_min_size(rect.min, vec2(rect.width(), DIALOG_TITLE_H));
-        let mut title_ui = ui.new_child(egui::UiBuilder::new().max_rect(title_rect.shrink2(vec2(DIALOG_GUTTER, 0.0))).layout(Layout::right_to_left(egui::Align::Center)));
+        let mut title_ui = ui.new_child(
+            egui::UiBuilder::new().max_rect(title_rect.shrink2(vec2(DIALOG_GUTTER, 0.0))).layout(Layout::right_to_left(egui::Align::Center)),
+        );
         if icon_button(&mut title_ui, t, Icon::Close, "Close", true).clicked() {
             close = true;
         }
         let title_w = (title_rect.width() - 2.0 * DIALOG_GUTTER - ICON_BTN).max(0.0);
-        let title_text = egui::Label::new(egui::RichText::new(crate::i18n::current(ctx).tr(title)).font(theme::ui_bold(18.0)).color(t.text)).truncate();
+        let title_text =
+            egui::Label::new(egui::RichText::new(crate::i18n::current(ctx).tr(title)).font(theme::ui_bold(18.0)).color(t.text)).truncate();
         ui.put(Rect::from_min_size(Pos2::new(title_rect.left() + DIALOG_GUTTER, title_rect.top()), vec2(title_w, title_rect.height())), title_text);
-        let mut body_ui = ui.new_child(egui::UiBuilder::new().max_rect(body_rect.shrink2(vec2(DIALOG_GUTTER, 0.0))).layout(Layout::top_down(egui::Align::Min)));
-        let scroll = egui::ScrollArea::vertical().id_salt(id.with("body")).auto_shrink([false, false]).max_height(body_rect.height()).show(&mut body_ui, |ui| {
-            touch_style(ui);
-            body(ui)
-        });
+        let mut body_ui =
+            ui.new_child(egui::UiBuilder::new().max_rect(body_rect.shrink2(vec2(DIALOG_GUTTER, 0.0))).layout(Layout::top_down(egui::Align::Min)));
+        let scroll = egui::ScrollArea::vertical().id_salt(id.with("body")).auto_shrink([false, false]).max_height(body_rect.height()).show(
+            &mut body_ui,
+            |ui| {
+                touch_style(ui);
+                body(ui)
+            },
+        );
         close |= scroll.inner;
         let total_now = DIALOG_TITLE_H + scroll.content_size.y + DIALOG_GUTTER + footer_h;
         ctx.data_mut(|d| d.insert_temp(dialog_height_key(), total_now));
@@ -957,11 +973,8 @@ pub(crate) fn footer_row(ui: &mut Ui, labels: &[&str], primary: usize, enter: bo
     let mut clicked = None;
     for (i, label) in labels.iter().enumerate() {
         let rect = Rect::from_min_size(Pos2::new(r.left() + i as f32 * (w + gap), r.top()), vec2(w, TOUCH_H));
-        let btn = if i == primary {
-            egui::Button::new(egui::RichText::new(*label).color(t.on_accent)).fill(t.accent)
-        } else {
-            egui::Button::new(*label)
-        };
+        let btn =
+            if i == primary { egui::Button::new(egui::RichText::new(*label).color(t.on_accent)).fill(t.accent) } else { egui::Button::new(*label) };
         if fui.put(rect, btn.min_size(vec2(w, TOUCH_H))).clicked() {
             clicked = Some(i);
         }
@@ -1180,33 +1193,34 @@ fn action_bar(app: &mut SheetApp, ctx: &Context, cells: Rect, selection: Rect) {
         cells.top() + BAR_GAP
     };
     let mut picked = None;
-    let area = egui::Area::new(egui::Id::new("phone_action_bar_area")).order(egui::Order::Foreground).fixed_pos(Pos2::new(PILL_SIDE, y)).show(ctx, |ui| {
-        Frame::NONE
-            .fill(t.menu_bg)
-            .stroke(Stroke::new(1.0, t.ribbon_border))
-            .corner_radius(CornerRadius::same(12))
-            .inner_margin(Margin::symmetric(4, 0))
-            .show(ui, |ui| {
-                ui.set_width((width - 8.0).max(0.0));
-                ui.horizontal(|ui| {
-                    for (label, icon, act) in BAR_ITEMS[..BAR_VISIBLE].iter() {
-                        if bar_button(ui, t, lang.tr(label), *icon) {
-                            picked = Some(*act);
+    let area =
+        egui::Area::new(egui::Id::new("phone_action_bar_area")).order(egui::Order::Foreground).fixed_pos(Pos2::new(PILL_SIDE, y)).show(ctx, |ui| {
+            Frame::NONE
+                .fill(t.menu_bg)
+                .stroke(Stroke::new(1.0, t.ribbon_border))
+                .corner_radius(CornerRadius::same(12))
+                .inner_margin(Margin::symmetric(4, 0))
+                .show(ui, |ui| {
+                    ui.set_width((width - 8.0).max(0.0));
+                    ui.horizontal(|ui| {
+                        for (label, icon, act) in BAR_ITEMS[..BAR_VISIBLE].iter() {
+                            if bar_button(ui, t, lang.tr(label), *icon) {
+                                picked = Some(*act);
+                            }
                         }
-                    }
-                    if bar_button(ui, t, lang.tr("More"), Icon::More) {
-                        ctx.data_mut(|d| d.insert_temp(more_id(), true));
+                        if bar_button(ui, t, lang.tr("More"), Icon::More) {
+                            ctx.data_mut(|d| d.insert_temp(more_id(), true));
+                        }
+                    });
+                    if more {
+                        for (label, _icon, act) in BAR_ITEMS[BAR_VISIBLE..].iter() {
+                            if ui.add_sized([ui.available_width(), TOUCH_H], egui::Button::new(lang.tr(label))).clicked() {
+                                picked = Some(*act);
+                            }
+                        }
                     }
                 });
-                if more {
-                    for (label, _icon, act) in BAR_ITEMS[BAR_VISIBLE..].iter() {
-                        if ui.add_sized([ui.available_width(), TOUCH_H], egui::Button::new(lang.tr(label))).clicked() {
-                            picked = Some(*act);
-                        }
-                    }
-                }
-            });
-    });
+        });
     ctx.data_mut(|d| d.insert_temp(bar_rect_id(), area.response.rect));
     if more && (picked.is_some() || ctx.input(|i| i.key_pressed(egui::Key::Escape))) {
         ctx.data_mut(|d| d.insert_temp(more_id(), false));

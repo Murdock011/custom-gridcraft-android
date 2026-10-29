@@ -868,7 +868,10 @@ impl SheetApp {
             return;
         }
         match &mut self.backstage {
-            Some(b) => b.page = page,
+            Some(b) => {
+                b.page = page;
+                b.options_category = None;
+            }
             None => self.backstage = Some(backstage::Backstage::new(page)),
         }
     }
@@ -1388,8 +1391,11 @@ impl SheetApp {
         // A narrow window (a phone) gets the touch layout: an app bar, and a floating tab bar with
         // bottom sheets in place of the ribbon and status bar (see `phone`).
         let phone = phone::active(&ctx);
-        if phone {
+        if phone && self.backstage.is_none() {
             phone::top_bar(self, ui);
+        } else if phone {
+            // Backstage draws its own bar with Back (see `backstage::show`); the drawer closes with it.
+            phone::close_file_drawer(&ctx);
         } else if self.chrome.title_bar {
             ribbon::title_bar(self, ui);
         }
