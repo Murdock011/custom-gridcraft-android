@@ -1978,19 +1978,23 @@ fn format_cells(app: &mut SheetApp, ui: &mut egui::Ui, d: &mut Dialog, confirm: 
     // labels are translated. The Fill tab is keyed by context: the Alignment tab's "Fill" is a
     // different word in some languages.
     let lang = app.ui.language;
-    ui.horizontal(|ui| {
-        for (tab, key) in [
-            ("Number", "Number"),
-            ("Alignment", "Alignment"),
-            ("Font", "Font"),
-            ("Border", "Border"),
-            ("Fill", "Format Cells|Fill"),
-            ("Protection", "Protection"),
-        ] {
-            if ui.selectable_label(d.tab == tab, lang.tr(key)).clicked() {
-                d.tab = tab.to_string();
+    // Phone: tabs and rows are 48 pt; the tab row scrolls sideways instead of running off the sheet.
+    let row_h = if crate::phone::active(ui.ctx()) { 48.0 } else { 0.0 };
+    egui::ScrollArea::horizontal().id_salt("format_cells_tabs").show(ui, |ui| {
+        ui.horizontal(|ui| {
+            for (tab, key) in [
+                ("Number", "Number"),
+                ("Alignment", "Alignment"),
+                ("Font", "Font"),
+                ("Border", "Border"),
+                ("Fill", "Format Cells|Fill"),
+                ("Protection", "Protection"),
+            ] {
+                if ui.add(egui::Button::new(lang.tr(key)).selected(d.tab == tab).min_size(egui::vec2(0.0, row_h))).clicked() {
+                    d.tab = tab.to_string();
+                }
             }
-        }
+        });
     });
     ui.separator();
     let mut st: gridcraft_engine::model::Style = d.values.get("style").and_then(|v| serde_json::from_value(v.clone()).ok()).unwrap_or_default();
@@ -2004,7 +2008,8 @@ fn format_cells(app: &mut SheetApp, ui: &mut egui::Ui, d: &mut Dialog, confirm: 
                     ["General", "Number", "Currency", "Accounting", "Short Date", "Long Date", "Time", "Percentage", "Fraction", "Scientific", "Text"]
                 {
                     let c = gridcraft_engine::cmd::format::format_code_for(name).to_string();
-                    if cols[0].selectable_label(code == c, lang.tr(name)).clicked() {
+                    let row = egui::Button::new(lang.tr(name)).selected(code == c).min_size(egui::vec2(cols[0].available_width(), row_h));
+                    if cols[0].add(row).clicked() {
                         code = c;
                     }
                 }
@@ -2014,28 +2019,30 @@ fn format_cells(app: &mut SheetApp, ui: &mut egui::Ui, d: &mut Dialog, confirm: 
                 cols[1].add_space(8.0);
                 cols[1].label(lang.tr("Type (custom format code):"));
                 cols[1].text_edit_singleline(&mut code);
-                for c in [
-                    "0",
-                    "0.00",
-                    "#,##0",
-                    "#,##0.00",
-                    "#,##0;[Red]-#,##0",
-                    "0%",
-                    "0.00%",
-                    "0.00E+00",
-                    "# ?/?",
-                    "m/d/yyyy",
-                    "d-mmm-yy",
-                    "mmmm d, yyyy",
-                    "h:mm AM/PM",
-                    "h:mm:ss",
-                    "[h]:mm:ss",
-                    "@",
-                ] {
-                    if cols[1].small_button(c).clicked() {
-                        code = c.to_string();
+                cols[1].horizontal_wrapped(|ui| {
+                    for c in [
+                        "0",
+                        "0.00",
+                        "#,##0",
+                        "#,##0.00",
+                        "#,##0;[Red]-#,##0",
+                        "0%",
+                        "0.00%",
+                        "0.00E+00",
+                        "# ?/?",
+                        "m/d/yyyy",
+                        "d-mmm-yy",
+                        "mmmm d, yyyy",
+                        "h:mm AM/PM",
+                        "h:mm:ss",
+                        "[h]:mm:ss",
+                        "@",
+                    ] {
+                        if ui.add(egui::Button::new(c).min_size(egui::vec2(0.0, row_h))).clicked() {
+                            code = c.to_string();
+                        }
                     }
-                }
+                });
             });
             st.num_fmt = gridcraft_engine::model::NumFmt::new(&code);
         }
