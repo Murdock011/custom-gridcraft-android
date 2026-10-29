@@ -175,13 +175,15 @@ pub extern "system" fn Java_ai_storyteller_gridcraft_nativeapp_MainActivity_nati
     gridcraft_engine::io::FileKind::from_path(&name).is_some() as jboolean
 }
 
-/// The activity is being backgrounded. Nothing to flush yet: GridCraft keeps no recovery copy here.
+/// The activity is being backgrounded: the next frame writes recovery copies of unsaved workbooks.
 #[allow(unsafe_code)]
 #[unsafe(no_mangle)]
 pub extern "system" fn Java_ai_storyteller_gridcraft_nativeapp_MainActivity_nativeFlushRecovery<'local>(
     _env: EnvUnowned<'local>,
     _this: JObject<'local>,
 ) {
+    crate::recovery::request_flush();
+    ime::wake();
 }
 
 /// The next copy for the system clipboard, prefixed with `c`; empty when there is none.

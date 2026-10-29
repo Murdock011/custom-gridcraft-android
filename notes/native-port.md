@@ -229,3 +229,32 @@ After (`edit-after-*.png`):
 
 Code: `phone.rs` (`edit_bar`, `edit_button`, `track_edit`); `lib.rs` `can_go_back` also counts an open
 edit. Tests: `tests/it/phone_edit.rs` (✗ cancels without committing; ✓ commits and moves down).
+
+## Update 8: recovery after Android closes the app (device check pending)
+
+- Kotlin already calls `nativeFlushRecovery` from `onPause`/`onStop` (and on Close). Rust now sets a flag
+  there (`recovery::request_flush`) and wakes the UI. The next frame (`Shell::logic`) writes a copy of
+  every dirty document.
+- Where: `<app files>/recovery/doc-N.xlsx` (the workbook, written with `io::save_bytes`) and
+  `doc-N.txt` (display name, then the content location if the document has one). Temporary names start
+  with a dot; each file is written then renamed, so a failed write keeps the old copy.
+- When deleted or rewritten: `sync_recovery` makes the folder match the dirty documents. It runs on
+  background, and when a document that had a copy is saved (now clean) or closed (gone).
+  No dirty documents means no copies.
+- Launch: `Shell::new` reads the copies, reopens each one as a dirty document (`DocState::new` with
+  `Trust::FromFile`, the copy's content made dirty), keeps the original content URI when it is an `.xlsx`
+  location (Save writes back there), and shows "Recovered unsaved changes" on the status line. Without
+  copies, a blank book is made as before.
+- Reused: `io::save_bytes`, `io::open_bytes`, `DocState::new`, `Session::add_document`, `files::parse_location`
+  and `files::keeps_location`. The engine has no recovery store for GridCraft (WordCraft's `recovery`
+  module is not in this codebase), so this is a small one in the Android crate. No engine or UI-crate change.
+- Ceilings: one copy per document, rewritten in full (no incremental store). No timed refresh while
+  editing: a process killed in the foreground (rare) loses edits since the last background or save.
+  Like WordCraft's flush, the sync runs on the next frame after onPause; this must be confirmed on a device.
+- Tests: `recovery::tests` (round trip, empty set, shrinking set, unrelated files kept, newline tidy,
+  name parsing). `cargo clippy -p gridcraft-android --all-targets` clean. `build-native.sh x86_64` builds.
+- Device check (pending, emulator not used by this agent): type in A1, press HOME, `adb shell am kill
+  ai.storyteller.gridcraft.nativeapp` (or force-stop is not allowed: use `am kill`), relaunch from the
+  launcher, expect A1 to show the text, the title with the unsaved mark, and "Recovered unsaved changes".
+  Then Save (if the document had a content location) and expect the copy folder to be empty
+  (`run-as ai.storyteller.gridcraft.nativeapp ls files/recovery`).
