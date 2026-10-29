@@ -161,5 +161,8 @@ and a non-xlsx open followed by Save.
   IME connection's `sendKeyEvent`, which sent only its key code. Rust drops key codes other than
   Enter, Delete and Escape, so the letter vanished. Other keys reached Rust as `Text`.
 - Fix: `Connection.sendKeyEvent` in `MainActivity.kt` sends a printable key's character as a commit.
-- Not verified on the device: the emulator detached again before the retest. Check: type `Thursday`
+- Verified on the device (fresh boot, `~/.cache/gc-spike/v3-typing.png`): A1 "Thursday" by `input text`,
+  A2 "thursday" by keyevents T H U R S D A Y. No letter lost. The lowercase t is from the unshifted
+  keycode 48 (a hardware key without Shift), not a loss. Logs: `~/.cache/gc-spike/typing-dbg2.log`.
+- Earlier note, superseded: the emulator detached again before the retest. Check: type `Thursday`
   by `input text`, then T H U R S D A Y by keyevent in a fresh cell, and expect both to be complete.
