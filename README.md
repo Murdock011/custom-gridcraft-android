@@ -38,7 +38,8 @@ far. When a release is made it will be on the
 ## What works
 
 - The full GridCraft grid on a phone: tapping cells, typing values and formulas, the formula bar
-  and sheet tabs.
+  and a sheet button in the bottom pill that opens a list of sheets (switch, add, rename,
+  duplicate, delete).
 - A phone layout instead of the desktop ribbon: an app bar with File, the workbook name, Undo, Redo
   and Save, and a floating tab bar (Home, Insert, Formulas, Data, View) whose tabs open bottom
   sheets of large, touch-sized commands. Back closes an open sheet.
