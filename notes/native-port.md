@@ -928,3 +928,13 @@ If it does not, the soft keyboard or the injected-key path is the cause, and a f
   - Check 4 (hello/beta/gamma, 0.15 s taps), B32-B34 (`ac-9.png`): "Hello", "Beta" correct. The third word was typed
     wrong by the driver ("gelrm", not "gamma") so the run is inconclusive. Re-run needed.
   - Stray `gc tap 1 1` before the check-1 taps (`ac-3`): harmless status-bar tap, noted for transparency.
+- Cause of "ABX" (TEMPDBG logcat, `ac-log-1.txt`, build with logging then removed): the letters arrive as plain
+  `commitText` (no composing text). On Enter, Gboard itself replaces the word: `deleteSurroundingText(3, 0)` (ctx "Abx"
+  becomes "") then `commitText("ABX")`, then the newline. Rust gets `Delete{before:3}` and `Commit("ABX")`. So the
+  uppercase is Gboard's word correction, not our caps. Removing TYPE_TEXT_FLAG_AUTO_CORRECT did not stop it (Gboard
+  corrects anyway); only TYPE_TEXT_FLAG_NO_SUGGESTIONS is known to stop it, and that is ruled out by the brief.
+- Check 2 cause (`ac-log-2.txt`, `ac-log-2-shot.png`): the strip shows "Helo | Hello" and a tap on "Hello" (540,1576)
+  produced NO log: no setComposingRegion, no delete, no commit. Gboard did not apply the pick. Enter then committed "Helo".
+  Not explained yet; the tap may not reach the strip, or Gboard's pick needs composing text, which we never send.
+- Open: a decision is needed. Options: (a) add NO_SUGGESTIONS (stops ABX, loses the strip); (b) send composing text so
+  Gboard's pick and correction work on the composing span (untested, may still correct on Enter).
