@@ -4,12 +4,13 @@
 //! thread. The workspace forbids `unsafe`; the only unsafe here is the `no_mangle` attribute that
 //! JNI symbol names need.
 
-use android_activity::AndroidApp;
+use android_activity::{AndroidApp, MainEvent, PollEvent};
 use jni::EnvUnowned;
 use jni::objects::{JObject, JString};
 use jni::sys::{jboolean, jint, jlong};
 use std::sync::Arc;
 use std::sync::atomic::Ordering;
+use std::time::Duration;
 
 use crate::files;
 use crate::ime::{self, Msg};
@@ -24,22 +25,50 @@ fn android_main(app: AndroidApp) {
     let wgpu_setup = match gpu_setup() {
         Ok(setup) => setup,
         Err(e) => {
-            // No usable GPU: say so on screen (Kotlin shows the dialog) instead of exiting silently.
+            // No usable GPU: keep the activity up so Kotlin can show the dialog, instead of exiting silently.
             log::error!("GPU setup failed: {e}");
             ime::GPU_FAILED.store(true, Ordering::Relaxed);
+            keep_alive(&app);
             return;
         }
     };
     let wgpu_options = eframe::WgpuConfiguration { wgpu_setup, ..Default::default() };
-    let options = eframe::NativeOptions { android_app: Some(app), wgpu_options, ..Default::default() };
-    let result = eframe::run_native(
-        "GridCraft",
-        options,
-        Box::new(|cc| Ok(Box::new(crate::app::Shell::new(&cc.egui_ctx)) as Box<dyn eframe::App>)),
-    );
-    if let Err(e) = result {
-        log::error!("eframe stopped: {e}");
-        ime::GPU_FAILED.store(true, Ordering::Relaxed);
+    let options = eframe::NativeOptions { android_app: Some(app.clone()), wgpu_options, ..Default::default() };
+    // A surface that failed to configure can make wgpu panic on the first paint (`get_current_texture_view`).
+    // Catch that here (last-resort guard, the release profile unwinds) so the activity survives it.
+    let run = std::panic::catch_unwind(std::panic::AssertUnwindSafe(move || {
+        eframe::run_native(
+            "GridCraft",
+            options,
+            Box::new(|cc| Ok(Box::new(crate::app::Shell::new(&cc.egui_ctx)) as Box<dyn eframe::App>)),
+        )
+    }));
+    match run {
+        Ok(Ok(())) => {}
+        Ok(Err(e)) => {
+            log::error!("eframe stopped: {e}");
+            ime::GPU_FAILED.store(true, Ordering::Relaxed);
+        }
+        Err(_) => {
+            log::error!("eframe panicked (graphics surface)");
+            ime::GPU_FAILED.store(true, Ordering::Relaxed);
+        }
+    }
+    if ime::GPU_FAILED.load(Ordering::Relaxed) {
+        keep_alive(&app);
+    }
+}
+
+/// Keeps the native thread and the activity alive after a GPU failure, without starting eframe again. Pumps the
+/// Android event loop until the activity is destroyed (Close in the dialog ends the process from Kotlin).
+fn keep_alive(app: &AndroidApp) {
+    let mut destroyed = false;
+    while !destroyed {
+        app.poll_events(Some(Duration::from_millis(250)), |event| {
+            if let PollEvent::Main(MainEvent::Destroy) = event {
+                destroyed = true;
+            }
+        });
     }
 }
 

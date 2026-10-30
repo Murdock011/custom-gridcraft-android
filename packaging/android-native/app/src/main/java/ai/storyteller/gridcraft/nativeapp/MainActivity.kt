@@ -142,7 +142,10 @@ class MainActivity : GameActivity() {
                 AlertDialog.Builder(this@MainActivity)
                     .setMessage("This phone's graphics driver isn't supported (GPU init failed). Please report this.")
                     .setCancelable(false)
-                    .setPositiveButton("Close") { _, _ -> finishAndRemoveTask() }
+                    .setPositiveButton("Close") { _, _ ->
+                        finishAndRemoveTask()
+                        handler.postDelayed({ android.os.Process.killProcess(android.os.Process.myPid()) }, 300)
+                    }
                     .show()
             }
             nativeTakeRequest().takeIf { it.isNotEmpty() }?.let { files.add(it); nextFile() }

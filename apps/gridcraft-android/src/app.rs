@@ -332,6 +332,11 @@ impl eframe::App for Shell {
     fn ui(&mut self, ui: &mut egui::Ui, _frame: &mut eframe::Frame) {
         let ctx = ui.ctx().clone();
         ime::UI_STARTED.store(true, Ordering::Relaxed);
+        // The GPU failed (a surface error before the first frame): close eframe. `android_main` then keeps the
+        // activity up for the driver dialog, without eframe.
+        if ime::GPU_FAILED.load(Ordering::Relaxed) {
+            ctx.send_viewport_cmd(egui::ViewportCommand::Close);
+        }
         let _ = ime::WAKE.set(Box::new(move || ctx.request_repaint()));
         self.app.ui(ui);
         // egui sets `output.ime` while a text position is focused: that is when the keyboard shows.
