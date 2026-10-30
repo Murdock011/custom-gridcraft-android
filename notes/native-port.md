@@ -845,3 +845,18 @@ If it does not, the soft keyboard or the injected-key path is the cause, and a f
   - Plain edit with the ✓: C24 typed "Ok" and committed with the tick (shot `en-2.png`, formula bar shows "Ok" with
     the tick greyed). Pass.
 - Open: repeat the three-word burst with the real keyboard (or slower taps) to confirm three cells "Hello","Beta","Gamma".
+- Keep typing (follow-up from the coordinator): Enter and Tab from the keyboard leave the keyboard up for the next
+  cell. `ime::KEEP_TYPING` is set by a keyboard Enter/Tab (`drain_ime`: `Msg::Key` 66/61 and newlines in `Msg::Commit`),
+  and `ui()` ORs it into `WANTS_KEYBOARD`. It is cleared by a pointer press, a touch start or a wheel event
+  (`raw_input_hook`), and by Escape (Back over an open sheet). ✓/✗ and taps clear it through the press. Kotlin's
+  poll is unchanged. No kittest: the state lives in the Android crate (`app.rs`), which the host tests do not compile.
+- Device (x86_64, shared emulator, via gc-emu.sh; taps with `sleep 0.15`):
+  1. Double-tap E27, `hello⏎beta⏎gamma⏎`: keyboard stayed up after the last Enter, selection at E30 (`kt-2.png`).
+     Cells were E27 "Hello", E28 "BEta", E29 "GAmmaGamma": Enter works, but the letters are garbled by the adb taps
+     (the same injection problem as above), so three clean cells are NOT confirmed.
+  2. Single-tap G20: keyboard went down, pill back (`kt-3.png`). Pass.
+  3. Double-tap G20, type "Ok", tap ✓: "Ok" committed, keyboard down. Selection moved to G21 after the tick, which is
+     not Excel's behaviour (Excel keeps the cell) - noted, not changed (`kt-4.png`; `kt-4a.png` is the open edit).
+- Layout: with the keyboard up and no edit open the pill steps aside (`phone::keyboard_up`), so nothing sits on the
+  keyboard (`kt-2.png`).
+- Open: a clean three-word run still needs real-keyboard typing or slower, reliable input; the ✓ selection move.

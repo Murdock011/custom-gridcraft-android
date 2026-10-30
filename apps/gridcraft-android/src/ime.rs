@@ -26,6 +26,8 @@ static TAKEN: AtomicU64 = AtomicU64::new(0);
 
 /// Whether egui wants the soft keyboard (a text position has focus). Kotlin polls it.
 pub static WANTS_KEYBOARD: AtomicBool = AtomicBool::new(false);
+/// Set by Enter or Tab from the keyboard, so it stays up for the next cell; cleared by a touch, a scroll, or Escape.
+pub static KEEP_TYPING: AtomicBool = AtomicBool::new(false);
 /// Whether File › Close (or the quit prompt) ended the app: Kotlin finishes the activity (`SheetApp::quit_requested`).
 pub static QUIT: AtomicBool = AtomicBool::new(false);
 /// Whether Android Back has a sheet, palette or Backstage to close (`SheetApp::can_go_back`).
