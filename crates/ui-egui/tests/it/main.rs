@@ -68,6 +68,7 @@ mod paste_special_dialog;
 mod phone_backstage;
 mod phone_bold;
 mod phone_drawer;
+mod phone_workbooks;
 mod phone_edit;
 mod phone_pinch;
 mod phone_sheets;

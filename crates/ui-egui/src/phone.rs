@@ -413,6 +413,9 @@ fn file_drawer(app: &mut SheetApp, ctx: &Context) {
                 ui.set_width(DRAWER_W);
                 ui.set_min_height(height - 32.0);
                 ui.spacing_mut().item_spacing.y = 0.0;
+                if app.session.documents().len() > 1 {
+                    open_workbooks(app, ui, ctx, lang.tr("Open workbooks"));
+                }
                 for (label, icon, row) in FILE_ROWS {
                     let on_page = matches!(row, FileRow::Page(p) if current == Some(p));
                     let (r, resp) = ui.allocate_exact_size(vec2(ui.available_width(), ROW_H), Sense::click());
@@ -445,6 +448,83 @@ fn file_drawer(app: &mut SheetApp, ctx: &Context) {
             });
         });
     ctx.data_mut(|d| d.insert_temp(drawer_rect_id(), area.response.rect));
+}
+
+/// The drawer's "Open workbooks" list, shown with two or more workbooks open: one 48 pt row each. A
+/// tap switches to the workbook and closes the drawer; its ✕ closes that workbook (see `close_workbook`).
+fn open_workbooks(app: &mut SheetApp, ui: &mut Ui, ctx: &Context, heading: &str) {
+    let t = Tokens::get(ctx);
+    let docs: Vec<(String, bool)> = app.session.documents().iter().map(|d| (d.display_title(), d.is_dirty())).collect();
+    let active = app.session.active_index();
+    let (r, _) = ui.allocate_exact_size(vec2(ui.available_width(), 32.0), Sense::hover());
+    ui.painter().text(Pos2::new(r.left() + 28.0, r.center().y), Align2::LEFT_CENTER, heading, theme::ui_bold(13.0), t.text_dim);
+    for (i, (title, dirty)) in docs.into_iter().enumerate() {
+        let name = if dirty { format!("{title} •") } else { title };
+        let (main, close) = workbook_row(ui, t, &name, i, i == active);
+        if close.clicked() {
+            set_drawer(ctx, false);
+            close_workbook(app, ctx, i);
+        } else if main.clicked() {
+            set_drawer(ctx, false);
+            switch_workbook(app, i);
+        }
+    }
+    let (r, _) = ui.allocate_exact_size(vec2(ui.available_width(), 17.0), Sense::hover());
+    ui.painter().hline(r.x_range().shrink(16.0), r.center().y, Stroke::new(1.0, t.separator));
+}
+
+/// Makes workbook `i` the active one, as the Switch Window command does. A cell being edited is
+/// committed first (the edit belongs to the workbook it started in). False when it could not be.
+fn switch_workbook(app: &mut SheetApp, i: usize) -> bool {
+    if i != app.session.active_index() && !app.commit_edit(0, 0, false, false) {
+        return false;
+    }
+    if i != app.session.active_index() {
+        app.run_or_alert("window.activate", json!({"index": i}));
+    }
+    true
+}
+
+/// Closes workbook `i`: it becomes the active one, then File › Close runs as usual (the Save changes
+/// sheet if it has unsaved changes).
+fn close_workbook(app: &mut SheetApp, ctx: &Context, i: usize) {
+    if switch_workbook(app, i) {
+        app.close_file(ctx);
+    }
+}
+
+/// A workbook's row in the drawer's list: the name (the active one in the accent, with a check) and a
+/// 48 pt ✕ at the right. Returns the row's main part and the ✕.
+fn workbook_row(ui: &mut Ui, t: Tokens, name: &str, index: usize, active: bool) -> (Response, Response) {
+    let (r, _) = ui.allocate_exact_size(vec2(ui.available_width(), ROW_H), Sense::hover());
+    let main_r = Rect::from_min_max(r.min, Pos2::new(r.right() - ICON_BTN, r.bottom()));
+    let close_r = Rect::from_min_max(Pos2::new(r.right() - ICON_BTN, r.top()), r.max);
+    let main = ui.interact(main_r, ui.id().with(("phone_book_row", index)), Sense::click());
+    let close = ui.interact(close_r, ui.id().with(("phone_book_close", index)), Sense::click());
+    let painter = ui.painter();
+    if active {
+        painter.rect_filled(main_r, 0.0, t.accent_soft);
+    }
+    if main.is_pointer_button_down_on() {
+        painter.rect_filled(main_r, 0.0, t.pressed);
+    } else if main.hovered() {
+        painter.rect_filled(main_r, 0.0, t.hover);
+    }
+    let ink = if active { t.accent } else { t.text };
+    let text_left = main_r.left() + 24.0;
+    paint_truncated(painter, text_left, r.center().y, (main_r.right() - 48.0 - text_left).max(0.0), name, theme::ui_font(15.0), ink);
+    if active {
+        icons::paint(painter, Rect::from_center_size(Pos2::new(main_r.right() - 24.0, r.center().y), vec2(20.0, 20.0)), Icon::Check, t.accent);
+    }
+    if close.is_pointer_button_down_on() {
+        painter.circle_filled(close_r.center(), ICON_BTN / 2.0, t.pressed);
+    } else if close.hovered() {
+        painter.circle_filled(close_r.center(), ICON_BTN / 2.0, t.hover);
+    }
+    icons::paint(painter, Rect::from_center_size(close_r.center(), vec2(20.0, 20.0)), Icon::Close, t.text_dim);
+    main.widget_info(|| egui::WidgetInfo::labeled(egui::WidgetType::Button, true, name));
+    close.widget_info(|| egui::WidgetInfo::labeled(egui::WidgetType::Button, true, format!("Close {name}")));
+    (main, close)
 }
 
 /// Whether all the command tabs fit beside the sheet button. If not, the last one moves into More.
