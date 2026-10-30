@@ -607,8 +607,6 @@ letters before focus, focus on the editor before its first frame, focus on anoth
 Device (x86_64 emulator, 1080x2400, after the fix; `~/.cache/gc-spike/u18-final.png`): A10 "Wednesday",
 A11 "Pending", A12 "Edited", all exact, and A13 "friday" from keyevents F R I D A Y (unshifted, lowercase
 as the keycodes give).
-<<<<<<< HEAD
-<<<<<<< HEAD
 
 ### Update 18b: keyboard order inside one frame (type-ahead)
 
@@ -643,11 +641,8 @@ Update 18c (open, device evidence): TEMPDBG logs on the emulator (`~/.cache/gc-s
   'a'. The loss is after `type_ahead` appended it, so the in-field TextEdit or the edit commit drops it.
 - Next: log `ed.text` in `type_ahead` and in `in_cell_editor` each frame (text before/after the TextEdit
   draws), to see which step overwrites the appended 'e'. TEMPDBG was removed; nothing extra committed.
-=======
->>>>>>> parent of c88da637 (Handle letters, Enter and Tab in frame order while typing starts an edit)
 
 Update 18c follow-up (2026-10-30 02:45): c88da637 REVERTED. On the device it regressed slow typing: Wednesday/Pending exact but "Edited" became "E" (shot ~/.cache/gc-spike/slow-check.png). Burst typing (letters+Enter in one batch) remains open: 2nd letter after Enter lost ("Bta", "Gama"); trace in burst-dbg-keep.log shows the letter reaches typed_in_order with an edit open, so the in-cell TextEdit/commit drops it.
-=======
 
 ## Update 19: graphics backend fallback / no crash without Vulkan (device check pending)
 
@@ -680,6 +675,5 @@ Update 18c follow-up (2026-10-30 02:45): c88da637 REVERTED. On the device it reg
      shows `GPU setup failed` or `wgpu error` lines, and the process is still alive (`adb shell pidof ai.storyteller.gridcraft.native`).
   3. Tap Close: the app leaves the foreground, no `FATAL EXCEPTION` in logcat.
   4. Restart the emulator without the flag (Vulkan present): the grid appears as before and `GPU adapter:` logs a Vulkan backend.
->>>>>>> android-gles
 
 Update 19 device result (2026-10-30 02:47): with Vulkan, the new gpu_setup picks the Vulkan adapter and the app works (typing OK). Without Vulkan (-feature -Vulkan): the BadAlloc is now logged as "wgpu error: Validation Error" (no wgpu panic), but the process still ends and NO dialog is shown (android_main returns early → process exits before Kotlin polls nativeGpuFailed). Open: keep the activity alive and show the dialog.
