@@ -34,14 +34,25 @@ fn android_main(app: AndroidApp) {
     };
     let wgpu_options = eframe::WgpuConfiguration { wgpu_setup, ..Default::default() };
     let options = eframe::NativeOptions { android_app: Some(app.clone()), wgpu_options, ..Default::default() };
-    let result = eframe::run_native(
-        "GridCraft",
-        options,
-        Box::new(|cc| Ok(Box::new(crate::app::Shell::new(&cc.egui_ctx)) as Box<dyn eframe::App>)),
-    );
-    if let Err(e) = result {
-        log::error!("eframe stopped: {e}");
-        ime::GPU_FAILED.store(true, Ordering::Relaxed);
+    // A surface that failed to configure can make wgpu panic on the first paint (`get_current_texture_view`).
+    // Catch that here (last-resort guard, the release profile unwinds) so the activity survives it.
+    let run = std::panic::catch_unwind(std::panic::AssertUnwindSafe(move || {
+        eframe::run_native(
+            "GridCraft",
+            options,
+            Box::new(|cc| Ok(Box::new(crate::app::Shell::new(&cc.egui_ctx)) as Box<dyn eframe::App>)),
+        )
+    }));
+    match run {
+        Ok(Ok(())) => {}
+        Ok(Err(e)) => {
+            log::error!("eframe stopped: {e}");
+            ime::GPU_FAILED.store(true, Ordering::Relaxed);
+        }
+        Err(_) => {
+            log::error!("eframe panicked (graphics surface)");
+            ime::GPU_FAILED.store(true, Ordering::Relaxed);
+        }
     }
     if ime::GPU_FAILED.load(Ordering::Relaxed) {
         keep_alive(&app);
