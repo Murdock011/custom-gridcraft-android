@@ -735,6 +735,19 @@ Next step (needs the emulator): install the instrumented build, run the burst, a
 (Text and Key Backspace/Delete) and ed.text before and after the TextEdit draw. Only then fix the step that drops the
 letter. Also still open: the one-frame Enter ordering (probe E), which the reverted c88da637 was meant to fix.
 
+### Update 22: Save then close passes on the device
+
+Re-run of Update 21 part 1 in ONE `gc-emu.sh` call (2026-10-30 10:13, emulator restarted, same build eeb06dde): dirty
+Book1 (A1 "Heo", A2 "Stc"), drawer Close, "Save Changes?" Save, system save dialog SAVE (raw tap inside the lock; the
+picker is another package, so `gc tap` refuses it). Shots `r-1-sheet.png`, `r-2-saf.png`, `r-3-after.png`.
+- File written: `/sdcard/Download/Book1 (3).xlsx`, 4076 bytes, 10:13 (the picker added " (3)" because Book1.xlsx exists).
+- App ended: logcat `Process ai.storyteller.gridcraft.native (pid 3497) has died: fg TOP` 4 s after SAVE; focus back on the
+  launcher; `pidof` empty.
+- Recovery copy cleared: `files/recovery` empty.
+- Result: PASS. Update 21's FAIL came from the stray tap outside the lock, not from the save path.
+- Helper lesson: every `gc-emu.sh` call brings GridCraft to the front, so a system picker must be driven in the same call
+  that opened it.
+
 ### Update 21: Save then close device check (inconclusive, emulator lost)
 
 Part 1 (2026-10-30 08:27-08:30, x86_64 debug build from HEAD eeb06dde): fresh recovery folder, typed "Hello" into A1
