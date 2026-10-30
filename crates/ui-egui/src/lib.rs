@@ -825,6 +825,10 @@ impl SheetApp {
         }
         match name {
             "open" => {
+                // The picker opens over the grid: a cell being edited is committed before it starts.
+                if !self.commit_edit(0, 0, false, false) {
+                    return;
+                }
                 if let Some(start) = &self.services.open_async {
                     start();
                 } else if let Some(pick) = &self.services.pick_open
@@ -878,6 +882,10 @@ impl SheetApp {
     }
 
     pub fn open_path(&mut self, path: &str) {
+        // A cell being edited is committed first: the workbook it belongs to stays open.
+        if !self.commit_edit(0, 0, false, false) {
+            return;
+        }
         match self.run("file.open", json!({"path": path})) {
             Ok(r) => self.after_open(Some(path), &r),
             // A password-protected workbook: ask for the password; the dialog opens it.
@@ -1286,6 +1294,9 @@ impl SheetApp {
             .as_ref()
             .map(|i| std::mem::take(&mut *i.lock().unwrap_or_else(std::sync::PoisonError::into_inner)))
             .unwrap_or_default();
+        // Documents handed over (VIEW, a picked file) open after a cell being edited is committed. If
+        // that fails, the documents are dropped and the error shows (the cell is still being edited).
+        let arrived = if arrived.is_empty() || self.commit_edit(0, 0, false, false) { arrived } else { Vec::new() };
         for (name, bytes) in arrived {
             let b64 = gridcraft_engine::io::base64_encode(&bytes);
             match self.run("file.open", json!({"name": &name, "base64": &b64})) {

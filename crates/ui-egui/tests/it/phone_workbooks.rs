@@ -60,3 +60,25 @@ fn a_single_workbook_shows_no_list() {
     open_drawer(&mut h);
     assert!(h.query_all_by_label("Close Book1").next().is_none(), "no workbook rows with one open");
 }
+
+#[test]
+fn opening_another_workbook_commits_the_cell_being_edited() {
+    let mut s = Session::new();
+    s.new_workbook();
+    let services = Services { open_async: Some(Box::new(|| {})), ..Default::default() };
+    let mut h = egui_kittest::Harness::builder().with_size(egui::vec2(412.0, 915.0)).build_ui_state(
+        |ui, app: &mut SheetApp| {
+            let ctx = ui.ctx().clone();
+            app.logic(&ctx);
+            app.ui(ui);
+        },
+        SheetApp::new(s, services),
+    );
+    h.run_steps(6);
+    h.state_mut().begin_edit(Some("Typed".into()), false);
+    h.run_steps(2);
+    h.state_mut().open_dialog("open", json!({}));
+    h.run_steps(2);
+    let wb = &h.state().session.active().unwrap().wb;
+    assert_eq!(wb.sheet(0).unwrap().value(gridcraft_engine::core::CellRef::new(0, 0)).display(), "Typed", "the typed text is kept");
+}
