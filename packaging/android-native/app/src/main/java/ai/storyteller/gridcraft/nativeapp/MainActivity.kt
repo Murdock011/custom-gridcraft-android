@@ -57,6 +57,10 @@ class MainActivity : GameActivity() {
     private var ctxCaret = 0
     private var ctxComp = -1
     private var ctxCompEnd = -1
+    /** The last target Rust reported (`ime::TARGET`); -1 until the first pull, and after a keyboard show. */
+    private var ctxTarget = -1L
+    /** Set by Enter or Tab, which moves the target itself: the next target change is that move, and does not restart. */
+    private var pendingTargetBump = false
 
     /** Messages sent to Rust. A context from Rust is taken only once Rust has read them all. */
     private var sent = 0L
@@ -69,22 +73,43 @@ class MainActivity : GameActivity() {
     /** Takes Rust's context when it has read every message sent (its count matches [sent]). */
     private fun pullContext() {
         val raw = nativeContext()
-        val f = raw.split('\u0001', limit = 5)
-        if (f.size < 5 || f[0].toLongOrNull() != sent) return
-        ctxCaret = f[1].toIntOrNull() ?: return
-        val comp = f[2].toIntOrNull() ?: -1
-        // Rust dropped the composition (the caret moved away from it): the keyboard still has its
-        // composing span, so restart the input to make it drop that span too. Posted, so this never
-        // runs inside onCreateInputConnection.
-        if (ctxComp >= 0 && comp < 0) {
-            imeView.post {
-                val imm = getSystemService(Context.INPUT_METHOD_SERVICE) as InputMethodManager
-                imm.restartInput(imeView)
-            }
+        val f = raw.split('\u0001', limit = 6)
+        if (f.size < 6 || f[0].toLongOrNull() != sent) return
+        val target = f[4].toLongOrNull() ?: return
+        // Same target: keep this side's copy (edit() keeps it right, and Rust's copy is empty). Gboard and this copy
+        // then agree, so the caps and the composition stay right. A new target (Enter moved on, a tap): take
+        // Rust's view once and restart the keyboard on it.
+        if (target == ctxTarget) return
+        ctxTarget = target
+        // The move Enter or Tab made already started the keyboard over (movedOn): nothing more to do.
+        if (pendingTargetBump) {
+            pendingTargetBump = false
+            return
         }
-        ctxComp = comp
+        ctxCaret = f[1].toIntOrNull() ?: 0
+        ctxComp = f[2].toIntOrNull() ?: -1
         ctxCompEnd = f[3].toIntOrNull() ?: -1
-        ctxText = f[4]
+        ctxText = f[5]
+        imeView.post {
+            val imm = getSystemService(Context.INPUT_METHOD_SERVICE) as InputMethodManager
+            imm.restartInput(imeView)
+        }
+    }
+
+    /**
+     * Enter or Tab moved the edit to the next cell: the keyboard starts over there at once, rather than on the next
+     * poll (which lands after the next word's first letter and drops the one after it).
+     */
+    private fun movedOn() {
+        ctxText = ""
+        ctxCaret = 0
+        ctxComp = -1
+        ctxCompEnd = -1
+        pendingTargetBump = true
+        imeView.post {
+            val imm = getSystemService(Context.INPUT_METHOD_SERVICE) as InputMethodManager
+            imm.restartInput(imeView)
+        }
     }
 
     /** Replaces the context's UTF-16 range [s, e) with [t]; the composition is [t] when [composing]. */
@@ -494,6 +519,8 @@ class MainActivity : GameActivity() {
 
 
     private fun showKeyboard() {
+        // The keyboard comes up on the current text: the copy from before it went down may be stale.
+        ctxTarget = -1L
         pullContext()
         imeView.requestFocus()
         val imm = getSystemService(Context.INPUT_METHOD_SERVICE) as InputMethodManager
@@ -585,6 +612,7 @@ class MainActivity : GameActivity() {
             val t = text?.toString() ?: ""
             replacedRange().let { edit(it.first, it.second, t, composing = false) }
             send(0, t, 0, 0)
+            if (t.contains('\n') || t.contains('\r')) movedOn()
             return true
         }
 
@@ -637,6 +665,7 @@ class MainActivity : GameActivity() {
                     send(0, t, 0, 0)
                 } else {
                     send(4, "", event.keyCode, 0)
+                    if (event.keyCode == KeyEvent.KEYCODE_ENTER || event.keyCode == KeyEvent.KEYCODE_TAB) movedOn()
                 }
             }
             return true
@@ -644,6 +673,7 @@ class MainActivity : GameActivity() {
 
         override fun performEditorAction(actionCode: Int): Boolean {
             send(4, "", KeyEvent.KEYCODE_ENTER, 0)
+            movedOn()
             return true
         }
 

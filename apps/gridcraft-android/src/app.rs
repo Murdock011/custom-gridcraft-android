@@ -12,7 +12,7 @@ use gridcraft_ui_egui::{Inbox, Services, SheetApp};
 
 use crate::clip;
 use crate::files;
-use crate::ime::{self, Msg};
+use crate::ime::{self, Msg, ime_lines};
 use crate::recovery;
 
 /// Android KeyEvent codes the keyboard sends as key presses.
@@ -20,6 +20,7 @@ const KEYCODE_ESCAPE: i32 = 111;
 const KEYCODE_DEL: i32 = 67;
 const KEYCODE_FORWARD_DEL: i32 = 112;
 const KEYCODE_ENTER: i32 = 66;
+const KEYCODE_TAB: i32 = 61;
 
 /// Most keys one `Delete` message may erase, so a hostile count can't flood the queue.
 const MAX_ERASE: usize = 256;
@@ -76,6 +77,8 @@ pub struct Shell {
     pending: Vec<Event>,
     /// The keyboard's composing text, which is replaced as the user types (see `replace_composing`).
     composing: String,
+    /// The active sheet, document and cell last frame; a change bumps `ime::TARGET`.
+    ime_target: String,
     inbox: Inbox,
     /// Locations of the documents queued for the inbox in this frame (see `logic`).
     opening: Vec<String>,
@@ -129,6 +132,7 @@ impl Shell {
             app,
             pending: Vec::new(),
             composing: String::new(),
+            ime_target: String::new(),
             inbox,
             opening: Vec::new(),
             written: state.clone(),
@@ -219,8 +223,17 @@ impl Shell {
             match m {
                 Msg::Compose(t) => self.replace_composing(&t),
                 Msg::Commit(t) => {
-                    self.replace_composing(&t);
-                    self.composing.clear();
+                    // Gboard sends Enter as a newline in the commit text; the cell is single-line, so a
+                    // newline becomes an Enter press (which ends the word) instead of text.
+                    for (i, line) in ime_lines(&t).into_iter().enumerate() {
+                        if i > 0 {
+                            self.composing.clear();
+                            self.press(Key::Enter);
+                            ime::KEEP_TYPING.store(true, Ordering::Relaxed);
+                        }
+                        self.replace_composing(line);
+                        self.composing.clear();
+                    }
                 }
                 Msg::Finish => self.composing.clear(),
                 Msg::Delete { before, after } => {
@@ -237,11 +250,14 @@ impl Shell {
                 Msg::Key(code) => {
                     let key = match code {
                         KEYCODE_ENTER => Key::Enter,
+                        KEYCODE_TAB => Key::Tab,
                         KEYCODE_DEL => Key::Backspace,
                         KEYCODE_FORWARD_DEL => Key::Delete,
                         KEYCODE_ESCAPE => Key::Escape,
                         _ => continue,
                     };
+                    // Enter and Tab keep the keyboard up for the next cell; Escape (or Back over a sheet) lowers it.
+                    ime::KEEP_TYPING.store(matches!(key, Key::Enter | Key::Tab), Ordering::Relaxed);
                     self.composing.clear();
                     self.press(key);
                 }
@@ -324,6 +340,13 @@ impl eframe::App for Shell {
                 _ => {}
             }
         }
+        // A touch or a scroll is the user doing something else: the keyboard goes down unless a cell is being edited.
+        let other = raw.events.iter().any(|e| {
+            matches!(e, Event::PointerButton { pressed: true, .. } | Event::Touch { phase: egui::TouchPhase::Start, .. } | Event::MouseWheel { .. })
+        });
+        if other {
+            ime::KEEP_TYPING.store(false, Ordering::Relaxed);
+        }
         raw.events.append(&mut self.pending);
         raw.system_theme = Some(if ime::NIGHT.load(Ordering::Relaxed) { egui::Theme::Dark } else { egui::Theme::Light });
         self.app.raw_input_hook(raw);
@@ -339,8 +362,14 @@ impl eframe::App for Shell {
         }
         let _ = ime::WAKE.set(Box::new(move || ctx.request_repaint()));
         self.app.ui(ui);
+        // The cell the keyboard types into: moving it (Enter, a tap) starts the keyboard over on the new cell.
+        let target = self.app.session.active().map(|d| format!("{}:{:?}:{:?}", d.uid, d.wb.active_sheet, d.selection.active)).unwrap_or_default();
+        if target != self.ime_target {
+            self.ime_target = target;
+            ime::TARGET.fetch_add(1, Ordering::Relaxed);
+        }
         // egui sets `output.ime` while a text position is focused: that is when the keyboard shows.
-        let wants = ui.ctx().output(|o| o.ime.is_some());
+        let wants = ui.ctx().output(|o| o.ime.is_some()) || ime::KEEP_TYPING.load(Ordering::Relaxed);
         ime::WANTS_KEYBOARD.store(wants, Ordering::Relaxed);
         ime::CAN_GO_BACK.store(self.app.can_go_back(ui.ctx()), Ordering::Relaxed);
         // egui-winit has no Android clipboard; copies go to ClipboardManager through Kotlin.

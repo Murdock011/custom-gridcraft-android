@@ -34,7 +34,7 @@ fn cancel_button_ends_the_edit_and_keeps_the_cell() {
 }
 
 #[test]
-fn confirm_button_commits_and_moves_down() {
+fn confirm_button_commits_and_keeps_the_cell() {
     let mut h = harness();
     h.state_mut().begin_edit(Some("42".into()), false);
     h.run_steps(4);
@@ -42,5 +42,5 @@ fn confirm_button_commits_and_moves_down() {
     h.run_steps(4);
     assert!(h.state().editor.is_none(), "the edit is committed");
     let active = h.state().session.active().unwrap().selection.active;
-    assert_eq!((active.row, active.col), (1, 0), "the selection moved down to A2");
+    assert_eq!((active.row, active.col), (0, 0), "the tick keeps the selection on A1; only Enter moves down");
 }

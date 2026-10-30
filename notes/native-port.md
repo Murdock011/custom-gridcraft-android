@@ -794,3 +794,112 @@ Part 2 (burst typing): not started on the device. The `u18d-tempdbg-and-probes.p
 - Checks: `cargo clippy -p gridcraft-ui-egui -p gridcraft-android` clean;
   `cargo test -q -p gridcraft-ui-egui -p gridcraft-android -- --skip header_autofit` passes;
   `cargo xtask wasm` ok.
+
+## Update 23: burst letter loss traced to the key press, before egui (no fix committed)
+
+Device (x86_64 emulator, debug build from c8c92ab0 plus TEMPDBG logs, removed again): tap C14, then one call
+`gc text Alpha; gc key 66; gc text Beta; gc key 66; gc text Gamma; gc key 66`. Shots `burst-0-start.png`
+(before) and `burst-1-run.png`: C14 "Alpha", C15 "Bta", C16 "Gamma". Trace: `~/.cache/gc-spike/burst-1-log.txt`.
+
+Root cause (device trace, per frame): the lost letter's key-down and its Text event never reach egui at all. In the
+frames after "B" (kb log, grid.rs `keyboard()`), the events were `Key B pressed + Text("B")`, then `Key B released`,
+`ShiftLeft released`, and later `Key E released` with no `Key E pressed` and no `Text("e")`. The 't' arrived, so the
+edit was intact: "B" -> "Bt" -> "Bta". The key press was dropped before `keyboard()` (the winit/GameActivity input path on
+Android, or the soft keyboard's handling of the injected hardware key, which sits in front of our `ImeView` in
+MainActivity.kt). Nothing in the grid edit code can recover an event that egui never receives. This also explains why
+kittest cannot reproduce it: the harness feeds Text straight into egui.
+
+What this rules out: the type-ahead append (`type_ahead` took every Text it was given), the in-cell TextEdit overwrite
+(the TextEdit text and caret stayed correct on every frame in the trace), and the cursor/selection state (never a
+selection). Random-split kittest probes (400 bursts, random frame splits and random focus changes) also found no lost
+letter. They did find a separate ordering gap: when the edit field has no focus, an Enter in the same frame as the
+letters is dropped, and an Enter in a later frame commits late ("AlphaB" / "eta"). That is the Update 18b gap, not this
+symptom.
+
+Fix: none committed. The next step needs the Android input path: log the GameActivity/winit key events (or
+`dispatchKeyEvent` in MainActivity.kt, before `super`) for the lost 'e' to see whether the press reaches the activity.
+If it does not, the soft keyboard or the injected-key path is the cause, and a fix belongs in the Android layer.
+
+## Update 24: Enter from the soft keyboard becomes a cell Enter (device check partly done)
+
+- Real keyboard result (coordinator, 10:36, shot `~/.cache/gc-spike/g-2.png`): fast typing through the on-screen
+  keyboard lost NO letters ("HelloBetaGammaWednesday" had every letter). The "Bta"/"Heo" losses from Update 18c and 23
+  therefore come from adb-injected key events, not real keyboard typing. Lower priority than the Enter bug below.
+- Cause: the ImeView's inputType is multi-line, so Gboard sends Enter as `commitText("\n")`. MainActivity.kt forwards it
+  as `Msg::Commit`, and `drain_ime` pushed it as `Event::Text("\n")`, which the single-line cell TextEdit drops. Words
+  typed with Enter between them ran together in one cell. Enter as a key (`Msg::Key` 66) already worked.
+- Fix (`apps/gridcraft-android/src/app.rs` `drain_ime`, `Msg::Commit` arm): the commit text is split with `ime_lines`
+  (`ime.rs`); each piece is committed as before, and each newline clears `composing` and presses Enter. `Msg::Compose`
+  is unchanged (Gboard's composing text carries no newline; Enter commits).
+  `ime.rs`: `ime_lines` splits on "\r\n", "\n" or a lone "\r"; unit test `commit_newlines_split_into_lines`.
+  The Kotlin inputType is not changed.
+- Checks: `cargo clippy -p gridcraft-android --all-targets` clean; `cargo test -q -p gridcraft-android` 10 passed (the
+  new test is in the host-compiled `ime.rs`; `app.rs` is Android-only); `cargo ndk -t x86_64 clippy -p gridcraft-android
+  --all-targets` clean; `build-native.sh x86_64` builds.
+- Device (x86_64, shared emulator, through gc-emu.sh): the recovery dialog was dismissed, C22 edited with the real
+  on-screen keyboard (shot `en-1a.png`, keyboard layout matched the coordinates).
+  - Typed `Hello` Enter `Beta` Enter `Gamma` Enter with `input tap` on the keyboard: C22 = "Hello" (Enter works, the
+    Enter moved the selection down). The rest was garbled: C23 = "BeMma", and the selection ended on C24, so the
+    Beta and Gamma commits did not land as three cells. Shot `en-1.png`. Not resolved here: adb tap bursts drop keys
+    (the 18c/23 pattern), so this does not prove the newline path for the second and third word.
+  - Plain edit with the ✓: C24 typed "Ok" and committed with the tick (shot `en-2.png`, formula bar shows "Ok" with
+    the tick greyed). Pass.
+- Open: repeat the three-word burst with the real keyboard (or slower taps) to confirm three cells "Hello","Beta","Gamma".
+- Keep typing (follow-up from the coordinator): Enter and Tab from the keyboard leave the keyboard up for the next
+  cell. `ime::KEEP_TYPING` is set by a keyboard Enter/Tab (`drain_ime`: `Msg::Key` 66/61 and newlines in `Msg::Commit`),
+  and `ui()` ORs it into `WANTS_KEYBOARD`. It is cleared by a pointer press, a touch start or a wheel event
+  (`raw_input_hook`), and by Escape (Back over an open sheet). ✓/✗ and taps clear it through the press. Kotlin's
+  poll is unchanged. No kittest: the state lives in the Android crate (`app.rs`), which the host tests do not compile.
+- Device (x86_64, shared emulator, via gc-emu.sh; taps with `sleep 0.15`):
+  1. Double-tap E27, `hello⏎beta⏎gamma⏎`: keyboard stayed up after the last Enter, selection at E30 (`kt-2.png`).
+     Cells were E27 "Hello", E28 "BEta", E29 "GAmmaGamma": Enter works, but the letters are garbled by the adb taps
+     (the same injection problem as above), so three clean cells are NOT confirmed.
+  2. Single-tap G20: keyboard went down, pill back (`kt-3.png`). Pass.
+  3. Double-tap G20, type "Ok", tap ✓: "Ok" committed, keyboard down. Selection moved to G21 after the tick, which is
+     not Excel's behaviour (Excel keeps the cell) - noted, not changed (`kt-4.png`; `kt-4a.png` is the open edit).
+- Layout: with the keyboard up and no edit open the pill steps aside (`phone::keyboard_up`), so nothing sits on the
+  keyboard (`kt-2.png`).
+- Open: a clean three-word run still needs real-keyboard typing or slower, reliable input; the ✓ selection move.
+- Garbled words after Enter (coordinator): cause was the keyboard's own text model going stale when Rust moved the
+  edit to the next cell. `pullContext` (MainActivity.kt) now posts `imm.restartInput(imeView)` when Rust's context text
+  differs from the keyboard's copy (a change not made by the keyboard). The restart runs only on that change, not per
+  letter; `updateSelection` alone was not tried. Logs (TEMPDBG) not added: the device result is the check.
+- ✓ on the edit bar keeps the cell: `crates/ui-egui/src/phone.rs` `edit_bar` calls `commit_edit(0, 0, ...)` (was
+  `(1, 0)`). Test `phone_edit::confirm_button_commits_and_keeps_the_cell` (renamed from `..._moves_down`) asserts A1.
+  This is GridCraft's own phone.rs, so it no longer matches the shared-phone-design note for WordCraft; flagged.
+- Device (x86_64, shared emulator, gc-emu.sh):
+  - A10, `hello⏎beta⏎gamma⏎`, 0.15 s taps: A10 "HELLO", A11 "BETA", A12 "GAMMA", selection A13, keyboard up (`kt-6.png`).
+    Letters and three cells are right, but all capitals: the shift state after the restart is not fixed. Open.
+  - A13, same word run at 0.08 s taps: "HLLO", "BEtA", "GMMa" (`kt-7.png`). Letters dropped: 0.08 s is too fast. Open.
+  - Check 3: "Ok" typed in A16 and ✓ tapped: selection stays A16, keyboard down (`kt-8.png`). Pass. The cell shows
+    "WOK": a stray W from the double-tap, cause unknown (`kt-8a.png` was the open edit).
+  - Not run: a slow single word + Enter (time).
+- Root cause of the ALL CAPS and dropped letters (coordinator review): `ime::context()` always sent empty text, so
+  `pullContext` replaced the keyboard's copy with "" every poll, and the composing-drop restart fired after every
+  composing letter (Rust always reports no composition). Gboard restarted per letter, so caps and letters went wrong.
+- Fix: `ime::TARGET` (a counter) is bumped in `Shell::ui` when the active document, sheet or cell changes (Enter, a tap).
+  `context()` sends it as a 6th field. `pullContext` takes Rust's view and restarts the keyboard once per target
+  change; on the same target it keeps its own copy (edit() maintains it). `showKeyboard` resets the target so a
+  reshown keyboard starts on the current text. The composing-drop restart is removed (it fired on every composing letter).
+- Device (x86_64, shared emulator, gc-emu.sh):
+  - A18, `hello⏎beta⏎gamma⏎`, 0.15 s taps: A18 "Hello", A19 "Beta", A20 "Gamma", caps right, keyboard up, selection A21 (`kt-10.png`). Pass.
+  - A21 to A23, same word run at 0.08 s taps: "Hllo", "Bta", "Gamma" (`kt-11.png`). Letters drop at 0.08 s: adb taps
+    are too fast for the IME; human typing (about 0.1-0.2 s) is the reference. Open, not a Kotlin fix.
+  - A25, "Ok" then ✓: committed, selection stays A25, keyboard down (`kt-12.png`). Pass.
+  - Stray "W" in A16 ("WOK", `kt-8.png`): a key from the double-tap landed on the keyboard while it was opening; not
+    reproduced since, not fixed.
+  - Not run: slow single word + Enter as a separate case (covered by the 0.15 s run).
+- Restart at the Enter itself: `Connection.commitText` (newline), `sendKeyEvent` (Enter/Tab) and `performEditorAction`
+  call `movedOn()` after sending to Rust: the local copy goes to the empty new target and the keyboard restarts
+  (posted). `pendingTargetBump` makes the poll's TARGET change for that same move a no-op. Ceiling: if an Enter does
+  not move the target (last row, no change), the next real target change is swallowed once.
+- Device (x86_64, shared emulator, gc-emu.sh):
+  - A8, `hello⏎beta⏎gamma⏎`, 0.08 s taps: A8 "Hello" correct, then "Bta" (A9) and "Gmma" (A10): letters still drop
+    at 0.08 s (adb taps). The second word's first letter now survives; drops are inside words (`kt-14.png`). Recorded.
+  - A18-A20 (0.15 s run earlier this round, `kt-10.png`): Hello / Beta / Gamma. Pass.
+  - A17, slow word `slow` (0.5 s taps) then Enter: "Slow" in A17, selection moved to A18 (`kt-15.png`). Pass.
+  - ✓ (tick) not re-run this round: it is Rust-only (`commit_edit(0, 0)`), unchanged since the previous pass (`kt-12.png`).
+- Experiment: `updateSelection(imeView, 0, 0, -1, -1)` instead of `restartInput` in `movedOn()` and the poll's target
+  change (coordinator request). Device, column D, `hello⏎beta⏎gamma⏎` at 0.12 s taps: D6 "Hello", D7 "Bta", D8 "Gmma"
+  (`kt-17.png`): two drops inside words, worse than the restart (one drop after Enter, the coordinator's `v-1.png`).
+  Reverted: the restart stays (1b16b00d). Device still runs the experiment build; it does not match the commit.
