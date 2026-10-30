@@ -794,3 +794,28 @@ Part 2 (burst typing): not started on the device. The `u18d-tempdbg-and-probes.p
 - Checks: `cargo clippy -p gridcraft-ui-egui -p gridcraft-android` clean;
   `cargo test -q -p gridcraft-ui-egui -p gridcraft-android -- --skip header_autofit` passes;
   `cargo xtask wasm` ok.
+
+## Update 23: burst letter loss traced to the key press, before egui (no fix committed)
+
+Device (x86_64 emulator, debug build from c8c92ab0 plus TEMPDBG logs, removed again): tap C14, then one call
+`gc text Alpha; gc key 66; gc text Beta; gc key 66; gc text Gamma; gc key 66`. Shots `burst-0-start.png`
+(before) and `burst-1-run.png`: C14 "Alpha", C15 "Bta", C16 "Gamma". Trace: `~/.cache/gc-spike/burst-1-log.txt`.
+
+Root cause (device trace, per frame): the lost letter's key-down and its Text event never reach egui at all. In the
+frames after "B" (kb log, grid.rs `keyboard()`), the events were `Key B pressed + Text("B")`, then `Key B released`,
+`ShiftLeft released`, and later `Key E released` with no `Key E pressed` and no `Text("e")`. The 't' arrived, so the
+edit was intact: "B" -> "Bt" -> "Bta". The key press was dropped before `keyboard()` (the winit/GameActivity input path on
+Android, or the soft keyboard's handling of the injected hardware key, which sits in front of our `ImeView` in
+MainActivity.kt). Nothing in the grid edit code can recover an event that egui never receives. This also explains why
+kittest cannot reproduce it: the harness feeds Text straight into egui.
+
+What this rules out: the type-ahead append (`type_ahead` took every Text it was given), the in-cell TextEdit overwrite
+(the TextEdit text and caret stayed correct on every frame in the trace), and the cursor/selection state (never a
+selection). Random-split kittest probes (400 bursts, random frame splits and random focus changes) also found no lost
+letter. They did find a separate ordering gap: when the edit field has no focus, an Enter in the same frame as the
+letters is dropped, and an Enter in a later frame commits late ("AlphaB" / "eta"). That is the Update 18b gap, not this
+symptom.
+
+Fix: none committed. The next step needs the Android input path: log the GameActivity/winit key events (or
+`dispatchKeyEvent` in MainActivity.kt, before `super`) for the lost 'e' to see whether the press reaches the activity.
+If it does not, the soft keyboard or the injected-key path is the cause, and a fix belongs in the Android layer.
