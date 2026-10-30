@@ -989,6 +989,28 @@ impl SheetApp {
     }
 
     /// Starts editing the active cell. `text` replaces the content (typing) or pre-fills it.
+    /// Adds letters typed before the edit's text field had the keyboard (none has focus on the frame an
+    /// edit starts, so egui would hand them to nobody). They go in at the end, as typing in the field would.
+    pub fn type_ahead(&mut self, typed: &str) {
+        let autocomplete = self.ui.autocomplete;
+        let Some(ed) = self.editor.as_mut() else { return };
+        ed.text.push_str(typed);
+        ed.caret = ed.text.chars().count();
+        ed.anchor = ed.caret;
+        ed.point = None;
+        ed.point_anchor = None;
+        ed.point_cell = None;
+        ed.sync_caret = true;
+        ed.completion = None;
+        if autocomplete
+            && !ed.is_formula()
+            && let Some(sh) = self.session.active().and_then(|d| d.wb.sheet(ed.sheet))
+        {
+            ed.completion = editor::column_completion(sh, ed.cell, &ed.text);
+        }
+        formula_bar::refresh_function_autocomplete(&self.session, ed);
+    }
+
     pub fn begin_edit(&mut self, text: Option<String>, from_formula_bar: bool) {
         // The source formula is display-only on spill children. Grid replacement keeps its
         // existing behavior, but no formula-bar entry path may edit that displayed formula.

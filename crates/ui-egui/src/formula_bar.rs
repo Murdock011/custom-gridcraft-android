@@ -512,13 +512,7 @@ pub fn editor_widget(app: &mut SheetApp, ui: &mut egui::Ui, id: egui::Id, font: 
         ed.point_anchor = None;
         // Typing ends the pointing: the next arrow starts again from the edited cell, as in Excel.
         ed.point_cell = None;
-        let names: Vec<String> = function_names()
-            .iter()
-            .map(|name| {
-                app.session.active().map(|d| crate::formula_locale::completion_name(name, ed.locale, &d.wb, ed.sheet)).unwrap_or(name).to_string()
-            })
-            .collect();
-        ed.update_autocomplete(&names);
+        refresh_function_autocomplete(&app.session, &mut ed);
         app.session.mode = if ed.can_point() {
             gridcraft_engine::Mode::Point
         } else if ed.enter_mode {
@@ -653,7 +647,16 @@ fn cycle_anchor(ed: &mut crate::editor::EditState) {
     }
 }
 
-fn function_names() -> Vec<String> {
+/// Refreshes the function-name autocomplete of the edit after its text changed.
+pub(crate) fn refresh_function_autocomplete(session: &gridcraft_engine::Session, ed: &mut crate::editor::EditState) {
+    let names: Vec<String> = function_names()
+        .iter()
+        .map(|name| session.active().map(|d| crate::formula_locale::completion_name(name, ed.locale, &d.wb, ed.sheet)).unwrap_or(name).to_string())
+        .collect();
+    ed.update_autocomplete(&names);
+}
+
+pub(crate) fn function_names() -> Vec<String> {
     static NAMES: std::sync::OnceLock<Vec<String>> = std::sync::OnceLock::new();
     NAMES
         .get_or_init(|| gridcraft_engine::cmd::formulas::function_list().iter().filter_map(|f| f["name"].as_str().map(str::to_string)).collect())

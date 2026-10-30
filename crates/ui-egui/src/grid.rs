@@ -3079,6 +3079,30 @@ fn keyboard(app: &mut SheetApp, ctx: &egui::Context, resp: &egui::Response, geo:
         resp.request_focus();
     }
     let other_focus = ctx.memory(|m| m.focused()).is_some_and(|f| f != resp.id && (editing || !stale.contains(&f)));
+    // An edit that has just started has no focused text field until the next frame, and egui gives
+    // text only to the focused widget: letters typed meanwhile would reach nobody. They go into the
+    // edit here, in order, instead.
+    let menus_open = app.dialog.is_some()
+        || app.message.is_some()
+        || app.grid.filter_menu.is_some()
+        || app.grid.fill_menu.is_some()
+        || matches!(app.grid.drag, Drag::Fill { menu: true, .. });
+    if app.editor.is_some() && !menus_open && ctx.memory(|m| m.focused()).is_none_or(|f| f == resp.id) {
+        let typed: Vec<String> = ctx.input_mut(|i| {
+            let mut typed = Vec::new();
+            i.events.retain(|e| match e {
+                egui::Event::Text(t) if !t.is_empty() && t.chars().all(|c| !c.is_control()) => {
+                    typed.push(t.clone());
+                    false
+                }
+                _ => true,
+            });
+            typed
+        });
+        for t in typed {
+            app.type_ahead(&t);
+        }
+    }
     // An open filter menu owns the keyboard even when a click inside it left focus on nothing (#1516).
     // So do the fill menu (its Esc closes it, not the copy) and the right-drag that opens it (an
     // arrow key would move the selection the menu fills from).
@@ -3109,7 +3133,13 @@ fn keyboard(app: &mut SheetApp, ctx: &egui::Context, resp: &egui::Response, geo:
     // Alt shortcuts type their character too on Windows and Linux (Alt+= sends Text("=")): once
     // a shortcut ran, that text must not start an edit over what it just did.
     let mut shortcut_ran = false;
+    // Set once typing has started an edit in this frame: its letters go into the edit (`type_ahead`),
+    // and the other events of the frame wait for the next one (the keyboard is not theirs any more).
+    let mut started = false;
     for ev in events {
+        if started && !matches!(ev, egui::Event::Text(_)) {
+            continue;
+        }
         match ev {
             egui::Event::Copy => {
                 app.copy_to_clipboard(ctx, "edit.copy");
@@ -3120,11 +3150,18 @@ fn keyboard(app: &mut SheetApp, ctx: &egui::Context, resp: &egui::Response, geo:
             egui::Event::Paste(text) => app.paste_external(text),
             egui::Event::Text(_) if shortcut_pressed || shortcut_ran => {}
             egui::Event::Text(text) if text.chars().all(|c| !c.is_control()) && !text.is_empty() => {
+                if started {
+                    app.type_ahead(&text);
+                    continue;
+                }
                 app.begin_edit(Some(text), false);
                 if let Some(ed) = app.editor.as_mut() {
                     ed.caret = ed.text.chars().count();
                 }
-                return;
+                if app.editor.is_none() {
+                    return;
+                }
+                started = true;
             }
             egui::Event::Key { key, physical_key, pressed: true, modifiers: m, .. } => {
                 use egui::Key;
