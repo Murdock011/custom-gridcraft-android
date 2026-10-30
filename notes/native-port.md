@@ -903,3 +903,49 @@ If it does not, the soft keyboard or the injected-key path is the cause, and a f
   change (coordinator request). Device, column D, `hello⏎beta⏎gamma⏎` at 0.12 s taps: D6 "Hello", D7 "Bta", D8 "Gmma"
   (`kt-17.png`): two drops inside words, worse than the restart (one drop after Enter, the coordinator's `v-1.png`).
   Reverted: the restart stays (1b16b00d). Device still runs the experiment build; it does not match the commit.
+
+## Update 25: no autocorrect on commit (device checks not run)
+
+- Cause (coordinator shots `k-2.png`, `k-3.png`): `ImeView.onCreateInputConnection` set `TYPE_TEXT_FLAG_AUTO_CORRECT`.
+  Gboard typed "Abx" correctly but replaced the word with its bold suggestion on Enter ("ABX") when it committed.
+  In a spreadsheet that mangles codes, names and IDs.
+- Fix: dropped `TYPE_TEXT_FLAG_AUTO_CORRECT`. Kept `TYPE_CLASS_TEXT`, `TYPE_TEXT_FLAG_MULTI_LINE` (Enter commits a
+  newline) and `TYPE_TEXT_FLAG_CAP_SENTENCES`. No `NO_SUGGESTIONS`, so suggestions still show and can be tapped.
+- Build: `CARGO_TARGET_DIR=~/.cache/gc-agent-burst-target sh packaging/android-native/build-native.sh x86_64` succeeded.
+- Device checks (shots `ac-*.png`): NOT RUN. The shared emulator reported "device offline" / "no devices/emulators
+  found" on the install and on every `gc-emu.sh` call (3 attempts, one 90 s wait). Still to run:
+  1. a b c d, backspace x2, x, Enter: expect "Abx" (not "ABX").
+  2. type "helo", tap a suggestion, Enter: expect the suggestion once.
+  3. ?123, type 12.5, Enter: expect 12.5 as a number.
+  4. hello/beta/gamma with 0.15 s taps: Hello / Beta / Gamma.
+- Device run (emulator back after coordinator restart). First install ran the old process: `install -r` does not
+  restart the app, so the first Check 1 used the old code. Force-stopped and relaunched GridCraft (`ac-4.png`), then reran.
+  - Check 1 (a b c d, backspace x2, x, Enter), B26 (`ac-3.png`) and B30 (`ac-6.png`): both commit "ABX", not "Abx". FAIL.
+    Removing AUTO_CORRECT did not stop it, so the uppercase is not from that flag alone. Not investigated further.
+  - Check 2 (type "helo", tap "Hello" in strip at 540,1576, Enter), B31 (`ac-7.png`, `ac-8.png`): commit "Helo", the tap
+    did not apply the suggestion. FAIL (tap did not register, or the strip tap is at a different y).
+  - Check 3 (?123, 12.5): NOT RUN.
+  - Check 4 (hello/beta/gamma, 0.15 s taps), B32-B34 (`ac-9.png`): "Hello", "Beta" correct. The third word was typed
+    wrong by the driver ("gelrm", not "gamma") so the run is inconclusive. Re-run needed.
+  - Stray `gc tap 1 1` before the check-1 taps (`ac-3`): harmless status-bar tap, noted for transparency.
+- Cause of "ABX" (TEMPDBG logcat, `ac-log-1.txt`, build with logging then removed): the letters arrive as plain
+  `commitText` (no composing text). On Enter, Gboard itself replaces the word: `deleteSurroundingText(3, 0)` (ctx "Abx"
+  becomes "") then `commitText("ABX")`, then the newline. Rust gets `Delete{before:3}` and `Commit("ABX")`. So the
+  uppercase is Gboard's word correction, not our caps. Removing TYPE_TEXT_FLAG_AUTO_CORRECT did not stop it (Gboard
+  corrects anyway); only TYPE_TEXT_FLAG_NO_SUGGESTIONS is known to stop it, and that is ruled out by the brief.
+- Check 2 cause (`ac-log-2.txt`, `ac-log-2-shot.png`): the strip shows "Helo | Hello" and a tap on "Hello" (540,1576)
+  produced NO log: no setComposingRegion, no delete, no commit. Gboard did not apply the pick. Enter then committed "Helo".
+  Not explained yet; the tap may not reach the strip, or Gboard's pick needs composing text, which we never send.
+- Open: a decision is needed. Options: (a) add NO_SUGGESTIONS (stops ABX, loses the strip); (b) send composing text so
+  Gboard's pick and correction work on the composing span (untested, may still correct on Enter).
+- Fix tried (option a): `TYPE_TEXT_FLAG_NO_SUGGESTIONS` added to ImeView, with CLASS_TEXT, MULTI_LINE, CAP_SENTENCES;
+  AUTO_CORRECT stays removed. The strip is gone, so check 2 cannot apply now.
+  - Check 1 (a b c d, backspace x2, x, Enter, 0.3 s), A3: "Abx" on A3, selection to A4 (`ns-2.png`). Pass.
+  - Check 4 (hello/beta/gamma, 0.15 s), A4-A6 (`ns-3.png`): "Hello", "Beta" correct; the third word came out "Gmma"
+    (the "a" after "g" was dropped at 0.15 s). Partial: the known letter-drop, not a commit change.
+  - Check 3 (?123, 1 2 . 5, Enter): B3 "12.5" right-aligned as a number (`ns-7.png`). Pass. The numbers layout reverted
+    to letters after the first symbol in one run (`ns-5.png`, "1w.t" in A7); after one more ?123 it stayed (`ns-6.png`).
+  - Slow word (0.5 s, C7): not valid. The taps went to the toolbar and the View sheet opened (`ns-8.png`); C7 was never
+    edited. Not re-run.
+  - Scratch cells left on the test sheet: A3-A7 and B3 (from the checks), A7 "1w.t".
+- Option (b) (composing spans so suggestions work) is a possible later improvement; untested.
