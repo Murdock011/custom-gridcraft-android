@@ -57,6 +57,8 @@ class MainActivity : GameActivity() {
     private var ctxCaret = 0
     private var ctxComp = -1
     private var ctxCompEnd = -1
+    /** The last target Rust reported (`ime::TARGET`); -1 until the first pull, and after a keyboard show. */
+    private var ctxTarget = -1L
 
     /** Messages sent to Rust. A context from Rust is taken only once Rust has read them all. */
     private var sent = 0L
@@ -69,30 +71,22 @@ class MainActivity : GameActivity() {
     /** Takes Rust's context when it has read every message sent (its count matches [sent]). */
     private fun pullContext() {
         val raw = nativeContext()
-        val f = raw.split('\u0001', limit = 5)
-        if (f.size < 5 || f[0].toLongOrNull() != sent) return
-        ctxCaret = f[1].toIntOrNull() ?: return
-        val comp = f[2].toIntOrNull() ?: -1
-        // Rust dropped the composition (the caret moved away from it): the keyboard still has its
-        // composing span, so restart the input to make it drop that span too. Posted, so this never
-        // runs inside onCreateInputConnection.
-        if (ctxComp >= 0 && comp < 0) {
-            imeView.post {
-                val imm = getSystemService(Context.INPUT_METHOD_SERVICE) as InputMethodManager
-                imm.restartInput(imeView)
-            }
-        }
-        ctxComp = comp
+        val f = raw.split('\u0001', limit = 6)
+        if (f.size < 6 || f[0].toLongOrNull() != sent) return
+        val target = f[4].toLongOrNull() ?: return
+        // Same target: keep this side's copy (edit() keeps it right, and Rust's copy is empty). Gboard and this copy
+        // then agree, so the caps and the composition stay right. A new target (Enter moved on, a tap): take
+        // Rust's view once and restart the keyboard on it.
+        if (target == ctxTarget) return
+        ctxTarget = target
+        ctxCaret = f[1].toIntOrNull() ?: 0
+        ctxComp = f[2].toIntOrNull() ?: -1
         ctxCompEnd = f[3].toIntOrNull() ?: -1
-        // Rust's text changed without an edit from the keyboard (Enter moved to the next cell, a tap...): the
-        // keyboard still holds the old text and its own model, so it starts over on the new text.
-        if (f[4] != ctxText) {
-            imeView.post {
-                val imm = getSystemService(Context.INPUT_METHOD_SERVICE) as InputMethodManager
-                imm.restartInput(imeView)
-            }
+        ctxText = f[5]
+        imeView.post {
+            val imm = getSystemService(Context.INPUT_METHOD_SERVICE) as InputMethodManager
+            imm.restartInput(imeView)
         }
-        ctxText = f[4]
     }
 
     /** Replaces the context's UTF-16 range [s, e) with [t]; the composition is [t] when [composing]. */
@@ -502,6 +496,8 @@ class MainActivity : GameActivity() {
 
 
     private fun showKeyboard() {
+        // The keyboard comes up on the current text: the copy from before it went down may be stale.
+        ctxTarget = -1L
         pullContext()
         imeView.requestFocus()
         val imm = getSystemService(Context.INPUT_METHOD_SERVICE) as InputMethodManager

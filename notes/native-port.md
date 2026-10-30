@@ -874,3 +874,18 @@ If it does not, the soft keyboard or the injected-key path is the cause, and a f
   - Check 3: "Ok" typed in A16 and ✓ tapped: selection stays A16, keyboard down (`kt-8.png`). Pass. The cell shows
     "WOK": a stray W from the double-tap, cause unknown (`kt-8a.png` was the open edit).
   - Not run: a slow single word + Enter (time).
+- Root cause of the ALL CAPS and dropped letters (coordinator review): `ime::context()` always sent empty text, so
+  `pullContext` replaced the keyboard's copy with "" every poll, and the composing-drop restart fired after every
+  composing letter (Rust always reports no composition). Gboard restarted per letter, so caps and letters went wrong.
+- Fix: `ime::TARGET` (a counter) is bumped in `Shell::ui` when the active document, sheet or cell changes (Enter, a tap).
+  `context()` sends it as a 6th field. `pullContext` takes Rust's view and restarts the keyboard once per target
+  change; on the same target it keeps its own copy (edit() maintains it). `showKeyboard` resets the target so a
+  reshown keyboard starts on the current text. The composing-drop restart is removed (it fired on every composing letter).
+- Device (x86_64, shared emulator, gc-emu.sh):
+  - A18, `hello⏎beta⏎gamma⏎`, 0.15 s taps: A18 "Hello", A19 "Beta", A20 "Gamma", caps right, keyboard up, selection A21 (`kt-10.png`). Pass.
+  - A21 to A23, same word run at 0.08 s taps: "Hllo", "Bta", "Gamma" (`kt-11.png`). Letters drop at 0.08 s: adb taps
+    are too fast for the IME; human typing (about 0.1-0.2 s) is the reference. Open, not a Kotlin fix.
+  - A25, "Ok" then ✓: committed, selection stays A25, keyboard down (`kt-12.png`). Pass.
+  - Stray "W" in A16 ("WOK", `kt-8.png`): a key from the double-tap landed on the keyboard while it was opening; not
+    reproduced since, not fixed.
+  - Not run: slow single word + Enter as a separate case (covered by the 0.15 s run).

@@ -24,6 +24,9 @@ static QUEUE: Mutex<VecDeque<Msg>> = Mutex::new(VecDeque::new());
 /// Messages Rust has taken so far. Kotlin only trusts the context when this matches its own count.
 static TAKEN: AtomicU64 = AtomicU64::new(0);
 
+/// Changes whenever the keyboard's target changes (the active cell moved, or another sheet or document came up).
+/// Kotlin starts its copy of the text over on a change; it keeps its own copy in between (see `context`).
+pub static TARGET: AtomicU64 = AtomicU64::new(0);
 /// Whether egui wants the soft keyboard (a text position has focus). Kotlin polls it.
 pub static WANTS_KEYBOARD: AtomicBool = AtomicBool::new(false);
 /// Set by Enter or Tab from the keyboard, so it stays up for the next cell; cleared by a touch, a scroll, or Escape.
@@ -73,10 +76,11 @@ pub fn pop() -> Option<Msg> {
     Some(m)
 }
 
-/// What Kotlin reads: the number of messages taken, caret, composing start and end (-1 for none),
-/// then the text around the caret, U+0001 separated. The text is always empty (see the module doc).
+/// What Kotlin reads: the number of messages taken, caret, composing start and end (-1 for none), the
+/// target counter (`TARGET`), then the text around the caret, U+0001 separated. The text is always empty:
+/// Kotlin keeps its own copy while the target stays the same.
 pub fn context() -> String {
-    format!("{}\u{1}0\u{1}-1\u{1}-1\u{1}", TAKEN.load(Ordering::Relaxed))
+    format!("{}\u{1}0\u{1}-1\u{1}-1\u{1}{}\u{1}", TAKEN.load(Ordering::Relaxed), TARGET.load(Ordering::Relaxed))
 }
 
 #[cfg(test)]

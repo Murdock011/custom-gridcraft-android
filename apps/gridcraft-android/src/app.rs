@@ -77,6 +77,8 @@ pub struct Shell {
     pending: Vec<Event>,
     /// The keyboard's composing text, which is replaced as the user types (see `replace_composing`).
     composing: String,
+    /// The active sheet, document and cell last frame; a change bumps `ime::TARGET`.
+    ime_target: String,
     inbox: Inbox,
     /// Locations of the documents queued for the inbox in this frame (see `logic`).
     opening: Vec<String>,
@@ -130,6 +132,7 @@ impl Shell {
             app,
             pending: Vec::new(),
             composing: String::new(),
+            ime_target: String::new(),
             inbox,
             opening: Vec::new(),
             written: state.clone(),
@@ -359,6 +362,12 @@ impl eframe::App for Shell {
         }
         let _ = ime::WAKE.set(Box::new(move || ctx.request_repaint()));
         self.app.ui(ui);
+        // The cell the keyboard types into: moving it (Enter, a tap) starts the keyboard over on the new cell.
+        let target = self.app.session.active().map(|d| format!("{}:{:?}:{:?}", d.uid, d.wb.active_sheet, d.selection.active)).unwrap_or_default();
+        if target != self.ime_target {
+            self.ime_target = target;
+            ime::TARGET.fetch_add(1, Ordering::Relaxed);
+        }
         // egui sets `output.ime` while a text position is focused: that is when the keyboard shows.
         let wants = ui.ctx().output(|o| o.ime.is_some()) || ime::KEEP_TYPING.load(Ordering::Relaxed);
         ime::WANTS_KEYBOARD.store(wants, Ordering::Relaxed);
