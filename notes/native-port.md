@@ -735,6 +735,27 @@ Next step (needs the emulator): install the instrumented build, run the burst, a
 (Text and Key Backspace/Delete) and ed.text before and after the TextEdit draw. Only then fix the step that drops the
 letter. Also still open: the one-frame Enter ordering (probe E), which the reverted c88da637 was meant to fix.
 
+### Update 21: Save then close device check (inconclusive, emulator lost)
+
+Part 1 (2026-10-30 08:27-08:30, x86_64 debug build from HEAD eeb06dde): fresh recovery folder, typed "Hello" into A1
+(the device kept "Heo": one letter lost inside a single `input text` call, no Enter before it, so this is more burst
+evidence for Update 18c/18d). Drawer shows nine rows; Close opened "Save Changes?" (shot `stc-2-sheet.png`); Save
+opened the system save dialog "Book1.xlsx" in Downloads (shot `stc-3-saveas.png`). A raw tap on SAVE (926,2273) was
+sent outside `gc-emu.sh` (a mistake; the brief allows raw taps only inside the helper). Afterwards:
+- Book1.xlsx in /sdcard/Download was NOT rewritten (still the 10-29 10:12 copy), so the save did not write the file.
+- The GridCraft process stayed alive in the background (pid 3931, frozen by ActivityManager), not ended.
+- A recovery copy was written: `files/recovery/doc-0.txt` = "Book1" and `doc-0.xlsx`, timestamp 08:28.
+- Logcat: `egui_wgpu::winit: No window - clearing all surfaces` at 08:28:24, then WordCraft and the picker came to the
+  front. Cause not determined: either the tap missed SAVE or the save never completed.
+- Result: FAIL (file not saved, app not ended, recovery copy present). Not fixed: the emulator then dropped off adb
+  (`adb devices` empty, `error: closed`), a re-run with `gc-emu.sh` could not start, and the emulator was not restarted.
+- Next (needs the emulator): re-run this exact sequence inside `gc-emu.sh` with `adb logcat -c` before the save, and
+  read the Rust log lines for the save path (`files::save_done`, `close_after_save`, `save_finished`) to see which step
+  stops.
+
+Part 2 (burst typing): not started on the device. The `u18d-tempdbg-and-probes.patch` named in the brief is not on disk
+(no `.patch` under `~/.cache/gc-spike`), so the TEMPDBG instrumentation was not re-applied. No fix committed.
+
 ## Update 20: keyboard never hides fields
 
 - Visible area: GridCraft's `MainActivity.kt` pads the content view by the IME inset, so egui's content
