@@ -12,6 +12,10 @@
 > team or by storytold.** It is not the official GridCraft, and it is not an ArtCraft project.
 > Please don't report problems with this fork to the original project.
 
+## Screenshots
+
+<p><img src="docs/screenshots/grid.png" width="180" alt="A budget workbook on the grid, with the Total cell selected and its SUM formula in the formula bar"> <img src="docs/screenshots/sheets.png" width="180" alt="The Sheets list opened from the bottom pill"> <img src="docs/screenshots/home-tab.png" width="180" alt="Home tab sheet with formatting controls"> <img src="docs/screenshots/drawer.png" width="180" alt="File side drawer with open workbooks and File commands"> <img src="docs/screenshots/typing.png" width="180" alt="Editing a cell with the on-screen keyboard and the cancel and confirm bar"></p>
+
 ## What this is
 
 **In short: a phone interface for Android on top of the GridCraft spreadsheet engine.**
