@@ -3087,7 +3087,12 @@ fn keyboard(app: &mut SheetApp, ctx: &egui::Context, resp: &egui::Response, geo:
         || app.grid.filter_menu.is_some()
         || app.grid.fill_menu.is_some()
         || matches!(app.grid.drag, Drag::Fill { menu: true, .. });
-    if app.editor.is_some() && !menus_open && ctx.memory(|m| m.focused()).is_none_or(|f| f == resp.id) {
+    let edit_field = if app.editor.as_ref().is_some_and(|e| e.from_formula_bar) {
+        egui::Id::new("gridcraft.formula_bar")
+    } else {
+        egui::Id::new("gridcraft.cell_editor")
+    };
+    if app.editor.is_some() && !menus_open && !ctx.memory(|m| m.has_focus(edit_field)) {
         let typed: Vec<String> = ctx.input_mut(|i| {
             let mut typed = Vec::new();
             i.events.retain(|e| match e {

@@ -588,3 +588,22 @@ Checks: `cargo clippy -p gridcraft-ui-egui -p gridcraft-android --all-targets --
     `content://…/<id>` VIEW without the display name shows "Couldn't open <id>". Use `-p` and
     `--grant-read-uri-permission` as the test recipe.
 - Open: the "Open with" chooser's first tap did not open the file; the pinned `-p` intent did.
+
+## Update 18: no lost letters when typing starts an edit
+
+Root cause (device log, `~/.cache/gc-spike/type-dbg.log`): egui hands a Text event only to the focused
+widget. Letters that arrive while an edit has just started, before its text field has the focus, reached
+nobody, and the grid returned after the first letter. Kittest reproduced the same loss ("Wdnesday",
+"W" for "Wednesday" with several letters in one frame).
+
+Fix (`grid.rs::keyboard`, `lib.rs::SheetApp::type_ahead`): while an edit exists, no menu or dialog is open,
+and the edit's own text field (cell or formula bar) does not hold the focus, every Text event is taken out
+of the input and appended to the edit in order. Within the frame that starts the edit, later letters are
+appended too. The formula autocomplete refresh is shared (`formula_bar::refresh_function_autocomplete`).
+
+Tests: `crates/ui-egui/tests/it/type_to_edit.rs` (one per frame, several per frame, a word after Enter,
+letters before focus, focus on the editor before its first frame, focus on another widget, a formula).
+
+Device (x86_64 emulator, 1080x2400, after the fix; `~/.cache/gc-spike/u18-final.png`): A10 "Wednesday",
+A11 "Pending", A12 "Edited", all exact, and A13 "friday" from keyevents F R I D A Y (unshifted, lowercase
+as the keycodes give).

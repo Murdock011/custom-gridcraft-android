@@ -111,3 +111,28 @@ fn a_formula_typed_in_one_frame_keeps_its_letters() {
     enter(&mut h);
     assert_eq!(value(&h, "E1"), "=SUM(1,2)");
 }
+
+#[test]
+fn letters_kept_when_focus_is_on_the_editor_before_its_first_frame() {
+    let mut h = harness();
+    select(&mut h, "F1");
+    h.state_mut().begin_edit(Some("W".into()), false);
+    // The editor's id holds the focus, but no frame has shown the field yet.
+    h.ctx.memory_mut(|m| m.request_focus(egui::Id::new("gridcraft.cell_editor")));
+    h.input_mut().events.push(Event::Text("ednesday".into()));
+    h.run_steps(2);
+    enter(&mut h);
+    assert_eq!(value(&h, "F1"), "Wednesday");
+}
+
+#[test]
+fn letters_kept_when_another_widget_holds_the_focus_during_a_start() {
+    let mut h = harness();
+    select(&mut h, "G1");
+    h.state_mut().begin_edit(Some("W".into()), false);
+    h.ctx.memory_mut(|m| m.request_focus(egui::Id::new("some_other_widget")));
+    h.input_mut().events.push(Event::Text("ednesday".into()));
+    h.run_steps(2);
+    enter(&mut h);
+    assert_eq!(value(&h, "G1"), "Wednesday");
+}
