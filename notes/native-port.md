@@ -918,3 +918,13 @@ If it does not, the soft keyboard or the injected-key path is the cause, and a f
   2. type "helo", tap a suggestion, Enter: expect the suggestion once.
   3. ?123, type 12.5, Enter: expect 12.5 as a number.
   4. hello/beta/gamma with 0.15 s taps: Hello / Beta / Gamma.
+- Device run (emulator back after coordinator restart). First install ran the old process: `install -r` does not
+  restart the app, so the first Check 1 used the old code. Force-stopped and relaunched GridCraft (`ac-4.png`), then reran.
+  - Check 1 (a b c d, backspace x2, x, Enter), B26 (`ac-3.png`) and B30 (`ac-6.png`): both commit "ABX", not "Abx". FAIL.
+    Removing AUTO_CORRECT did not stop it, so the uppercase is not from that flag alone. Not investigated further.
+  - Check 2 (type "helo", tap "Hello" in strip at 540,1576, Enter), B31 (`ac-7.png`, `ac-8.png`): commit "Helo", the tap
+    did not apply the suggestion. FAIL (tap did not register, or the strip tap is at a different y).
+  - Check 3 (?123, 12.5): NOT RUN.
+  - Check 4 (hello/beta/gamma, 0.15 s taps), B32-B34 (`ac-9.png`): "Hello", "Beta" correct. The third word was typed
+    wrong by the driver ("gelrm", not "gamma") so the run is inconclusive. Re-run needed.
+  - Stray `gc tap 1 1` before the check-1 taps (`ac-3`): harmless status-bar tap, noted for transparency.
