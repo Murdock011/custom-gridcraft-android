@@ -949,3 +949,27 @@ If it does not, the soft keyboard or the injected-key path is the cause, and a f
     edited. Not re-run.
   - Scratch cells left on the test sheet: A3-A7 and B3 (from the checks), A7 "1w.t".
 - Option (b) (composing spans so suggestions work) is a possible later improvement; untested.
+
+## Update 26: the keyboard starts on the text of an edit opened on existing text
+
+- Bug (coordinator device test, `e-1.png`): double-tap G10 holding "Plan" (caret at end), type "s", Enter gave "PlanS".
+  Cause: `ime::context()` always sent empty text, so when the target changed on the double-tap, Kotlin's copy was ""
+  and Gboard's CAP_SENTENCES capitalised the next letter (the same stale-copy mechanism as Update 24).
+- Fix: `ime.rs` `retarget(text, caret)` sets the seed (the edit's text, clipped to 200 characters either side of the
+  caret, caret in UTF-16 units) and bumps `TARGET` under the same lock; `context()` sends the seed as the text field.
+  `app.rs` `Shell::ui` computes the target from the active cell and the open edit; an edit that was started on existing
+  text (`!enter_mode`, i.e. double-tap or F2) changes the target, so the keyboard restarts on its text. Typing into a
+  cell (Enter mode) replaces the content, so it starts empty and does not change the target (no restart per letter).
+  Kotlin is unchanged: `pullContext` already takes text and caret from Rust on a target change.
+- Ceiling: a move into a non-empty cell starts empty (typing replaces it, as in Excel). An edit that closes with the
+  tick also changes the target and restarts the keyboard on empty text.
+- Checks: `cargo clippy -p gridcraft-android --all-targets` clean; `cargo ndk -t x86_64 clippy -p gridcraft-android
+  --all-targets` clean; `cargo test -q -p gridcraft-android` 11 passed (new test `retarget_seeds_text_and_utf16_caret`);
+  `build-native.sh x86_64` builds.
+- Device (x86_64, shared emulator, gc-emu.sh, shots `ctx-*.png`):
+  1. D40 "Plan" typed with the keyboard, then double-tap D40, "s", Enter: D40 = "Plans" (`ctx-4.png`). Pass.
+  2. Double-tap empty D42, "h" "i", Enter: "Hi" (`ctx-5.png`). Pass.
+  3. Double-tap empty D43, "=", ABC page, "a" "b" "s": formula bar shows "=abs" (`ctx-8.png`). Lowercase, no "=Abs". Pass.
+  4. Column F, 0.15 s taps, "hello" Enter "beta" Enter "gamma" Enter: F40 "Hello", F42 "Gamma" (`ctx-9.png`).
+     The middle word was mistyped by the test (b e a t a, so F41 "Beata"); a clean rerun of "beta" in F44 gave "Beta"
+     (`ctx-10.png`). Capitals right on each word.

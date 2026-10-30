@@ -77,7 +77,7 @@ pub struct Shell {
     pending: Vec<Event>,
     /// The keyboard's composing text, which is replaced as the user types (see `replace_composing`).
     composing: String,
-    /// The active sheet, document and cell last frame; a change bumps `ime::TARGET`.
+    /// The active sheet, document, cell and edit last frame; a change calls `ime::retarget`.
     ime_target: String,
     inbox: Inbox,
     /// Locations of the documents queued for the inbox in this frame (see `logic`).
@@ -363,10 +363,21 @@ impl eframe::App for Shell {
         let _ = ime::WAKE.set(Box::new(move || ctx.request_repaint()));
         self.app.ui(ui);
         // The cell the keyboard types into: moving it (Enter, a tap) starts the keyboard over on the new cell.
-        let target = self.app.session.active().map(|d| format!("{}:{:?}:{:?}", d.uid, d.wb.active_sheet, d.selection.active)).unwrap_or_default();
+        // An edit opened on existing text (double-tap, F2) is a change too, so the keyboard starts on that text.
+        // Typing into a cell replaces it (Enter mode), so the keyboard starts empty there and that edit is no change.
+        let edit = self.app.editor.as_ref().filter(|e| !e.enter_mode);
+        let target = self
+            .app
+            .session
+            .active()
+            .map(|d| format!("{}:{:?}:{:?}:{:?}", d.uid, d.wb.active_sheet, d.selection.active, edit.map(|e| e.cell)))
+            .unwrap_or_default();
         if target != self.ime_target {
             self.ime_target = target;
-            ime::TARGET.fetch_add(1, Ordering::Relaxed);
+            match edit {
+                Some(e) => ime::retarget(&e.text, e.caret),
+                None => ime::retarget("", 0),
+            }
         }
         // egui sets `output.ime` while a text position is focused: that is when the keyboard shows.
         let wants = ui.ctx().output(|o| o.ime.is_some()) || ime::KEEP_TYPING.load(Ordering::Relaxed);
