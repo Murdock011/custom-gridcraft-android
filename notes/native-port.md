@@ -678,6 +678,23 @@ Update 18c follow-up (2026-10-30 02:45): c88da637 REVERTED. On the device it reg
 
 Update 19 device result (2026-10-30 02:47): with Vulkan, the new gpu_setup picks the Vulkan adapter and the app works (typing OK). Without Vulkan (-feature -Vulkan): the BadAlloc is now logged as "wgpu error: Validation Error" (no wgpu panic), but the process still ends and NO dialog is shown (android_main returns early → process exits before Kotlin polls nativeGpuFailed). Open: keep the activity alive and show the dialog.
 
+### Update 19b: keep the activity alive for the GPU dialog (device check pending)
+
+- Cause of the vanishing app: `android_main` returned after the GPU failure, so the native thread ended and the process
+  went with it before Kotlin's `keyboardPoll` could read `nativeGpuFailed()`.
+- Change (`apps/gridcraft-android/src/android.rs`, `app.rs`, `MainActivity.kt`):
+  - `keep_alive(&app)`: pumps `poll_events` (250 ms timeout) until `MainEvent::Destroy`, without starting eframe again.
+    `android_main` calls it when `gpu_setup` fails, and after `run_native` returns with `GPU_FAILED` set.
+  - `Shell::ui` sends `ViewportCommand::Close` when `GPU_FAILED` is set, so eframe stops and `keep_alive` takes over.
+    If the surface never configures, `ui` is never called and eframe keeps running; the dialog still shows (below).
+  - Kotlin: `keyboardPoll` already reschedules itself every 150 ms (`handler.postDelayed(this, 150)`), independent of
+    drawing, so no extra Handler check was added. Close in the dialog now also ends the process after 300 ms, like the quit path.
+- Ceilings: the device result is not checked yet. `keep_alive` only exits on Destroy; a stuck eframe event loop (surface
+  never configures and never closes) would keep the native thread blocked, which is fine for the dialog but untested.
+- Checks: `cargo clippy -p gridcraft-android --all-targets` clean (host), `cargo ndk -t x86_64 clippy` for the Android code,
+  `cargo test -q -p gridcraft-android` 9 passed, `build-native.sh x86_64` builds.
+- Device check pending: `-feature -Vulkan` run, expect the dialog, the process alive (`pidof`), and Close with no FATAL.
+
 ### Update 18d: burst loss not reproduced; emulator offline (no fix committed)
 
 Status: OPEN. No code fix committed. Device verification was not possible: the emulator (emulator-5554) was not
