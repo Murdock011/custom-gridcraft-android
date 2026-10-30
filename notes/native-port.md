@@ -677,3 +677,36 @@ Update 18c follow-up (2026-10-30 02:45): c88da637 REVERTED. On the device it reg
   4. Restart the emulator without the flag (Vulkan present): the grid appears as before and `GPU adapter:` logs a Vulkan backend.
 
 Update 19 device result (2026-10-30 02:47): with Vulkan, the new gpu_setup picks the Vulkan adapter and the app works (typing OK). Without Vulkan (-feature -Vulkan): the BadAlloc is now logged as "wgpu error: Validation Error" (no wgpu panic), but the process still ends and NO dialog is shown (android_main returns early → process exits before Kotlin polls nativeGpuFailed). Open: keep the activity alive and show the dialog.
+
+### Update 18d: burst loss not reproduced; emulator offline (no fix committed)
+
+Status: OPEN. No code fix committed. Device verification was not possible: the emulator (emulator-5554) was not
+running from about 02:54 on, and it did not come back within about 12 minutes of waiting. The agent does not start the
+emulator, so both device cases (slow typing and the one-command burst) are still unverified on the current HEAD.
+
+What was done (on HEAD b16cc491, no c88da637 code):
+- TEMPDBG logs added (keyboard() pre-pass, editor_widget before/after the TextEdit draw with the TextEdit state cursor,
+  type_ahead before/after). Built the x86_64 debug APK (`build-native.sh`, about 77 s). Not installed: no device.
+- Kittest probes (removed again, kept in `~/.cache/gc-spike/u18d-tempdbg-and-probes.patch`) that try to reproduce
+  the device loss with HEAD's code:
+  - `begin_edit("B")`, a frame, then Text "e","t","a" in one frame: "Beta" (passes).
+  - the same with Key pressed/Text/Key released per letter, one frame or split frames: "Beta" (passes).
+  - device-like sequence: letters each in their own frame, Enter in its own frame, then "B" and "eta" in separate frames: "Alpha", "Beta" (passes).
+  - ALL letters and Enter events of "Alpha⏎Beta⏎Gamma⏎" in ONE frame: "AlphaBetaGamma", with the Enters ignored and L2/L3 empty.
+    That is a real gap (the type-ahead pre-pass takes every Text before the frame's Enter/Tab), the 18b problem, but it is not
+    the reported symptom ("Bta", "Gama", with the Enters working).
+- Conclusion: in the kittest harness the TextEdit keeps every letter that arrives while an edit is open, with or without
+  focus. The egui TextEdit buffer is `&mut ed.text` (no shadow copy), so a "stale buffer written back" is not the
+  mechanism in this code path; the loss needs something the harness does not model.
+
+Device evidence still pointing at the real path (from the earlier trace, `~/.cache/gc-spike/burst-dbg-keep.log`):
+- No Kotlin deleteSurroundingText/sendKeyEvent(DEL) lines appear in the burst; only sendKeyEvent code=59 (Shift) and
+  finishComposingText comp=-1 (harmless: Rust clears the composing span, no egui event).
+- `input text` letters reach egui as Key + Text through GameActivity, not through the Kotlin Connection.
+- A Backspace would explain both symptoms: "Beta" minus the 'e' (caret after "Be") gives "Bta"; "Gamma" minus one 'm'
+  gives "Gama". Nothing in the trace shows a Backspace, so the next device run must log every key sent to egui
+  (`Key Backspace` in `pending` and in the egui events of the frame), not only the text.
+
+Next step (needs the emulator): install the instrumented build, run the burst, and log per frame the egui events
+(Text and Key Backspace/Delete) and ed.text before and after the TextEdit draw. Only then fix the step that drops the
+letter. Also still open: the one-frame Enter ordering (probe E), which the reverted c88da637 was meant to fix.
