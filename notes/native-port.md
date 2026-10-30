@@ -938,3 +938,14 @@ If it does not, the soft keyboard or the injected-key path is the cause, and a f
   Not explained yet; the tap may not reach the strip, or Gboard's pick needs composing text, which we never send.
 - Open: a decision is needed. Options: (a) add NO_SUGGESTIONS (stops ABX, loses the strip); (b) send composing text so
   Gboard's pick and correction work on the composing span (untested, may still correct on Enter).
+- Fix tried (option a): `TYPE_TEXT_FLAG_NO_SUGGESTIONS` added to ImeView, with CLASS_TEXT, MULTI_LINE, CAP_SENTENCES;
+  AUTO_CORRECT stays removed. The strip is gone, so check 2 cannot apply now.
+  - Check 1 (a b c d, backspace x2, x, Enter, 0.3 s), A3: "Abx" on A3, selection to A4 (`ns-2.png`). Pass.
+  - Check 4 (hello/beta/gamma, 0.15 s), A4-A6 (`ns-3.png`): "Hello", "Beta" correct; the third word came out "Gmma"
+    (the "a" after "g" was dropped at 0.15 s). Partial: the known letter-drop, not a commit change.
+  - Check 3 (?123, 1 2 . 5, Enter): B3 "12.5" right-aligned as a number (`ns-7.png`). Pass. The numbers layout reverted
+    to letters after the first symbol in one run (`ns-5.png`, "1w.t" in A7); after one more ?123 it stayed (`ns-6.png`).
+  - Slow word (0.5 s, C7): not valid. The taps went to the toolbar and the View sheet opened (`ns-8.png`); C7 was never
+    edited. Not re-run.
+  - Scratch cells left on the test sheet: A3-A7 and B3 (from the checks), A7 "1w.t".
+- Option (b) (composing spans so suggestions work) is a possible later improvement; untested.
