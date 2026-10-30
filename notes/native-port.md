@@ -903,3 +903,18 @@ If it does not, the soft keyboard or the injected-key path is the cause, and a f
   change (coordinator request). Device, column D, `hello⏎beta⏎gamma⏎` at 0.12 s taps: D6 "Hello", D7 "Bta", D8 "Gmma"
   (`kt-17.png`): two drops inside words, worse than the restart (one drop after Enter, the coordinator's `v-1.png`).
   Reverted: the restart stays (1b16b00d). Device still runs the experiment build; it does not match the commit.
+
+## Update 25: no autocorrect on commit (device checks not run)
+
+- Cause (coordinator shots `k-2.png`, `k-3.png`): `ImeView.onCreateInputConnection` set `TYPE_TEXT_FLAG_AUTO_CORRECT`.
+  Gboard typed "Abx" correctly but replaced the word with its bold suggestion on Enter ("ABX") when it committed.
+  In a spreadsheet that mangles codes, names and IDs.
+- Fix: dropped `TYPE_TEXT_FLAG_AUTO_CORRECT`. Kept `TYPE_CLASS_TEXT`, `TYPE_TEXT_FLAG_MULTI_LINE` (Enter commits a
+  newline) and `TYPE_TEXT_FLAG_CAP_SENTENCES`. No `NO_SUGGESTIONS`, so suggestions still show and can be tapped.
+- Build: `CARGO_TARGET_DIR=~/.cache/gc-agent-burst-target sh packaging/android-native/build-native.sh x86_64` succeeded.
+- Device checks (shots `ac-*.png`): NOT RUN. The shared emulator reported "device offline" / "no devices/emulators
+  found" on the install and on every `gc-emu.sh` call (3 attempts, one 90 s wait). Still to run:
+  1. a b c d, backspace x2, x, Enter: expect "Abx" (not "ABX").
+  2. type "helo", tap a suggestion, Enter: expect the suggestion once.
+  3. ?123, type 12.5, Enter: expect 12.5 as a number.
+  4. hello/beta/gamma with 0.15 s taps: Hello / Beta / Gamma.
