@@ -899,3 +899,7 @@ If it does not, the soft keyboard or the injected-key path is the cause, and a f
   - A18-A20 (0.15 s run earlier this round, `kt-10.png`): Hello / Beta / Gamma. Pass.
   - A17, slow word `slow` (0.5 s taps) then Enter: "Slow" in A17, selection moved to A18 (`kt-15.png`). Pass.
   - ✓ (tick) not re-run this round: it is Rust-only (`commit_edit(0, 0)`), unchanged since the previous pass (`kt-12.png`).
+- Experiment: `updateSelection(imeView, 0, 0, -1, -1)` instead of `restartInput` in `movedOn()` and the poll's target
+  change (coordinator request). Device, column D, `hello⏎beta⏎gamma⏎` at 0.12 s taps: D6 "Hello", D7 "Bta", D8 "Gmma"
+  (`kt-17.png`): two drops inside words, worse than the restart (one drop after Enter, the coordinator's `v-1.png`).
+  Reverted: the restart stays (1b16b00d). Device still runs the experiment build; it does not match the commit.
