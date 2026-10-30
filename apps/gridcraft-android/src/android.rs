@@ -8,6 +8,7 @@ use android_activity::AndroidApp;
 use jni::EnvUnowned;
 use jni::objects::{JObject, JString};
 use jni::sys::{jboolean, jint, jlong};
+use std::sync::Arc;
 use std::sync::atomic::Ordering;
 
 use crate::files;
@@ -20,7 +21,17 @@ fn android_main(app: AndroidApp) {
     if let Some(dir) = app.internal_data_path() {
         let _ = files::DIR.set(dir);
     }
-    let options = eframe::NativeOptions { android_app: Some(app), ..Default::default() };
+    let wgpu_setup = match gpu_setup() {
+        Ok(setup) => setup,
+        Err(e) => {
+            // No usable GPU: say so on screen (Kotlin shows the dialog) instead of exiting silently.
+            log::error!("GPU setup failed: {e}");
+            ime::GPU_FAILED.store(true, Ordering::Relaxed);
+            return;
+        }
+    };
+    let wgpu_options = eframe::WgpuConfiguration { wgpu_setup, ..Default::default() };
+    let options = eframe::NativeOptions { android_app: Some(app), wgpu_options, ..Default::default() };
     let result = eframe::run_native(
         "GridCraft",
         options,
@@ -28,7 +39,49 @@ fn android_main(app: AndroidApp) {
     );
     if let Err(e) = result {
         log::error!("eframe stopped: {e}");
+        ime::GPU_FAILED.store(true, Ordering::Relaxed);
     }
+}
+
+/// Picks the GPU before eframe makes the window: Vulkan when the device has it, else OpenGL ES.
+///
+/// eframe's own setup would pick an adapter too, but it gives no hook on the device, and wgpu's default
+/// error handler panics on any error (a surface that fails to configure is one). So the device is made
+/// here with an error handler that logs. An error before the first frame means the window surface could
+/// not be set up, so that sets `ime::GPU_FAILED`. Later errors are only logged.
+fn gpu_setup() -> Result<eframe::egui_wgpu::WgpuSetup, String> {
+    use eframe::wgpu;
+    let instance = wgpu::Instance::new(wgpu::InstanceDescriptor {
+        backends: wgpu::Backends::VULKAN | wgpu::Backends::GL,
+        ..wgpu::InstanceDescriptor::new_without_display_handle()
+    });
+    let adapters = pollster::block_on(instance.enumerate_adapters(wgpu::Backends::VULKAN | wgpu::Backends::GL));
+    let adapter = adapters
+        .iter()
+        .find(|a| a.get_info().backend == wgpu::Backend::Vulkan)
+        .or_else(|| adapters.iter().find(|a| a.get_info().backend == wgpu::Backend::Gl))
+        .cloned()
+        .ok_or_else(|| "no Vulkan or OpenGL ES adapter".to_string())?;
+    log::info!("GPU adapter: {:?}", adapter.get_info());
+    let base = if adapter.get_info().backend == wgpu::Backend::Gl {
+        wgpu::Limits::downlevel_webgl2_defaults()
+    } else {
+        wgpu::Limits::default()
+    };
+    // The limits eframe asks for by default (8192-pixel textures, enough for a 4K screen).
+    let descriptor = wgpu::DeviceDescriptor {
+        label: Some("gridcraft device"),
+        required_limits: wgpu::Limits { max_texture_dimension_2d: 8192, ..base },
+        ..Default::default()
+    };
+    let (device, queue) = pollster::block_on(adapter.request_device(&descriptor)).map_err(|e| format!("request_device: {e}"))?;
+    device.on_uncaptured_error(Arc::new(|e: wgpu::Error| {
+        log::error!("wgpu error: {e}");
+        if !ime::UI_STARTED.load(Ordering::Relaxed) {
+            ime::GPU_FAILED.store(true, Ordering::Relaxed);
+        }
+    }));
+    Ok(eframe::egui_wgpu::WgpuSetup::Existing(eframe::egui_wgpu::WgpuSetupExisting { instance, adapter, device, queue }))
 }
 
 /// `ImeView` -> Rust. `kind`: 0 commit, 1 composing text, 2 finish composing, 3 delete surrounding
@@ -95,6 +148,16 @@ pub extern "system" fn Java_ai_storyteller_gridcraft_nativeapp_MainActivity_nati
     _this: JObject<'local>,
 ) -> jboolean {
     ime::QUIT.load(Ordering::Relaxed) as jboolean
+}
+
+/// Whether the GPU could not be set up: Kotlin shows the "graphics driver isn't supported" dialog.
+#[allow(unsafe_code)]
+#[unsafe(no_mangle)]
+pub extern "system" fn Java_ai_storyteller_gridcraft_nativeapp_MainActivity_nativeGpuFailed<'local>(
+    _env: EnvUnowned<'local>,
+    _this: JObject<'local>,
+) -> jboolean {
+    ime::GPU_FAILED.load(Ordering::Relaxed) as jboolean
 }
 
 /// Whether Android Back has a sheet, palette or Backstage to close. Kotlin sends Escape then.

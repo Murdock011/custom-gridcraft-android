@@ -608,6 +608,7 @@ Device (x86_64 emulator, 1080x2400, after the fix; `~/.cache/gc-spike/u18-final.
 A11 "Pending", A12 "Edited", all exact, and A13 "friday" from keyevents F R I D A Y (unshifted, lowercase
 as the keycodes give).
 <<<<<<< HEAD
+<<<<<<< HEAD
 
 ### Update 18b: keyboard order inside one frame (type-ahead)
 
@@ -646,3 +647,39 @@ Update 18c (open, device evidence): TEMPDBG logs on the emulator (`~/.cache/gc-s
 >>>>>>> parent of c88da637 (Handle letters, Enter and Tab in frame order while typing starts an edit)
 
 Update 18c follow-up (2026-10-30 02:45): c88da637 REVERTED. On the device it regressed slow typing: Wednesday/Pending exact but "Edited" became "E" (shot ~/.cache/gc-spike/slow-check.png). Burst typing (letters+Enter in one batch) remains open: 2nd letter after Enter lost ("Bta", "Gama"); trace in burst-dbg-keep.log shows the letter reaches typed_in_order with an edit open, so the in-cell TextEdit/commit drops it.
+=======
+
+## Update 19: graphics backend fallback / no crash without Vulkan (device check pending)
+
+- Repro: emulator started with `-feature -Vulkan`. Logcat: `wgpu_hal::gles::egl: Error in create_window_surface: BadAlloc`,
+  then `wgpu::backend::wgpu_core: Handling wgpu errors as fatal by default`, and the process ends.
+- Cause, from the wgpu 30.0.1 / wgpu-hal 30.0.1 / egui-wgpu 0.36.2 / eframe 0.36.2 sources: without Vulkan, eframe's default
+  setup (`Backends::PRIMARY | GL`) picks the GLES adapter. The window surface is configured in `Painter::set_window`
+  (`install_surface` -> `Surface::configure`), and the GLES `eglCreateWindowSurface` (`gles/egl.rs`) fails with BadAlloc.
+  wgpu-core reports a failed `Surface::configure` to the device's error sink; with no handler installed the default
+  handler panics (`default_error_handler`). Best hypothesis for the BadAlloc itself (not confirmed on a device): the window
+  surface asks for an sRGB target (`GL_COLORSPACE_SRGB`, plus 8 alpha bits in the EGL config, chosen by egui-wgpu's
+  `preferred_framebuffer_format`) and the emulator's no-Vulkan GLES cannot allocate the native window buffers for it.
+  egui-wgpu picks the target format from the surface's capabilities, so the host cannot change it without patching egui-wgpu.
+- Change (`apps/gridcraft-android/src/android.rs`):
+  - `gpu_setup()` creates the instance with `Backends::VULKAN | GL`, picks a Vulkan adapter, else GLES, makes the device
+    itself (same limits as eframe's default), and passes it to eframe as `WgpuSetup::Existing`. The device gets an
+    `on_uncaptured_error` handler that logs instead of panicking.
+  - An error before the first `ui` call (the window surface is configured before the first frame) sets `ime::GPU_FAILED`,
+    as does a failed `run_native`, or a failed adapter/device request (then `android_main` returns without starting eframe).
+  - Kotlin polls `nativeGpuFailed()` in `keyboardPoll` and shows an AlertDialog: "This phone's graphics driver isn't
+    supported (GPU init failed). Please report this." with Close (finishes the activity).
+- Ceilings: `Instance::new` still panics if wgpu was built without a backend (a build problem, not a device one);
+  egui-wgpu's `configure_surface` has an `expect` when the adapter does not support the surface (not reached by BadAlloc,
+  and not patchable here). Later surface errors (lost surface, etc.) are logged only, and a blank window is possible there.
+- Checks: `cargo clippy -p gridcraft-android --all-targets` clean; `cargo test -q -p gridcraft-android` 9 passed;
+  `cargo ndk -t x86_64 clippy -p gridcraft-android --all-targets` clean; `build-native.sh x86_64` builds.
+- Device recipe (coordinator restarts the emulator; do not run it on a shared emulator without `emu-lock`):
+  1. Start the AVD with `emulator -avd <name> -feature -Vulkan`, wait for boot, `adb install -r` the x86_64 debug APK.
+  2. Clear logcat, launch GridCraft, wait 5 s. Expect the GPU dialog (not a crash): `adb logcat -d | grep -E 'gridcraft|wgpu'`
+     shows `GPU setup failed` or `wgpu error` lines, and the process is still alive (`adb shell pidof ai.storyteller.gridcraft.native`).
+  3. Tap Close: the app leaves the foreground, no `FATAL EXCEPTION` in logcat.
+  4. Restart the emulator without the flag (Vulkan present): the grid appears as before and `GPU adapter:` logs a Vulkan backend.
+>>>>>>> android-gles
+
+Update 19 device result (2026-10-30 02:47): with Vulkan, the new gpu_setup picks the Vulkan adapter and the app works (typing OK). Without Vulkan (-feature -Vulkan): the BadAlloc is now logged as "wgpu error: Validation Error" (no wgpu panic), but the process still ends and NO dialog is shown (android_main returns early → process exits before Kotlin polls nativeGpuFailed). Open: keep the activity alive and show the dialog.

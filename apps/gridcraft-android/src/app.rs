@@ -331,6 +331,7 @@ impl eframe::App for Shell {
 
     fn ui(&mut self, ui: &mut egui::Ui, _frame: &mut eframe::Frame) {
         let ctx = ui.ctx().clone();
+        ime::UI_STARTED.store(true, Ordering::Relaxed);
         let _ = ime::WAKE.set(Box::new(move || ctx.request_repaint()));
         self.app.ui(ui);
         // egui sets `output.ime` while a text position is focused: that is when the keyboard shows.

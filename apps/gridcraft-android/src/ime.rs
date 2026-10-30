@@ -30,6 +30,11 @@ pub static WANTS_KEYBOARD: AtomicBool = AtomicBool::new(false);
 pub static QUIT: AtomicBool = AtomicBool::new(false);
 /// Whether Android Back has a sheet, palette or Backstage to close (`SheetApp::can_go_back`).
 pub static CAN_GO_BACK: AtomicBool = AtomicBool::new(false);
+/// The GPU could not be set up (no adapter, or the window surface failed before the first frame). Kotlin
+/// shows a dialog for it (`nativeGpuFailed`).
+pub static GPU_FAILED: AtomicBool = AtomicBool::new(false);
+/// Whether eframe has run the first `ui` call, i.e. the window surface was set up (see `android::gpu_setup`).
+pub static UI_STARTED: AtomicBool = AtomicBool::new(false);
 /// The system's night mode, from Kotlin.
 pub static NIGHT: AtomicBool = AtomicBool::new(false);
 /// Left and top padding of the surface in pixels (set by Kotlin); touch positions arrive in window
