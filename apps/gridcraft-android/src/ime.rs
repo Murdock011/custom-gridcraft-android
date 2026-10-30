@@ -1,8 +1,8 @@
 //! Text from the soft keyboard. `MainActivity.kt`'s ImeView pushes what the keyboard sent (through
 //! the JNI exports in `android.rs`); `app.rs` turns it into egui events on the next frame.
 //!
-//! The editing context Kotlin reads back is always empty: the keyboard only sees what it types.
-//! That is the simplest thing that works for a spreadsheet cell; see `notes/native-port.md`.
+//! The editing context Kotlin reads back is the text around the caret of the edit when the keyboard's target
+//! changes (`retarget`); Kotlin then keeps its own copy until the next target change. See `notes/native-port.md`.
 
 use std::collections::VecDeque;
 use std::sync::Mutex;
@@ -26,7 +26,12 @@ static TAKEN: AtomicU64 = AtomicU64::new(0);
 
 /// Changes whenever the keyboard's target changes (the active cell moved, or another sheet or document came up).
 /// Kotlin starts its copy of the text over on a change; it keeps its own copy in between (see `context`).
-pub static TARGET: AtomicU64 = AtomicU64::new(0);
+/// Bumped only by `retarget`, under the `SEED` lock.
+static TARGET: AtomicU64 = AtomicU64::new(0);
+/// The text Kotlin starts from on a target change, and its caret in UTF-16 units. Set by `retarget`.
+static SEED: Mutex<(String, usize)> = Mutex::new((String::new(), 0));
+/// Characters kept either side of the caret in the seed; a longer cell is clipped around the caret.
+const SEED_SIDE: usize = 200;
 /// Whether egui wants the soft keyboard (a text position has focus). Kotlin polls it.
 pub static WANTS_KEYBOARD: AtomicBool = AtomicBool::new(false);
 /// Set by Enter or Tab from the keyboard, so it stays up for the next cell; cleared by a touch, a scroll, or Escape.
@@ -76,16 +81,32 @@ pub fn pop() -> Option<Msg> {
     Some(m)
 }
 
-/// What Kotlin reads: the number of messages taken, caret, composing start and end (-1 for none), the
-/// target counter (`TARGET`), then the text around the caret, U+0001 separated. The text is always empty:
-/// Kotlin keeps its own copy while the target stays the same.
+/// Moves the keyboard to a new target: `text` is what the edit holds (empty when typing will replace the cell),
+/// `caret` its caret in characters. Kotlin starts its copy from this on the next pull.
+pub fn retarget(text: &str, caret: usize) {
+    let caret = caret.min(text.chars().count());
+    let start = caret.saturating_sub(SEED_SIDE);
+    let end = (caret + SEED_SIDE).min(text.chars().count());
+    let chars: Vec<char> = text.chars().collect();
+    let clean = |cs: &[char]| cs.iter().map(|c| if *c == '\u{1}' { ' ' } else { *c }).collect::<String>();
+    let before = clean(&chars[start..caret]);
+    let seed = (format!("{before}{}", clean(&chars[caret..end])), before.encode_utf16().count());
+    let mut s = SEED.lock().unwrap_or_else(|e| e.into_inner());
+    *s = seed;
+    TARGET.fetch_add(1, Ordering::Relaxed);
+}
+
+/// What Kotlin reads: the number of messages taken, caret (UTF-16 units), composing start and end (-1 for none),
+/// the target counter (`TARGET`), then the text around the caret, U+0001 separated. The text and caret are the
+/// seed from `retarget`; Kotlin keeps its own copy while the target stays the same.
 pub fn context() -> String {
-    format!("{}\u{1}0\u{1}-1\u{1}-1\u{1}{}\u{1}", TAKEN.load(Ordering::Relaxed), TARGET.load(Ordering::Relaxed))
+    let seed = SEED.lock().unwrap_or_else(|e| e.into_inner());
+    format!("{}\u{1}{}\u{1}-1\u{1}-1\u{1}{}\u{1}{}", TAKEN.load(Ordering::Relaxed), seed.1, TARGET.load(Ordering::Relaxed), seed.0)
 }
 
 #[cfg(test)]
 mod tests {
-    use super::ime_lines;
+    use super::{context, ime_lines, retarget};
 
     #[test]
     fn commit_newlines_split_into_lines() {
@@ -93,5 +114,20 @@ mod tests {
         assert_eq!(ime_lines("ab\ncd"), ["ab", "cd"]);
         assert_eq!(ime_lines("ab\r\ncd\re"), ["ab", "cd", "e"]);
         assert_eq!(ime_lines("\n"), ["", ""]);
+    }
+
+    /// The seed is the text and caret in UTF-16 units (an emoji is two), and a long cell is clipped around the caret.
+    #[test]
+    fn retarget_seeds_text_and_utf16_caret() {
+        let field = |c: &str| c.split('\u{1}').map(str::to_string).collect::<Vec<_>>();
+        retarget("Plan", 4);
+        let f = field(&context());
+        assert_eq!((f[1].as_str(), f[5].as_str()), ("4", "Plan"));
+        retarget("a\u{1f600}b", 2);
+        let f = field(&context());
+        assert_eq!((f[1].as_str(), f[5].as_str()), ("3", "a\u{1f600}b"));
+        retarget(&"x".repeat(500), 300);
+        let f = field(&context());
+        assert_eq!((f[1].as_str(), f[5].len()), ("200", 400));
     }
 }
