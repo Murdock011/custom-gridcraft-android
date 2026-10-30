@@ -1464,9 +1464,7 @@ pub fn show(app: &mut SheetApp, ctx: &egui::Context) {
                     match pick {
                         Some(0) => {
                             app.run_or_alert("file.close", json!({"force": true}));
-                            if quitting {
-                                app.continue_quit(ui.ctx());
-                            }
+                            app.after_close(ui.ctx(), quitting);
                             open = false;
                         }
                         Some(1) => open = false,
@@ -1475,12 +1473,10 @@ pub fn show(app: &mut SheetApp, ctx: &egui::Context) {
                             app.run_or_alert("file.save", json!({}));
                             if app.session.active().is_some_and(|x| !x.is_dirty()) {
                                 app.run_or_alert("file.close", json!({"force": true}));
-                                if quitting {
-                                    app.continue_quit(ui.ctx());
-                                }
-                            } else if quitting && app.services.close_quits {
+                                app.after_close(ui.ctx(), quitting);
+                            } else if app.services.close_quits {
                                 // Android: the save is the system's dialog and answers later (`save_finished`).
-                                app.close_after_save = app.session.active().map(|x| x.revision);
+                                app.close_after_save = app.session.active().map(|x| (x.revision, quitting));
                             }
                             open = false;
                         }

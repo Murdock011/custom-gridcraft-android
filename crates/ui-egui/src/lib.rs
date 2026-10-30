@@ -326,7 +326,7 @@ pub struct SheetApp {
     pub quit_requested: bool,
     /// Android: the revision whose save was asked for by the Save changes prompt or File › Close. When that
     /// save writes the workbook, the workbook closes and the app goes on to quit (see `save_finished`).
-    pub(crate) close_after_save: Option<u64>,
+    pub(crate) close_after_save: Option<(u64, bool)>,
 }
 
 impl SheetApp {
@@ -1348,31 +1348,50 @@ impl SheetApp {
     }
 
     /// File › Close: commits the cell being edited, then closes the active workbook, asking first when it
-    /// has unsaved changes. On Android (`close_quits`) the app ends once every workbook is answered for.
+    /// has unsaved changes. On Android (`close_quits`) the last workbook's close ends the app (see
+    /// `continue_quit`); with others open the app stays and another workbook shows (`after_close`).
     /// False when the cell being edited could not be committed.
     pub(crate) fn close_file(&mut self, ctx: &egui::Context) -> bool {
         if !self.commit_edit(0, 0, false, false) {
             return false;
         }
-        if self.services.close_quits {
-            self.continue_quit(ctx);
-        } else {
+        if !self.services.close_quits {
             self.run_or_alert("file.close", json!({}));
+        } else if self.session.documents().len() <= 1 {
+            self.continue_quit(ctx);
+        } else if let Some(d) = self.session.active() {
+            if d.is_dirty() {
+                let title = d.display_title();
+                self.open_dialog("saveChanges", json!({"title": title, "quit": false}));
+            } else {
+                self.run_or_alert("file.close", json!({}));
+            }
         }
         true
+    }
+
+    /// Android: the active workbook has closed. While quitting (`quitting`) the next unsaved workbook is
+    /// asked about; with none left the app ends. Otherwise the app stays on another open workbook.
+    pub(crate) fn after_close(&mut self, ctx: &egui::Context, quitting: bool) {
+        if quitting || (self.services.close_quits && self.session.documents().is_empty()) {
+            self.continue_quit(ctx);
+        }
     }
 
     /// Android: a save of revision `rev` ended. `saved` says it wrote the workbook, which is clean now.
     /// If the Save changes prompt or File › Close asked for that save, the workbook closes and the app
     /// goes on to quit (or asks about the next unsaved workbook). A cancelled save leaves it open.
     pub fn save_finished(&mut self, ctx: &egui::Context, rev: u64, saved: bool) {
-        if self.close_after_save != Some(rev) {
+        let Some((pending, quitting)) = self.close_after_save else {
+            return;
+        };
+        if pending != rev {
             return;
         }
         self.close_after_save = None;
         if saved {
             self.run_or_alert("file.close", json!({"force": true}));
-            self.continue_quit(ctx);
+            self.after_close(ctx, quitting);
         }
     }
 

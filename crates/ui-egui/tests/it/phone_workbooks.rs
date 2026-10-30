@@ -82,3 +82,29 @@ fn opening_another_workbook_commits_the_cell_being_edited() {
     let wb = &h.state().session.active().unwrap().wb;
     assert_eq!(wb.sheet(0).unwrap().value(gridcraft_engine::core::CellRef::new(0, 0)).display(), "Typed", "the typed text is kept");
 }
+
+#[test]
+fn closing_the_active_clean_workbook_shows_the_other_and_keeps_the_app() {
+    let mut h = harness(true);
+    open_drawer(&mut h);
+    h.query_all_by_label("Close Book2").next().unwrap().click();
+    h.run_steps(4);
+    assert!(h.state().dialog.is_none(), "a clean workbook closes without a question");
+    assert!(!h.state().quit_requested, "another workbook is open, so the app stays");
+    assert_eq!(h.state().session.documents().len(), 1, "Book2 is closed");
+    assert_eq!(h.state().session.active().map(|d| d.display_title()).as_deref(), Some("Book1"), "Book1 shows");
+}
+
+#[test]
+fn closing_a_dirty_workbook_asks_then_switches_to_the_other() {
+    let mut h = harness(true);
+    open_drawer(&mut h);
+    h.query_all_by_label("Close Book1 •").next().unwrap().click();
+    h.run_steps(4);
+    assert_eq!(h.state().dialog.as_ref().map(|d| d.name().to_string()).as_deref(), Some("saveChanges"), "unsaved work is asked about");
+    h.get_by_label("Don't Save").click();
+    h.run_steps(4);
+    assert!(!h.state().quit_requested, "the app stays open");
+    assert_eq!(h.state().session.documents().len(), 1, "Book1 is closed");
+    assert_eq!(h.state().session.active().map(|d| d.display_title()).as_deref(), Some("Book2"), "Book2 shows");
+}
