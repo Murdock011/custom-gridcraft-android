@@ -1566,6 +1566,7 @@ dependencies = [
  "gridcraft-ui-egui",
  "jni",
  "log",
+ "pollster 1.0.1",
 ]
 
 [[package]]

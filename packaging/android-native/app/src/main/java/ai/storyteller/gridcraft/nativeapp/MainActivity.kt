@@ -1,5 +1,6 @@
 package ai.storyteller.gridcraft.nativeapp
 
+import android.app.AlertDialog
 import android.content.ClipData
 import android.content.ClipboardManager
 import android.content.Context
@@ -131,8 +132,19 @@ class MainActivity : GameActivity() {
         return Pair(beforeCp, afterCp)
     }
 
+    private var gpuDialogShown = false
+
     private val keyboardPoll = object : Runnable {
         override fun run() {
+            if (!gpuDialogShown && nativeGpuFailed()) {
+                // The native side could not set up the GPU (see gpu_setup in android.rs). Say so instead of a blank screen.
+                gpuDialogShown = true
+                AlertDialog.Builder(this@MainActivity)
+                    .setMessage("This phone's graphics driver isn't supported (GPU init failed). Please report this.")
+                    .setCancelable(false)
+                    .setPositiveButton("Close") { _, _ -> finishAndRemoveTask() }
+                    .show()
+            }
             nativeTakeRequest().takeIf { it.isNotEmpty() }?.let { files.add(it); nextFile() }
             nativeTakeClip().takeIf { it.isNotEmpty() }?.let { clipboard.setPrimaryClip(ClipData.newPlainText("GridCraft", it.substring(1))) }
             if (nativeQuitRequested()) {
@@ -535,6 +547,9 @@ class MainActivity : GameActivity() {
 
     /** Whether Android Back has a sheet, menu or Backstage to close. */
     private external fun nativeCanGoBack(): Boolean
+
+    /** Whether the native side could not set up the GPU (shows the driver dialog). */
+    private external fun nativeGpuFailed(): Boolean
 
     /** Whether GridCraft opens a document with this name and MIME type (files.rs accepts_document). */
     private external fun nativeAccepts(name: String, mime: String): Boolean
