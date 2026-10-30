@@ -676,7 +676,8 @@ fn edit_bar(app: &mut SheetApp, ui: &mut Ui) {
             app.cancel_edit();
         }
         if edit_button(ui, t, confirm, Icon::Check, CONFIRM_GREEN, lang.tr("Enter")) {
-            app.commit_edit(1, 0, false, false);
+            // The tick keeps the cell (Excel); only Enter moves down.
+            app.commit_edit(0, 0, false, false);
         }
     });
 }

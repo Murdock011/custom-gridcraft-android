@@ -84,6 +84,14 @@ class MainActivity : GameActivity() {
         }
         ctxComp = comp
         ctxCompEnd = f[3].toIntOrNull() ?: -1
+        // Rust's text changed without an edit from the keyboard (Enter moved to the next cell, a tap...): the
+        // keyboard still holds the old text and its own model, so it starts over on the new text.
+        if (f[4] != ctxText) {
+            imeView.post {
+                val imm = getSystemService(Context.INPUT_METHOD_SERVICE) as InputMethodManager
+                imm.restartInput(imeView)
+            }
+        }
         ctxText = f[4]
     }
 

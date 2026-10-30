@@ -860,3 +860,17 @@ If it does not, the soft keyboard or the injected-key path is the cause, and a f
 - Layout: with the keyboard up and no edit open the pill steps aside (`phone::keyboard_up`), so nothing sits on the
   keyboard (`kt-2.png`).
 - Open: a clean three-word run still needs real-keyboard typing or slower, reliable input; the ✓ selection move.
+- Garbled words after Enter (coordinator): cause was the keyboard's own text model going stale when Rust moved the
+  edit to the next cell. `pullContext` (MainActivity.kt) now posts `imm.restartInput(imeView)` when Rust's context text
+  differs from the keyboard's copy (a change not made by the keyboard). The restart runs only on that change, not per
+  letter; `updateSelection` alone was not tried. Logs (TEMPDBG) not added: the device result is the check.
+- ✓ on the edit bar keeps the cell: `crates/ui-egui/src/phone.rs` `edit_bar` calls `commit_edit(0, 0, ...)` (was
+  `(1, 0)`). Test `phone_edit::confirm_button_commits_and_keeps_the_cell` (renamed from `..._moves_down`) asserts A1.
+  This is GridCraft's own phone.rs, so it no longer matches the shared-phone-design note for WordCraft; flagged.
+- Device (x86_64, shared emulator, gc-emu.sh):
+  - A10, `hello⏎beta⏎gamma⏎`, 0.15 s taps: A10 "HELLO", A11 "BETA", A12 "GAMMA", selection A13, keyboard up (`kt-6.png`).
+    Letters and three cells are right, but all capitals: the shift state after the restart is not fixed. Open.
+  - A13, same word run at 0.08 s taps: "HLLO", "BEtA", "GMMa" (`kt-7.png`). Letters dropped: 0.08 s is too fast. Open.
+  - Check 3: "Ok" typed in A16 and ✓ tapped: selection stays A16, keyboard down (`kt-8.png`). Pass. The cell shows
+    "WOK": a stray W from the double-tap, cause unknown (`kt-8a.png` was the open edit).
+  - Not run: a slow single word + Enter (time).
