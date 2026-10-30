@@ -819,3 +819,29 @@ symptom.
 Fix: none committed. The next step needs the Android input path: log the GameActivity/winit key events (or
 `dispatchKeyEvent` in MainActivity.kt, before `super`) for the lost 'e' to see whether the press reaches the activity.
 If it does not, the soft keyboard or the injected-key path is the cause, and a fix belongs in the Android layer.
+
+## Update 24: Enter from the soft keyboard becomes a cell Enter (device check partly done)
+
+- Real keyboard result (coordinator, 10:36, shot `~/.cache/gc-spike/g-2.png`): fast typing through the on-screen
+  keyboard lost NO letters ("HelloBetaGammaWednesday" had every letter). The "Bta"/"Heo" losses from Update 18c and 23
+  therefore come from adb-injected key events, not real keyboard typing. Lower priority than the Enter bug below.
+- Cause: the ImeView's inputType is multi-line, so Gboard sends Enter as `commitText("\n")`. MainActivity.kt forwards it
+  as `Msg::Commit`, and `drain_ime` pushed it as `Event::Text("\n")`, which the single-line cell TextEdit drops. Words
+  typed with Enter between them ran together in one cell. Enter as a key (`Msg::Key` 66) already worked.
+- Fix (`apps/gridcraft-android/src/app.rs` `drain_ime`, `Msg::Commit` arm): the commit text is split with `ime_lines`
+  (`ime.rs`); each piece is committed as before, and each newline clears `composing` and presses Enter. `Msg::Compose`
+  is unchanged (Gboard's composing text carries no newline; Enter commits).
+  `ime.rs`: `ime_lines` splits on "\r\n", "\n" or a lone "\r"; unit test `commit_newlines_split_into_lines`.
+  The Kotlin inputType is not changed.
+- Checks: `cargo clippy -p gridcraft-android --all-targets` clean; `cargo test -q -p gridcraft-android` 10 passed (the
+  new test is in the host-compiled `ime.rs`; `app.rs` is Android-only); `cargo ndk -t x86_64 clippy -p gridcraft-android
+  --all-targets` clean; `build-native.sh x86_64` builds.
+- Device (x86_64, shared emulator, through gc-emu.sh): the recovery dialog was dismissed, C22 edited with the real
+  on-screen keyboard (shot `en-1a.png`, keyboard layout matched the coordinates).
+  - Typed `Hello` Enter `Beta` Enter `Gamma` Enter with `input tap` on the keyboard: C22 = "Hello" (Enter works, the
+    Enter moved the selection down). The rest was garbled: C23 = "BeMma", and the selection ended on C24, so the
+    Beta and Gamma commits did not land as three cells. Shot `en-1.png`. Not resolved here: adb tap bursts drop keys
+    (the 18c/23 pattern), so this does not prove the newline path for the second and third word.
+  - Plain edit with the ✓: C24 typed "Ok" and committed with the tick (shot `en-2.png`, formula bar shows "Ok" with
+    the tick greyed). Pass.
+- Open: repeat the three-word burst with the real keyboard (or slower taps) to confirm three cells "Hello","Beta","Gamma".

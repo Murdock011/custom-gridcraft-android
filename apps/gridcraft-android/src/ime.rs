@@ -60,6 +60,11 @@ pub fn push(m: Msg) {
 }
 
 /// The oldest queued message, if any.
+/// Splits keyboard commit text at newlines ("\n", "\r\n" or a lone "\r"); the pieces are the lines between Enter presses.
+pub fn ime_lines(text: &str) -> Vec<&str> {
+    text.split("\r\n").flat_map(|s| s.split(['\r', '\n'])).collect()
+}
+
 pub fn pop() -> Option<Msg> {
     let m = QUEUE.lock().ok()?.pop_front()?;
     TAKEN.fetch_add(1, Ordering::Relaxed);
@@ -70,4 +75,17 @@ pub fn pop() -> Option<Msg> {
 /// then the text around the caret, U+0001 separated. The text is always empty (see the module doc).
 pub fn context() -> String {
     format!("{}\u{1}0\u{1}-1\u{1}-1\u{1}", TAKEN.load(Ordering::Relaxed))
+}
+
+#[cfg(test)]
+mod tests {
+    use super::ime_lines;
+
+    #[test]
+    fn commit_newlines_split_into_lines() {
+        assert_eq!(ime_lines("Hello"), ["Hello"]);
+        assert_eq!(ime_lines("ab\ncd"), ["ab", "cd"]);
+        assert_eq!(ime_lines("ab\r\ncd\re"), ["ab", "cd", "e"]);
+        assert_eq!(ime_lines("\n"), ["", ""]);
+    }
 }

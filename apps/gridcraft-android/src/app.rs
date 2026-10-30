@@ -12,7 +12,7 @@ use gridcraft_ui_egui::{Inbox, Services, SheetApp};
 
 use crate::clip;
 use crate::files;
-use crate::ime::{self, Msg};
+use crate::ime::{self, Msg, ime_lines};
 use crate::recovery;
 
 /// Android KeyEvent codes the keyboard sends as key presses.
@@ -219,8 +219,16 @@ impl Shell {
             match m {
                 Msg::Compose(t) => self.replace_composing(&t),
                 Msg::Commit(t) => {
-                    self.replace_composing(&t);
-                    self.composing.clear();
+                    // Gboard sends Enter as a newline in the commit text; the cell is single-line, so a
+                    // newline becomes an Enter press (which ends the word) instead of text.
+                    for (i, line) in ime_lines(&t).into_iter().enumerate() {
+                        if i > 0 {
+                            self.composing.clear();
+                            self.press(Key::Enter);
+                        }
+                        self.replace_composing(line);
+                        self.composing.clear();
+                    }
                 }
                 Msg::Finish => self.composing.clear(),
                 Msg::Delete { before, after } => {
