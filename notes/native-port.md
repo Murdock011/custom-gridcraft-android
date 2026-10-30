@@ -889,3 +889,13 @@ If it does not, the soft keyboard or the injected-key path is the cause, and a f
   - Stray "W" in A16 ("WOK", `kt-8.png`): a key from the double-tap landed on the keyboard while it was opening; not
     reproduced since, not fixed.
   - Not run: slow single word + Enter as a separate case (covered by the 0.15 s run).
+- Restart at the Enter itself: `Connection.commitText` (newline), `sendKeyEvent` (Enter/Tab) and `performEditorAction`
+  call `movedOn()` after sending to Rust: the local copy goes to the empty new target and the keyboard restarts
+  (posted). `pendingTargetBump` makes the poll's TARGET change for that same move a no-op. Ceiling: if an Enter does
+  not move the target (last row, no change), the next real target change is swallowed once.
+- Device (x86_64, shared emulator, gc-emu.sh):
+  - A8, `hello⏎beta⏎gamma⏎`, 0.08 s taps: A8 "Hello" correct, then "Bta" (A9) and "Gmma" (A10): letters still drop
+    at 0.08 s (adb taps). The second word's first letter now survives; drops are inside words (`kt-14.png`). Recorded.
+  - A18-A20 (0.15 s run earlier this round, `kt-10.png`): Hello / Beta / Gamma. Pass.
+  - A17, slow word `slow` (0.5 s taps) then Enter: "Slow" in A17, selection moved to A18 (`kt-15.png`). Pass.
+  - ✓ (tick) not re-run this round: it is Rust-only (`commit_edit(0, 0)`), unchanged since the previous pass (`kt-12.png`).
