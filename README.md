@@ -1,3 +1,5 @@
+<img src="packaging/android-native/icon-source/custom-gridcraft-icon.png" width="96" alt="Custom GridCraft app icon" align="right">
+
 # Custom GridCraft for Android
 
 > [!WARNING]
