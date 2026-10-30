@@ -194,6 +194,7 @@ pub fn show(app: &mut SheetApp, ui: &mut Ui) {
                         crate::phone::touch_style(ui);
                         page_body(app, ui, &mut bs, &mut out);
                     });
+                    crate::phone::follow_focus(ui);
                 } else {
                     page_body(app, ui, &mut bs, &mut out);
                 }

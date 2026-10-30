@@ -560,6 +560,10 @@ pub fn bottom_bar(app: &mut SheetApp, ui: &mut Ui) {
         Some(tab) => return tab_sheet(app, ui, tab),
         None => {}
     }
+    // The keyboard is up for a field outside cell editing: the floating bar would sit on it, so it steps aside.
+    if keyboard_up(&ctx) {
+        return;
+    }
     Panel::bottom("phone_tab_bar").exact_size(PILL_H + 2.0 * FLOAT_GAP).frame(Frame::NONE.fill(t.grid_bg)).show(ui, |ui| {
         let outer = ui.max_rect();
         let pill = Rect::from_min_max(
@@ -593,6 +597,46 @@ pub fn bottom_bar(app: &mut SheetApp, ui: &mut Ui) {
             }
         }
     });
+}
+
+/// Whether the on-screen keyboard is up: the window (egui's content rect, which the host shrinks by
+/// the keyboard's inset) has shrunk well below the tallest it has been.
+pub(crate) fn keyboard_up(ctx: &Context) -> bool {
+    let h = ctx.content_rect().height();
+    let id = egui::Id::new("phone_tallest_height");
+    let tallest = ctx.data_mut(|d| {
+        let m = d.get_temp::<f32>(id).unwrap_or(0.0).max(h);
+        d.insert_temp(id, m);
+        m
+    });
+    active(ctx) && h < tallest * 0.75
+}
+
+/// Frames a scroll area keeps the focused widget in view after the visible area or the focus changed.
+const FOLLOW_FRAMES: u8 = 3;
+
+/// Keeps the focused widget in view while the visible area changes (the keyboard coming up or going
+/// down) or the focus moves. egui scrolls a text field only after its text changes, so a field that
+/// the keyboard covers stays hidden. Call inside a scroll area, after its content.
+pub(crate) fn follow_focus(ui: &mut Ui) {
+    let ctx = ui.ctx().clone();
+    if !active(&ctx) {
+        return;
+    }
+    let h = ctx.content_rect().height();
+    let focus = ctx.memory(|m| m.focused());
+    let key = egui::Id::new("phone_follow_focus");
+    let (prev_focus, prev_h, prev_left) = ctx.data(|d| d.get_temp::<(Option<egui::Id>, f32, u8)>(key)).unwrap_or((None, h, 0));
+    let left = if focus != prev_focus || (prev_h - h).abs() > 1.0 { FOLLOW_FRAMES } else { prev_left };
+    ctx.data_mut(|d| d.insert_temp(key, (focus, h, left.saturating_sub(1))));
+    if left == 0 {
+        return;
+    }
+    // The rect is last frame's; the next frames repeat the scroll once the sheet has moved.
+    if let Some(r) = focus.and_then(|id| ctx.read_response(id)) {
+        ui.scroll_to_rect(r.rect, None);
+    }
+    ctx.request_repaint();
 }
 
 /// The edit bar's height, and its 48 pt buttons: a red cancel (✗) at the left, a green confirm (✓) at
@@ -714,7 +758,10 @@ fn sheet_panel(app: &mut SheetApp, ui: &mut Ui, title: &str, body: impl FnOnce(&
                     close_all(&ctx);
                 }
             });
-            egui::ScrollArea::vertical().show(ui, |ui| body(app, ui));
+            egui::ScrollArea::vertical().show(ui, |ui| {
+                body(app, ui);
+                follow_focus(ui);
+            });
         });
     ctx.data_mut(|d| d.insert_temp(sheet_rect_id(), panel.response.rect));
 }
@@ -1020,7 +1067,9 @@ pub(crate) fn dialog_sheet(ctx: &Context, id: egui::Id, title: &str, body: impl 
             &mut body_ui,
             |ui| {
                 touch_style(ui);
-                body(ui)
+                let close = body(ui);
+                follow_focus(ui);
+                close
             },
         );
         close |= scroll.inner;

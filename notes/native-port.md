@@ -710,3 +710,29 @@ Device evidence still pointing at the real path (from the earlier trace, `~/.cac
 Next step (needs the emulator): install the instrumented build, run the burst, and log per frame the egui events
 (Text and Key Backspace/Delete) and ed.text before and after the TextEdit draw. Only then fix the step that drops the
 letter. Also still open: the one-frame Enter ordering (probe E), which the reverted c88da637 was meant to fix.
+
+## Update 20: keyboard never hides fields
+
+- Visible area: GridCraft's `MainActivity.kt` pads the content view by the IME inset, so egui's content
+  rect is already the area above the soft keyboard. No new host call is needed.
+- `phone::keyboard_up` (window shrunk below 75% of its tallest height, as WordCraft's `keyboard_up_now`).
+  The floating bar steps aside while it is up outside cell editing (formula bar and cell edits already
+  replace it with the edit bar), and returns when the keyboard goes down.
+- `phone::follow_focus`: egui scrolls a TextEdit only after its text changes, so a focused field under the
+  keyboard stayed hidden. Called in the dialog sheet, the tab sheet and the Backstage page; when the visible
+  area or the focus changes, it scrolls the focused widget into view for three frames.
+- Device (x86_64 emulator, 2026-10-30; `before-*.png`, `after-*.png` in `~/.cache/gc-spike/`):
+  - Rename Sheet: sheet fits above the keyboard before and after (`before-5-rename-kb.png`, `after-1-rename-kb.png`).
+  - Formula bar tap is cell editing: the edit bar replaces the pill (`before-6-formulabar-kb.png`).
+  - Name box with keyboard: pill hidden (`after-6-namebox-kb.png`).
+  - Info, Company field near the bottom: before, it sat under the keyboard; after, it is scrolled above
+    it (`after-3-info-company-kb.png`).
+  - Keyboard down: no gap, layout back to normal (`after-4-kb-down.png`).
+  - Slow typing: "Wednesday" then "Pending" land exactly (`after-5-typing.png`).
+- Not device-checked: Format Cells Type field, Insert Function search, Options text fields, Info Title and
+  Author. They use the same dialog sheet and Backstage paths, so the fix should cover them.
+- Ceilings: nested scroll areas inside a dialog (e.g. a list inside Format Cells) get the scroll only via the
+  outer area; `read_response` gives last frame's rect, so the scroll repeats for three frames.
+- Checks: `cargo clippy -p gridcraft-ui-egui -p gridcraft-android` clean;
+  `cargo test -q -p gridcraft-ui-egui -p gridcraft-android -- --skip header_autofit` passes;
+  `cargo xtask wasm` ok.
