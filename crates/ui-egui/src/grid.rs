@@ -3093,20 +3093,9 @@ fn keyboard(app: &mut SheetApp, ctx: &egui::Context, resp: &egui::Response, geo:
         egui::Id::new("gridcraft.cell_editor")
     };
     if app.editor.is_some() && !menus_open && !ctx.memory(|m| m.has_focus(edit_field)) {
-        let typed: Vec<String> = ctx.input_mut(|i| {
-            let mut typed = Vec::new();
-            i.events.retain(|e| match e {
-                egui::Event::Text(t) if !t.is_empty() && t.chars().all(|c| !c.is_control()) => {
-                    typed.push(t.clone());
-                    false
-                }
-                _ => true,
-            });
-            typed
-        });
-        for t in typed {
-            app.type_ahead(&t);
-        }
+        let events = ctx.input_mut(|i| std::mem::take(&mut i.events));
+        let kept: Vec<egui::Event> = events.into_iter().filter(|ev| !typed_in_order(app, ev, false)).collect();
+        ctx.input_mut(|i| i.events = kept);
     }
     // An open filter menu owns the keyboard even when a click inside it left focus on nothing (#1516).
     // So do the fill menu (its Esc closes it, not the copy) and the right-drag that opens it (an
@@ -3142,7 +3131,8 @@ fn keyboard(app: &mut SheetApp, ctx: &egui::Context, resp: &egui::Response, geo:
     // and the other events of the frame wait for the next one (the keyboard is not theirs any more).
     let mut started = false;
     for ev in events {
-        if started && !matches!(ev, egui::Event::Text(_)) {
+        if started {
+            typed_in_order(app, &ev, shortcut_pressed || shortcut_ran);
             continue;
         }
         match ev {
@@ -3155,14 +3145,7 @@ fn keyboard(app: &mut SheetApp, ctx: &egui::Context, resp: &egui::Response, geo:
             egui::Event::Paste(text) => app.paste_external(text),
             egui::Event::Text(_) if shortcut_pressed || shortcut_ran => {}
             egui::Event::Text(text) if text.chars().all(|c| !c.is_control()) && !text.is_empty() => {
-                if started {
-                    app.type_ahead(&text);
-                    continue;
-                }
-                app.begin_edit(Some(text), false);
-                if let Some(ed) = app.editor.as_mut() {
-                    ed.caret = ed.text.chars().count();
-                }
+                type_text(app, &text);
                 if app.editor.is_none() {
                     return;
                 }
@@ -3252,6 +3235,93 @@ fn keyboard(app: &mut SheetApp, ctx: &egui::Context, resp: &egui::Response, geo:
             }
             _ => {}
         }
+    }
+}
+
+/// Letters typed into the edit: appended to an open one, or starting one (`begin_edit`).
+fn type_text(app: &mut SheetApp, text: &str) {
+    if app.editor.is_some() {
+        app.type_ahead(text);
+        return;
+    }
+    app.begin_edit(Some(text.to_string()), false);
+    if let Some(ed) = app.editor.as_mut() {
+        ed.caret = ed.text.chars().count();
+    }
+}
+
+/// Handles one event of the typing that starts or runs an edit, in the order the frame brings them.
+/// Letters go in (after an Enter that committed the last edit, they start the next one). Enter and
+/// Tab commit and move as the field does (with no edit, they just move), Escape cancels, and an arrow
+/// commits and moves, or points at cells in a formula. Returns false for an event left to the field
+/// or the grid (a message or dialog takes the keys, and so does an open autocomplete list for Tab).
+fn typed_in_order(app: &mut SheetApp, ev: &egui::Event, shortcut: bool) -> bool {
+    use egui::Key;
+    if app.message.is_some() || app.dialog.is_some() {
+        return false;
+    }
+    match ev {
+        egui::Event::Text(t) if !shortcut && !t.is_empty() && t.chars().all(|c| !c.is_control()) => {
+            type_text(app, t);
+            true
+        }
+        egui::Event::Key { key, pressed: true, modifiers: m, .. } if !m.alt && !m.ctrl && !m.command => {
+            let shift = m.shift;
+            match key {
+                Key::Enter | Key::Tab => {
+                    let (dr, dc) = match (key, shift) {
+                        (Key::Enter, s) => (if s { -1 } else { 1 }, 0),
+                        (_, s) => (0, if s { -1 } else { 1 }),
+                    };
+                    if app.editor.is_none() {
+                        app.move_after_enter(dr, dc);
+                    } else if *key == Key::Tab && app.editor.as_ref().is_some_and(|ed| !ed.autocomplete.is_empty()) {
+                        return false;
+                    } else {
+                        app.commit_edit(dr, dc, false, false);
+                    }
+                    true
+                }
+                Key::Escape => {
+                    let Some(ed) = app.editor.as_mut() else { return false };
+                    if !ed.autocomplete.is_empty() {
+                        ed.autocomplete.clear();
+                    } else if ed.completion.is_some() {
+                        ed.completion = None;
+                    } else {
+                        app.cancel_edit();
+                    }
+                    true
+                }
+                Key::ArrowUp | Key::ArrowDown | Key::ArrowLeft | Key::ArrowRight => {
+                    let Some(mut ed) = app.editor.take() else { return false };
+                    let vertical = matches!(key, Key::ArrowUp | Key::ArrowDown);
+                    if ed.from_formula_bar || !ed.enter_mode || (vertical && !ed.autocomplete.is_empty()) {
+                        app.editor = Some(ed);
+                        return false;
+                    }
+                    let (dr, dc) = match key {
+                        Key::ArrowUp => (-1, 0),
+                        Key::ArrowDown => (1, 0),
+                        Key::ArrowLeft => (0, -1),
+                        _ => (0, 1),
+                    };
+                    // Left/Right follow the screen on a right-to-left sheet.
+                    let rtl = app.session.active().and_then(|d| d.wb.active()).is_some_and(|s| s.right_to_left);
+                    let dc = if rtl { -dc } else { dc };
+                    if ed.can_point() {
+                        point_move(app, &mut ed, dr, dc, shift);
+                        app.editor = Some(ed);
+                    } else {
+                        app.editor = Some(ed);
+                        app.commit_edit_arrow(dr, dc);
+                    }
+                    true
+                }
+                _ => false,
+            }
+        }
+        _ => false,
     }
 }
 

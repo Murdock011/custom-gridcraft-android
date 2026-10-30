@@ -607,3 +607,27 @@ letters before focus, focus on the editor before its first frame, focus on anoth
 Device (x86_64 emulator, 1080x2400, after the fix; `~/.cache/gc-spike/u18-final.png`): A10 "Wednesday",
 A11 "Pending", A12 "Edited", all exact, and A13 "friday" from keyevents F R I D A Y (unshifted, lowercase
 as the keycodes give).
+
+### Update 18b: keyboard order inside one frame (type-ahead)
+
+Gap: a frame with letters, Enter/Tab or arrows (a fast typist, a paste-like burst) ran the type-ahead
+pass first, which took every letter and left the keys to a later pass. "Hello⏎World⏎" then became
+"HelloWorld" in one cell, and the Enter between the words was skipped.
+
+Fix (`grid.rs`): `typed_in_order` handles each event in the frame's order. Letters append to the edit (or
+start one after an Enter committed the last), Enter/Tab commit and move as the field does (no edit: just
+move), Escape cancels, and an arrow commits and moves or points in a formula. Both the pre-pass (edit open,
+field not focused) and the main keyboard loop (edit started this frame) use it. A message or dialog keeps the
+keys. The focused field still consumes its own keys (the pass only runs when the field has no focus).
+
+Tests (`tests/it/type_to_edit.rs`): "Hello⏎World⏎" in one frame gives A1, A2 and selection A3; Tab gives A1,
+B1; one letter per frame with Enter in the last letter's frame; Escape after letters in one frame cancels.
+All 11 type-to-edit tests pass. Clippy clean. `cargo test -p gridcraft-ui-egui -p gridcraft-android` passes
+except the known `header_autofit` flake. `cargo xtask wasm` passes (the two warnings in `io.rs` and
+`backstage.rs` were already there).
+
+Device (x86_64 emulator, `burst-1.png`): one `input text` chain, "Alpha⏎Beta⏎Gamma⏎" after a tap on C14.
+Result: C14 "Alpha" (exact), C15 "Bta" and C16 "Gama". The second letter of "Beta" and of "Gamma" was
+dropped, and the Enters moved correctly. OPEN: the kittest frames pass but the device burst loses the
+letter right after an edit starts. The next step is device logs of the type-ahead pass (which frame drops
+it), not more kittest.
