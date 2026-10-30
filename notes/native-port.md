@@ -557,3 +557,34 @@ Open problems (not fixed):
 
 Checks: `cargo clippy -p gridcraft-ui-egui -p gridcraft-android --all-targets -- -D warnings` clean;
 `cargo test -q -p gridcraft-ui-egui -p gridcraft-android -- --skip header_autofit` passes.
+
+## Update 17: switching between open workbooks
+
+- The phone's File drawer lists the open workbooks above the File rows when two or more are open
+  (`phone.rs`, `open_workbooks`, `workbook_row`). Each row is 48 pt: the name (an unsaved " •" after it),
+  a check on the active one, and a 48 pt ✕. A tap switches (`window.activate`) and closes the drawer. The ✕
+  makes that workbook active and runs File › Close (the Save changes sheet when it is dirty).
+- A cell being edited is committed before a switch, before File › Open starts the picker, before
+  `open_path` (Recent rows), and before the inbox opens documents handed over (VIEW, picked files).
+  If that commit fails (a bad formula), the handed-over documents are dropped and the error shows; the
+  cell edit stays open. Code: `lib.rs` (`open_dialog`, `open_path`, `logic`).
+- Android: closing the active workbook with others open switches to another one and the app stays
+  (`close_file`, `after_close`, `save_finished`, the Save changes answers in `dialogs.rs`). The last
+  workbook still ends the app as before. Desktop and web are unchanged.
+- Not done: the app bar does not show a count (skipped as not trivial).
+- Tests: `tests/it/phone_workbooks.rs` (list and tap, single workbook has no list, commit before Open
+  keeps typed text, clean close switches and keeps the app, dirty close asks then switches).
+- Checks: `cargo clippy -p gridcraft-ui-egui -p gridcraft-android --all-targets -- -D warnings` clean;
+  `cargo test -q -p gridcraft-ui-egui -p gridcraft-android -- --skip header_autofit` passes; `cargo xtask wasm` ok
+  (two existing dead-code warnings in `engine/src/io.rs` and `ui-egui/src/backstage.rs`, not from this change).
+- Device check (x86_64 emulator, 2026-10-30, `sw-*.png` in `~/.cache/gc-spike/`):
+  - `sw-5`/`sw-6`/`sw-9`: with two workbooks (test-open.xlsx dirty, test-second.xlsx active) the drawer shows
+    "Open workbooks" with both rows, the dirty dot, the check and the ✕s.
+  - `sw-7`: a cell edit typed in A1 of test-open.xlsx, not committed, then a VIEW intent for test-second.xlsx.
+    `sw-10`: after the switch back, A1 reads "Pnng" (committed) with the dirty dot.
+  - `sw-11`/`sw-12`: ✕ on the dirty test-open row shows "Save Changes?"; Don't Save closes it and the app
+    stays on test-second.xlsx.
+  - Note: a cold/warm VIEW of an untouched blank Book1 replaces it (no second workbook); a bare
+    `content://…/<id>` VIEW without the display name shows "Couldn't open <id>". Use `-p` and
+    `--grant-read-uri-permission` as the test recipe.
+- Open: the "Open with" chooser's first tap did not open the file; the pinned `-p` intent did.
