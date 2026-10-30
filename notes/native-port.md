@@ -631,3 +631,13 @@ Result: C14 "Alpha" (exact), C15 "Bta" and C16 "Gama". The second letter of "Bet
 dropped, and the Enters moved correctly. OPEN: the kittest frames pass but the device burst loses the
 letter right after an edit starts. The next step is device logs of the type-ahead pass (which frame drops
 it), not more kittest.
+
+Update 18c (open, device evidence): TEMPDBG logs on the emulator (`~/.cache/gc-spike/burst-dbg-keep.log`, shot
+`burst-2.png`; the burst landed in A1-A4, not C14-C16, so the tap missed). Findings:
+- Burst letters did NOT go through the Kotlin IME: no commitText or setComposingText line at all. The
+  `input text` letters reach egui as key events plus Text (GameActivity forwards keys). Only `sendKeyEvent`
+  ran, once, for Shift. So the "2nd letter lost in the IME" hypothesis is out for this path.
+- The 'e' of "Beta" reached `typed_in_order` with an open edit (`Text("e")`, editor=true), and so did 't' and
+  'a'. The loss is after `type_ahead` appended it, so the in-field TextEdit or the edit commit drops it.
+- Next: log `ed.text` in `type_ahead` and in `in_cell_editor` each frame (text before/after the TextEdit
+  draws), to see which step overwrites the appended 'e'. TEMPDBG was removed; nothing extra committed.
