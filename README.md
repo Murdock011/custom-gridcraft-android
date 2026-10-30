@@ -57,7 +57,8 @@ far. When a release is made it will be on the
 - Dialogs and messages as bottom sheets with large buttons pinned at the bottom.
 - A File side drawer (Home, New, Open, Info, Save, Save As, Export, Options, Close); Close and
   Back ask before discarding unsaved changes. The File pages and Options open as full-screen
-  phone pages (Options: a category list, on/off settings as switches).
+  phone pages (Options: a category list, on/off settings as switches). With several workbooks
+  open, the drawer lists them to switch between or close.
 
 ## Known gaps
 
