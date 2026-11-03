@@ -974,7 +974,16 @@ If it does not, the soft keyboard or the injected-key path is the cause, and a f
      The middle word was mistyped by the test (b e a t a, so F41 "Beata"); a clean rerun of "beta" in F44 gave "Beta"
      (`ctx-10.png`). Capitals right on each word.
 
-## Update 27 (in progress): engine 0.16.0 merge
+## Update 27: engine 0.16.0 merge
+
+Device result (x86_64 emulator, 2026-11-04, APK from 5e9c97ec): the phone UI is unchanged. 15 before/after pairs in
+`~/.cache/gc-spike/before-016/` and `after-016/` (grid, sheets, the five tab sheets, drawer, Info, Options list,
+Options General, long-press bar, Format Cells sheet, name box, editing) show the same layout; differences were only
+the open workbook's data. Checked by hand: Open → Browse → Budget.xlsx loads; a dirty Budget closed with Save writes
+the file (5474 bytes, 00:03) and returns to the other open workbook; no panic or FATAL in logcat. Vulkan adapter used.
+Host tests: 1088 pass, 2 fail on missing glyphs (also on origin/main).
+
+### Merge details (written during the merge)
 
 - Merge of `origin/main` (engine 0.16.0) into `custom-android`. The upstream UI moved to `grid/`, `ribbon/`,
   `dialogs/`, `backstage/` and `app/` modules, so our phone hooks were re-applied onto the new structure.
