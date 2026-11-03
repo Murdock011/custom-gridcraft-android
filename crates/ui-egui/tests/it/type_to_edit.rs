@@ -118,7 +118,7 @@ fn letters_kept_when_focus_is_on_the_editor_before_its_first_frame() {
     select(&mut h, "F1");
     h.state_mut().begin_edit(Some("W".into()), false);
     // The editor's id holds the focus, but no frame has shown the field yet.
-    h.ctx.memory_mut(|m| m.request_focus(egui::Id::new("gridcraft.cell_editor")));
+    h.ctx.memory_mut(|m| m.request_focus(egui::Id::unique("gridcraft.cell_editor")));
     h.input_mut().events.push(Event::Text("ednesday".into()));
     h.run_steps(2);
     enter(&mut h);
@@ -130,7 +130,7 @@ fn letters_kept_when_another_widget_holds_the_focus_during_a_start() {
     let mut h = harness();
     select(&mut h, "G1");
     h.state_mut().begin_edit(Some("W".into()), false);
-    h.ctx.memory_mut(|m| m.request_focus(egui::Id::new("some_other_widget")));
+    h.ctx.memory_mut(|m| m.request_focus(egui::Id::unique("some_other_widget")));
     h.input_mut().events.push(Event::Text("ednesday".into()));
     h.run_steps(2);
     enter(&mut h);

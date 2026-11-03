@@ -52,7 +52,7 @@ fn back_with_unsaved_changes_asks_first_and_cancel_stays() {
     h.key_press(egui::Key::Escape);
     h.run_steps(4);
     assert_eq!(dialog(&h).as_deref(), Some("saveChanges"));
-    h.get_by_label("Cancel").click();
+    h.get_by_role_and_label(egui::accesskit::Role::Button, "Cancel").click();
     h.run_steps(4);
     assert!(!h.state().quit_requested, "Cancel keeps the app open");
     assert!(h.state().session.active().is_some_and(|d| d.is_dirty()), "the workbook is still open");

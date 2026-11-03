@@ -13,12 +13,12 @@ fn harness() -> Harness {
     let mut session = Session::new();
     session.new_workbook();
     session.execute("range.setValues", json!({"range": "A1", "values": [["A", "B", "C", "D", "E"], [1, 2]]})).unwrap();
-    let mut h = Harness::builder().with_step_dt(1.0 / 60.0).with_size(vec2(1200.0, 800.0)).build_ui_state(
+    let mut h = crate::common::builder().with_step_dt(1.0 / 60.0).with_size(vec2(1200.0, 800.0)).build_ui_state(
         |ui, app: &mut SheetApp| {
             app.logic(ui.ctx());
             app.ui(ui);
         },
-        SheetApp::new(session, Default::default()),
+        crate::common::app(session),
     );
     h.run_steps(4);
     h
@@ -259,7 +259,7 @@ fn object_move_and_resize_keep_their_cursors_and_update_the_object() {
         let mut h = harness();
         let result = h.state_mut().session.execute("insert.chart", json!({"type": "column", "at": "D3", "width": 300, "height": 200})).unwrap();
         let id = result["chart"].as_u64().unwrap() as u32;
-        h.state_mut().selected_chart = Some(id);
+        h.state_mut().select_object_id(Some(id));
         h.run_steps(2);
         let g = geo(&h);
         let min = cell(&h, "D3").min;
@@ -268,7 +268,7 @@ fn object_move_and_resize_keep_their_cursors_and_update_the_object() {
         let target = start + vec2(60.0, 30.0);
         let cursor = if resize { CursorIcon::ResizeNwSe } else { CursorIcon::Move };
         move_with_cursor(&mut h, target, cursor);
-        assert!(matches!(h.state().grid.drag, Drag::Object { resize: r, .. } if r == resize));
+        assert!(matches!(h.state().grid.drag, Drag::Object { handle, .. } if handle.is_some() == resize));
         move_with_cursor(&mut h, target + vec2(1.0, 1.0), cursor);
         button(&mut h, target, false);
         assert_eq!(h.state().grid.drag, Drag::None);

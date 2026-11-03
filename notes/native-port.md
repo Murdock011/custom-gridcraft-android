@@ -973,3 +973,23 @@ If it does not, the soft keyboard or the injected-key path is the cause, and a f
   4. Column F, 0.15 s taps, "hello" Enter "beta" Enter "gamma" Enter: F40 "Hello", F42 "Gamma" (`ctx-9.png`).
      The middle word was mistyped by the test (b e a t a, so F41 "Beata"); a clean rerun of "beta" in F44 gave "Beta"
      (`ctx-10.png`). Capitals right on each word.
+
+## Update 27 (in progress): engine 0.16.0 merge
+
+- Merge of `origin/main` (engine 0.16.0) into `custom-android`. The upstream UI moved to `grid/`, `ribbon/`,
+  `dialogs/`, `backstage/` and `app/` modules, so our phone hooks were re-applied onto the new structure.
+- Conflicts: README kept ours (engine 0.16.0; upstream README in `docs/UPSTREAM-README.md`); ATTRIBUTION kept
+  ours plus upstream's two PDF rows; snapshot, formula bar, ribbon, theme, widgets, test module list merged.
+- Re-applied by hand: pinch (`grid/show.rs` `pinch_frame`), touch gating, type-ahead (`grid/keyboard.rs`),
+  Android quit/close/save helpers (`app/quit.rs`), phone layout in `app.rs`, phone Options (`backstage/options.rs`).
+  General options are single-column on the phone again (label above full-width combo).
+- egui 0.37: upstream already on 0.37. Android fixes: `raw_input_hook(ctx, raw)`; `WidgetType`→`Role`,
+  `Id::new`→`Id::unique`, `Ui::id`→`scope_id`, `vertical_align`→`align`, `active_sheet.get()`.
+- Passing: host clippy (`-D warnings`, ui-egui + android); `cargo test` ui-egui unit and most integration
+  tests; `cargo ndk -t x86_64 clippy -p gridcraft-android --all-targets`; `cargo xtask wasm`.
+- Failing, not fixed: `column_autocomplete_folds_case_beyond_ascii` and `language_switch_renders_the_ribbon_and_persists`
+  also fail on origin/main here (missing glyphs in this sandbox, environmental). Ours only: `macros_ui` narrow-window
+  Cancel (phone sheet body scrolls), `macro_editor` (fixed by picking the editor's Save), `quit_prompt` (fixed by role
+  query), `text_overflow_scroll` (passes upstream, fails here: 520 pt height is inside the phone breakpoint).
+- Not yet done: APK build (`build-native.sh x86_64` was still compiling when this was written), `cargo xtask ci`,
+  device comparison (before-screens in `~/.cache/gc-spike/before-016/`).

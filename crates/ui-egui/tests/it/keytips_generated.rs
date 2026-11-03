@@ -14,15 +14,7 @@ use gridcraft_ui_egui::SheetApp;
 type Harness = egui_kittest::Harness<'static, SheetApp>;
 
 fn harness(session: Session) -> Harness {
-    let mut h = egui_kittest::Harness::builder().with_os(OperatingSystem::Nix).with_size(egui::vec2(1200.0, 800.0)).build_ui_state(
-        |ui, app: &mut SheetApp| {
-            app.logic(ui.ctx());
-            app.ui(ui);
-        },
-        SheetApp::new(session, Default::default()),
-    );
-    h.run_steps(4);
-    h
+    crate::common::os_harness(session, OperatingSystem::Nix)
 }
 
 fn blank() -> Session {
@@ -344,6 +336,13 @@ fn keytip_hbi_() {
     assert!(h.state().message.is_none(), "HBI must not open a message box");
     assert!(h.state().toast.is_none(), "HBI must not raise a toast");
     assert!(h.state().session.journal.is_empty(), "HBI must not journal");
+}
+
+#[test]
+fn keytip_hbj_() {
+    let mut h = harness(blank());
+    sequence(&mut h, "HBJ", false);
+    assert!(h.state().session.journal.iter().any(|(id, _)| id == "home.borders"), "HBJ must journal home.borders");
 }
 
 #[test]
@@ -1144,10 +1143,7 @@ fn keytip_nd_() {
 fn keytip_ne_() {
     let mut h = harness(blank());
     sequence(&mut h, "NE", false);
-    assert!(h.state().dialog.is_none(), "NE must not open a dialog");
-    assert!(h.state().message.is_none(), "NE must not open a message box");
-    assert!(h.state().toast.is_none(), "NE must not raise a toast");
-    assert!(h.state().session.journal.is_empty(), "NE must not journal");
+    assert!(h.state().dialog.is_some(), "NE must open the equation dialog");
 }
 
 #[test]
@@ -1769,6 +1765,14 @@ fn keytip_mq_() {
     let mut h = harness(blank());
     sequence(&mut h, "MQ", false);
     assert!(h.state().message.is_none() && h.state().toast.is_none(), "MQ must route to its control without an error box");
+    assert_eq!(h.state().keytips.prefix(), None);
+}
+
+#[test]
+fn keytip_mr_() {
+    let mut h = harness(blank());
+    sequence(&mut h, "MR", false);
+    assert!(h.state().message.is_none() && h.state().toast.is_none(), "MR must route to its control without an error box");
     assert_eq!(h.state().keytips.prefix(), None);
 }
 
@@ -2547,14 +2551,14 @@ fn keytip_wm_() {
 fn keytip_wmr_() {
     let mut h = harness(blank());
     sequence(&mut h, "WMR", false);
-    assert!(h.state().message.is_none() && h.state().toast.is_none(), "WMR must run view.macros cleanly");
+    assert!(h.state().dialog.is_some(), "WMR must open the recordMacro dialog");
 }
 
 #[test]
 fn keytip_wmv_() {
     let mut h = harness(blank());
     sequence(&mut h, "WMV", false);
-    assert!(h.state().message.is_none() && h.state().toast.is_none(), "WMV must run view.macros cleanly");
+    assert!(h.state().dialog.is_some(), "WMV must open the macros dialog");
 }
 
 #[test]
@@ -2655,7 +2659,8 @@ fn keytip_wvr_() {
 fn keytip_ww_() {
     let mut h = harness(blank());
     sequence(&mut h, "WW", false);
-    assert!(h.state().message.is_none() && h.state().toast.is_none(), "WW must run view.switchWindows cleanly");
+    assert!(h.state().message.is_none() && h.state().toast.is_none(), "WW must route to its control without an error box");
+    assert_eq!(h.state().keytips.prefix(), None);
 }
 
 #[test]
@@ -2761,7 +2766,7 @@ fn keytip_q_() {
 
 #[test]
 fn generated_test_count_matches_the_table() {
-    const EXPECTED: usize = 365;
+    const EXPECTED: usize = 367;
     assert_eq!(gridcraft_ui_egui::keytips::keytip_table::SEQUENCES.len(), EXPECTED);
 }
 

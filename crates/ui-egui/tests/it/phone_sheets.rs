@@ -27,10 +27,10 @@ fn harness() -> egui_kittest::Harness<'static, SheetApp> {
 #[test]
 fn tapping_a_sheet_in_the_sheets_sheet_makes_it_active() {
     let mut h = harness();
-    assert_eq!(h.state().session.active().unwrap().wb.active_sheet, 0);
+    assert_eq!(h.state().session.active().unwrap().wb.active_sheet.get(), 0);
     h.get_by_label("Sheets: Sheet1").click();
     h.run_steps(4);
     h.get_by_label("Budget").click();
     h.run_steps(4);
-    assert_eq!(h.state().session.active().unwrap().wb.active_sheet, 1, "the tapped sheet becomes active");
+    assert_eq!(h.state().session.active().unwrap().wb.active_sheet.get(), 1, "the tapped sheet becomes active");
 }

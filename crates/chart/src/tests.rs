@@ -5,6 +5,8 @@ use gridcraft_model::{Anchor, Chart, ChartKind, Color, LegendPos, Series, Sparkl
 
 use crate::*;
 
+mod data_table;
+
 const ALL_KINDS: [ChartKind; 26] = [
     ChartKind::ColumnClustered,
     ChartKind::ColumnStacked,
@@ -43,6 +45,7 @@ fn chart(kind: ChartKind) -> Chart {
         series: vec![],
         legend: LegendPos::Bottom,
         data_labels: true,
+        data_table: None,
         gridlines: true,
         style: 0,
         x_title: Some("Quarter".into()),
@@ -77,7 +80,7 @@ fn sample(kind: ChartKind) -> ChartData {
     ChartData {
         category_levels: vec![],
         palette: vec![],
-        categories: cats.iter().map(|s| s.to_string()).collect(),
+        categories: cats.iter().map(ToString::to_string).collect(),
         series: vec![
             series("North", &[12000.0, -4000.0, 23000.0, 31000.0, 18000.0, 27000.0], [20, 96, 130, 255], k1),
             b,
