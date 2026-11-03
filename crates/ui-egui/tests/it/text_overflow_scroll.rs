@@ -273,13 +273,14 @@ fn wrapped_text_clipping_survives_partial_vertical_scroll() {
         and the viewport during vertical scrolling. "
         .repeat(40);
 
-    // Taller than the phone breakpoint (600 pt): a shorter window would take the phone layout.
-    let mut h = harness_with_size(egui::vec2(1200.0, 1000.0), |s| {
+    // Shortest desktop window (min side must reach the 600 pt phone breakpoint). At this height the
+    // row must be the 409 pt maximum so the viewport bottom still cuts through it once scrolled.
+    let mut h = harness_with_size(egui::vec2(1200.0, 600.0), |s| {
         s.execute("home.columnWidth", json!({"cols": "B:B", "chars": 12})).unwrap();
         s.execute("cell.set", json!({"cell": "B3", "input": text})).unwrap();
         s.execute("home.wrapText", json!({"range": "B3", "on": true})).unwrap();
         s.execute("home.formatCells", json!({"range": "B3", "style": {"align": {"v": "Top"}}})).unwrap();
-        s.execute("home.rowHeight", json!({"rows": "3:3", "height": 350})).unwrap();
+        s.execute("home.rowHeight", json!({"rows": "3:3", "height": 409})).unwrap();
     });
 
     let initial_cell = cell_rect(&h, "B3");

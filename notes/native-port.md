@@ -987,9 +987,14 @@ If it does not, the soft keyboard or the injected-key path is the cause, and a f
   `Id::new`→`Id::unique`, `Ui::id`→`scope_id`, `vertical_align`→`align`, `active_sheet.get()`.
 - Passing: host clippy (`-D warnings`, ui-egui + android); `cargo test` ui-egui unit and most integration
   tests; `cargo ndk -t x86_64 clippy -p gridcraft-android --all-targets`; `cargo xtask wasm`.
-- Failing, not fixed: `column_autocomplete_folds_case_beyond_ascii` and `language_switch_renders_the_ribbon_and_persists`
-  also fail on origin/main here (missing glyphs in this sandbox, environmental). Ours only: `macros_ui` narrow-window
-  Cancel (phone sheet body scrolls), `macro_editor` (fixed by picking the editor's Save), `quit_prompt` (fixed by role
-  query), `text_overflow_scroll` (passes upstream, fails here: 520 pt height is inside the phone breakpoint).
+- Test status (2026-11-03): `cargo test -p gridcraft-ui-egui -p gridcraft-android` 1088 pass, 2 fail.
+  Still failing, environmental: `column_autocomplete_folds_case_beyond_ascii` and
+  `language_switch_renders_the_ribbon_and_persists` panic with "No glyph" in egui's font fallback (sandbox has no
+  full font set; they also fail on origin/main here).
+  Fixed in the merge: `macros_ui` narrow window: Cancel (macros) and OK/Cancel (record macro) were inline in the
+  scrolling body, so on the phone they could scroll out of reach; they are now pinned in the sheet footer via
+  `phone::footer_row` (desktop layout unchanged). `macro_editor` (picks the editor's Save) and `quit_prompt` (role
+  query) pass. `text_overflow_scroll`: the test window is 1200x600 (the shortest desktop size; min side must be at
+  least the 600 pt phone breakpoint) with the 409 pt row maximum, so the viewport bottom still cuts the cell.
 - Not yet done: APK build (`build-native.sh x86_64` was still compiling when this was written), `cargo xtask ci`,
   device comparison (before-screens in `~/.cache/gc-spike/before-016/`).

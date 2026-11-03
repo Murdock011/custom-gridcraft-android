@@ -408,6 +408,7 @@ pub fn macros_dialog(app: &mut SheetApp, ui: &mut Ui, d: &mut Dialog, open: &mut
     let mut name = d.values.get("name").and_then(Json::as_str).unwrap_or("").to_string();
     let mut kind = if d.values.get("kind").and_then(Json::as_str) == Some("script") { Kind::Script } else { Kind::Macro };
     let t = Tokens::get(ui.ctx());
+    let on_sheet = crate::phone::footer(ui.ctx()).is_some();
     ui.horizontal_top(|ui| {
         ui.vertical(|ui| {
             ui.set_width(330.0);
@@ -494,12 +495,18 @@ pub fn macros_dialog(app: &mut SheetApp, ui: &mut Ui, d: &mut Dialog, open: &mut
                 d.values.insert("shortcut".into(), json!(key));
                 d.values.insert("description".into(), json!(e.description));
             }
-            ui.add_space(12.0);
-            if ui.add(egui::Button::new("Cancel").min_size(w)).clicked() {
-                *open = false;
+            // On the phone Cancel is pinned in the sheet's footer below, out of the scrolling body.
+            if !on_sheet {
+                ui.add_space(12.0);
+                if ui.add(egui::Button::new("Cancel").min_size(w)).clicked() {
+                    *open = false;
+                }
             }
         });
     });
+    if matches!(crate::phone::footer_row(ui, &["Cancel"], 0, false), Some(Some(_))) {
+        *open = false;
+    }
     ui.add_space(6.0);
     ui.label("Description");
     let desc = list.iter().find(|e| e.kind == kind && e.name.eq_ignore_ascii_case(name.trim())).map(|e| e.description.clone()).unwrap_or_default();
@@ -649,21 +656,34 @@ pub fn record_dialog(app: &mut SheetApp, ui: &mut Ui, d: &mut Dialog, open: &mut
         ui.label(egui::RichText::new(p).color(Tokens::get(ui.ctx()).danger));
     }
     ui.add_space(6.0);
-    ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
-        if ui.button("Cancel").clicked() {
-            *open = false;
+    // On the phone the pair is pinned in the sheet's footer (OK does nothing while the fields are
+    // unusable, as the disabled button does on the desktop).
+    let (mut cancel, mut ok) = (false, false);
+    match crate::phone::footer_row(ui, &["Cancel", "OK"], 1, false) {
+        Some(clicked) => {
+            cancel = clicked == Some(0);
+            ok = clicked == Some(1) && problem.is_none();
         }
-        if ui.add_enabled(problem.is_none(), egui::Button::new("OK")).clicked() {
-            let mut p = json!({"name": name.trim(), "description": desc, "relative": app.macros.relative});
-            if !key.trim().is_empty() {
-                p["shortcut"] = json!(key.trim());
-            }
-            match app.run("macro.record", p) {
-                Ok(_) => *open = false,
-                Err(e) => app.message = Some(("Record Macro".into(), crate::clean_error(&e))),
-            }
+        None => {
+            ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
+                cancel = ui.button("Cancel").clicked();
+                ok = ui.add_enabled(problem.is_none(), egui::Button::new("OK")).clicked();
+            });
         }
-    });
+    }
+    if cancel {
+        *open = false;
+    }
+    if ok {
+        let mut p = json!({"name": name.trim(), "description": desc, "relative": app.macros.relative});
+        if !key.trim().is_empty() {
+            p["shortcut"] = json!(key.trim());
+        }
+        match app.run("macro.record", p) {
+            Ok(_) => *open = false,
+            Err(e) => app.message = Some(("Record Macro".into(), crate::clean_error(&e))),
+        }
+    }
     d.values.insert("name".into(), json!(name));
     d.values.insert("shortcut".into(), json!(key));
     d.values.insert("description".into(), json!(desc));
