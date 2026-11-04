@@ -164,3 +164,53 @@ fn more_colors_opens_alone_at_the_top_and_resets_on_close() {
     h.run_steps(4);
     assert!(h.query_by_label("No Fill").is_some(), "reopening Fill Colour shows the swatches, not the picker");
 }
+
+/// Scrolls the sheet's body by wheel at a point inside the sheet (a finger's scroll, for the harness).
+fn scroll_sheet(h: &mut egui_kittest::Harness<'static, SheetApp>, dy: f32) {
+    h.input_mut().events.push(Event::PointerMoved(pos2(206.0, 700.0)));
+    h.run_steps(2);
+    for _ in 0..10 {
+        h.input_mut().events.push(Event::MouseWheel {
+            unit: MouseWheelUnit::Point,
+            delta: vec2(0.0, dy),
+            phase: TouchPhase::Move,
+            modifiers: Modifiers::NONE,
+            source: MouseWheelSource::Unknown,
+        });
+        h.run_steps(2);
+    }
+}
+
+#[test]
+fn the_home_list_scrolls_back_up_from_its_end() {
+    use egui_kittest::kittest::Queryable;
+    let mut h = harness();
+    gridcraft_ui_egui::open_phone_sheet(&h.ctx, "Home");
+    h.run_steps(4);
+    let bold_in_sheet = |h: &egui_kittest::Harness<'static, SheetApp>| {
+        let screen = h.ctx.content_rect();
+        h.query_by_label("Bold").is_some_and(|n| n.rect().center().y > screen.bottom() - screen.height() * 0.55)
+    };
+    assert!(bold_in_sheet(&h), "Bold is in the sheet at the top");
+    scroll_sheet(&mut h, -1000.0);
+    assert!(!bold_in_sheet(&h), "the list scrolled to its end");
+    scroll_sheet(&mut h, 1000.0);
+    assert!(bold_in_sheet(&h), "scrolling back up brings Bold back");
+}
+
+#[test]
+fn an_opened_palette_starts_in_view_when_the_list_was_scrolled() {
+    use egui_kittest::kittest::Queryable;
+    let mut h = harness();
+    gridcraft_ui_egui::open_phone_sheet(&h.ctx, "Home");
+    h.run_steps(4);
+    scroll_sheet(&mut h, -15.0);
+    h.get_by_label("Fill Colour").click();
+    h.run_steps(4);
+    let screen = h.ctx.content_rect();
+    let no_fill = h.get_by_label("No Fill").rect();
+    assert!(
+        no_fill.center().y > screen.bottom() - screen.height() * 0.55 && no_fill.bottom() <= screen.bottom(),
+        "No Fill is in the sheet after Fill Colour: {no_fill:?}"
+    );
+}

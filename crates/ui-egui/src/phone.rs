@@ -761,6 +761,12 @@ fn sheet_panel(app: &mut SheetApp, ui: &mut Ui, title: &str, body: impl FnOnce(&
     let t = Tokens::get(&ctx);
     let lang = app.ui.language;
     let picker = picker_open(&ctx);
+    // The open palette is part of the scroll state's id: opening or switching one starts the body at the top.
+    let palette = match open_palette(&ctx) {
+        None => 0u8,
+        Some(Palette::Fill) => 1,
+        Some(Palette::Font) => 2,
+    };
     let height = sheet_height(&ctx, picker);
     let panel = Panel::bottom("phone_sheet")
         .exact_size(height)
@@ -778,8 +784,8 @@ fn sheet_panel(app: &mut SheetApp, ui: &mut Ui, title: &str, body: impl FnOnce(&
                     close_all(&ctx);
                 }
             });
-            // The picker is a page of its own: a fresh scroll state, so it opens at the top.
-            egui::ScrollArea::vertical().id_salt(("phone_sheet_body", picker)).show(ui, |ui| {
+            // The picker and an opened palette are pages of their own: a fresh scroll state, so they open at the top.
+            egui::ScrollArea::vertical().id_salt(("phone_sheet_body", picker, palette)).show(ui, |ui| {
                 body(app, ui);
                 follow_focus(ui);
             });
