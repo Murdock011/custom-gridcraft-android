@@ -69,12 +69,17 @@ impl Handle {
 
 /// The handle of `r` under `p`: the nearest one within reach. Corners reach further than edge
 /// midpoints, and the reach shrinks on small objects so that their middle still moves them.
-pub fn handle_at(r: Rect, p: Pos2) -> Option<Handle> {
+/// On the phone (`touch`) each handle takes a 48 pt square around it, so a finger lands on it.
+pub fn handle_at(r: Rect, p: Pos2, touch: bool) -> Option<Handle> {
     let small = r.width().min(r.height());
     Handle::ALL
         .into_iter()
         .map(|h| {
             let (sx, sy) = h.sides();
+            if touch {
+                let off = h.pos(r) - p;
+                return (h, off.x.abs().max(off.y.abs()), 24.0);
+            }
             let reach = if sx != 0 && sy != 0 { 10.0f32 } else { 7.0 }.min((small / 3.0).max(4.0));
             (h, (h.pos(r) - p).length(), reach)
         })
@@ -190,13 +195,24 @@ mod tests {
     fn handles_sit_on_the_frame_and_corners_win() {
         let r = Rect::from_min_size(pos2(100.0, 100.0), vec2(200.0, 100.0));
         for h in Handle::ALL {
-            assert_eq!(handle_at(r, h.pos(r)), Some(h));
+            assert_eq!(handle_at(r, h.pos(r), false), Some(h));
         }
-        assert_eq!(handle_at(r, r.center()), None);
-        assert_eq!(handle_at(r, pos2(106.0, 106.0)), Some(Handle::TopLeft));
+        assert_eq!(handle_at(r, r.center(), false), None);
+        assert_eq!(handle_at(r, pos2(106.0, 106.0), false), Some(Handle::TopLeft));
         // A tiny object keeps its middle for moving.
         let tiny = Rect::from_min_size(pos2(0.0, 0.0), vec2(12.0, 12.0));
-        assert_eq!(handle_at(tiny, tiny.center()), None);
+        assert_eq!(handle_at(tiny, tiny.center(), false), None);
+    }
+
+    #[test]
+    fn phone_handles_take_a_48_pt_square() {
+        let r = Rect::from_min_size(pos2(100.0, 100.0), vec2(200.0, 100.0));
+        // 20 pt off the top-left corner on both axes: missed on desktop, hit on the phone.
+        let near = pos2(100.0 - 20.0, 100.0 - 20.0);
+        assert_eq!(handle_at(r, near, false), None);
+        assert_eq!(handle_at(r, near, true), Some(Handle::TopLeft));
+        // Still the square's edge is the limit: 30 pt away is out of reach even on the phone.
+        assert_eq!(handle_at(r, pos2(100.0 - 30.0, 100.0), true), None);
     }
 
     #[test]

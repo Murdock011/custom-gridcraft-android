@@ -882,9 +882,33 @@ fn actions_body(app: &mut SheetApp, ui: &mut Ui, i: usize) {
     }
 }
 
+/// Insert > Chart on the phone: the chart opens at the first visible column, on the row under the
+/// selection when that row is on screen (else the first visible row), as wide as the grid. Before
+/// the grid has been laid out the engine's own placement is kept.
+fn chart_params_in_view(app: &SheetApp) -> serde_json::Value {
+    let (Some(geo), Some(doc)) = (app.grid.geo.as_ref(), app.session.active()) else { return json!({}) };
+    let Some(sh) = doc.wb.active() else { return json!({}) };
+    let first_row = geo.row_at(sh, geo.cells.top());
+    let last_row = geo.row_at(sh, geo.cells.bottom());
+    let below = doc.selection.active.row.saturating_add(1);
+    let row = if (first_row..=last_row).contains(&below) { below } else { first_row };
+    chart_view_params(geo.col_at(sh, geo.cells.left()), row, geo.cells.width() / geo.z)
+}
+
+/// The insert.chart params for a chart at `row`, `first_col`, `visible_w` sheet points wide (the
+/// grid's width at the current zoom): 16 pt short of the grid's right edge, 0.62 x as tall.
+fn chart_view_params(first_col: u32, row: u32, visible_w: f32) -> serde_json::Value {
+    let width = (visible_w - 16.0).max(20.0);
+    json!({"at": CellRef::new(row, first_col).a1(), "width": width, "height": width * 0.62})
+}
+
 /// Runs a sheet row's action. Colour rows are handled by the sheet itself.
 fn run_act(app: &mut SheetApp, ctx: &Context, act: Act) {
     match act {
+        Act::Run("insert.chart") => {
+            let params = chart_params_in_view(app);
+            app.run_or_alert("insert.chart", params)
+        }
         Act::Run(id) => app.run_or_alert(id, json!({})),
         Act::Copy(id) => app.copy_to_clipboard(ctx, id),
         Act::Dialog(name, tab) => app.open_dialog(name, tab.map_or_else(|| json!({}), |page| json!({"tab": page}))),
@@ -1389,6 +1413,14 @@ fn bar_button(ui: &mut Ui, t: Tokens, label: &str, icon: Icon) -> bool {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn a_phone_chart_opens_in_view_and_fits_the_grid() {
+        // Grid 412 pt wide, first visible column D, row 11 under the selection.
+        let p = chart_view_params(3, 10, 412.0);
+        assert_eq!(p["at"], "D11");
+        assert!(p["width"].as_f64().is_some_and(|w| w <= 412.0 && w > 300.0));
+    }
 
     #[test]
     fn dragging_the_end_handle_keeps_the_start_corner() {

@@ -539,23 +539,6 @@ fn palette(ui: &mut Ui, theme_colors: &[u32; 12], none_label: &str, more_colors:
             }
         });
     }
-    ui.horizontal(|ui| {
-        ui.spacing_mut().item_spacing.x = 2.0;
-        for (col, hex) in std_hex.iter().enumerate() {
-            let c = gridcraft_engine::model::Color::from_hex(hex)
-                .and_then(|c| c.resolve(&Default::default()))
-                .map(theme::color32)
-                .unwrap_or(Color32::BLACK);
-            let (r, resp) = ui.allocate_exact_size(vec2(16.0, 14.0), Sense::click());
-            ui.painter().rect_filled(r, 1.0, c);
-            if resp.hovered() || cur == Some((ROWS - 1, col)) {
-                ui.painter().rect_stroke(r.expand(1.0), 1.0, Stroke::new(1.5, t.cat(Cat::Orange)), StrokeKind::Outside);
-            }
-            if resp.clicked() {
-                picked = Some(hex.to_string());
-            }
-        }
-    });
     // Recent Colors: the custom colours picked below, newest first.
     let mut recent: Vec<String> = ui.ctx().data(|d| d.get_temp(recent_colors_id())).unwrap_or_default();
     if !recent.is_empty() {

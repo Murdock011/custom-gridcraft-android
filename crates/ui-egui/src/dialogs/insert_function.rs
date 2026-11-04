@@ -76,7 +76,15 @@ pub(super) fn insert_function(app: &mut SheetApp, ui: &mut egui::Ui, d: &mut Dia
     // The category column starts after the widest name shown, so a long name in any formula
     // language or font never runs into it.
     let name_w = rows.iter().map(|(n, _)| ui.painter().layout_no_wrap(n.to_string(), font.clone(), t.text).size().x).fold(0.0_f32, f32::max);
-    egui::ScrollArea::vertical().max_height(260.0).auto_shrink([false, false]).show(ui, |ui| {
+    // On the phone the signature and description go above the list: the pinned footer covers the
+    // bottom of the sheet, and the list is shorter so the two stay in view.
+    let phone = crate::phone::active(ui.ctx());
+    if phone && let Some(f) = hits.get(d.list_index) {
+        ui.separator();
+        ui.label(egui::RichText::new(crate::formula_locale::signature(&f.name, locale, language).unwrap_or_default()).strong());
+        ui.label(crate::formula_locale::description(&f.name, locale, language).unwrap_or_default());
+    }
+    egui::ScrollArea::vertical().max_height(if phone { 150.0 } else { 260.0 }).auto_shrink([false, false]).show(ui, |ui| {
         if rows.is_empty() {
             ui.label(egui::RichText::new(language.tr("No functions match.")).italics());
         }
@@ -102,7 +110,7 @@ pub(super) fn insert_function(app: &mut SheetApp, ui: &mut egui::Ui, d: &mut Dia
             }
         }
     });
-    if let Some(f) = hits.get(d.list_index) {
+    if !phone && let Some(f) = hits.get(d.list_index) {
         ui.separator();
         ui.label(egui::RichText::new(crate::formula_locale::signature(&f.name, locale, language).unwrap_or_default()).strong());
         ui.label(crate::formula_locale::description(&f.name, locale, language).unwrap_or_default());

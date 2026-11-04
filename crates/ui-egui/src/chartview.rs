@@ -513,13 +513,13 @@ pub fn object_rect(geo: &Geo, sh: &Sheet, o: ObjRef) -> Option<Rect> {
 /// reach a little outside their object, so they win over [`hit`], but like it only over the cell
 /// area: a handle that lies under the headers, the formula bar or a scroll bar leaves the press
 /// to them. Nothing while objects are hidden.
-pub fn selected_handle(app: &SheetApp, geo: &Geo, sh: &Sheet, p: Pos2) -> Option<(ObjRef, Rect, crate::objects::Handle)> {
+pub fn selected_handle(app: &SheetApp, geo: &Geo, sh: &Sheet, p: Pos2, touch: bool) -> Option<(ObjRef, Rect, crate::objects::Handle)> {
     if !geo.cells.contains(p) || app.session.active().is_some_and(|d| objects_hidden(&d.wb)) {
         return None;
     }
     let o = app.selected_object?;
     let r = object_rect(geo, sh, o)?;
-    crate::objects::handle_at(r, p).map(|h| (o, r, h))
+    crate::objects::handle_at(r, p, touch).map(|h| (o, r, h))
 }
 
 /// The topmost object under `p` and its rect: slicers paint on top, so they are hit first, then

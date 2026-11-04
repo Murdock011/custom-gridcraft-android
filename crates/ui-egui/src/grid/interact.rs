@@ -126,7 +126,8 @@ pub(super) fn interact(app: &mut SheetApp, ui: &mut egui::Ui, resp: &egui::Respo
         // The selected object's handles reach a little outside it, so they win over hit-testing.
         // Only they resize: a press anywhere on another object selects and moves it, as the
         // hover cursor shows.
-        let on_handle = at.and_then(|p| crate::chartview::selected_handle(app, geo, sh, p));
+        let touch = crate::phone::active(&ctx);
+        let on_handle = at.and_then(|p| crate::chartview::selected_handle(app, geo, sh, p, touch));
         let handle = on_handle.map(|(.., h)| h);
         if let Some(p) = at
             && let Some((obj, _)) = on_handle.map(|(o, r, _)| (o, r)).or_else(|| crate::chartview::hit(app, geo, sh, p))
