@@ -1007,3 +1007,26 @@ Host tests: 1088 pass, 2 fail on missing glyphs (also on origin/main).
   least the 600 pt phone breakpoint) with the 409 pt row maximum, so the viewport bottom still cuts the cell.
 - Not yet done: APK build (`build-native.sh x86_64` was still compiling when this was written), `cargo xtask ci`,
   device comparison (before-screens in `~/.cache/gc-spike/before-016/`).
+
+## Update 28: phone bug hunt, 48 pt touch targets (2026-11-04)
+- Landscape: the tab pill vanished because `keyboard_up` compared the height with the tallest ever seen;
+  it now restarts when the width changes (rotation), so only the keyboard hides the pill (02071de3).
+- Touch targets (audit of every phone screen for widgets under 48 x 48 pt): formula bar drops its small ✗/✓
+  on the phone (the edit bar has 48 pt ones), fx/expand are 48 x 48, the bar and Name Box are 48 tall,
+  `BAR_MIN_H` 48, Sheets button 48 tall, selection `HANDLE_HIT` 48 (c4bedaed).
+- Colour palette on the phone: theme colours transposed (one row per colour family, 6 tints across), 44 pt
+  swatches in 48 pt rows, standard/recent 6 per row, full-width No Fill/Automatic/More Colors… rows; a
+  duplicated 16x14 standard row (desktop too) removed (2e9ea1e0). More Colors… is its own page at the top of a
+  taller sheet: square sized to fit, 48 pt RGB/hex fields, OK/Cancel always visible, resets when the sheet
+  closes (10ff52fe, 4e4c03f4). Opening a palette starts the list at the top (0ecbf7a1).
+- Charts: Insert > Chart on the phone anchors at the first visible column under the selection, as wide as
+  the visible grid; handles have 48 pt square hit areas; a touch press on the selected object's handle or
+  body resizes/moves it instead of panning the grid (2e9ea1e0, e9e6ffa4).
+- Insert Function: signature and description sit above the list on the phone, so long ones are not
+  clipped by the footer. Format Cells: wrapped labels no longer justified (stretched letters).
+- Device-checked (emulator): landscape pill, formula bar, palette, More Colors pick + OK, chart insert in
+  view, touch resize and move, Insert Function text, Format Cells label, sheet scrolls both ways (a swipe
+  must start in the list, not on the title row), grid pan.
+- Seen, fine: AutoSum, range handle drag, Sort A to Z, Undo, Back → Save Changes, crash recovery.
+- Open/minor: the picker's egui "U8" format toggle and copy button are 48 tall but narrow; the bottom-right
+  selection handle covers the last digit of right-aligned numbers; Insert Function search uses suggestions.
