@@ -153,8 +153,22 @@ fn open_palette(ctx: &Context) -> Option<Palette> {
     ctx.data(|d| d.get_temp::<Option<Palette>>(palette_id())).flatten()
 }
 
+/// Sets the open palette. Any change of palette (or none) also closes its More Colors… picker.
 fn set_palette(ctx: &Context, p: Option<Palette>) {
+    crate::widgets::close_more_colors(ctx);
     ctx.data_mut(|d| d.insert_temp(palette_id(), p));
+}
+
+/// Whether the open palette shows More Colors…, whose picker is then the sheet's whole page.
+fn picker_open(ctx: &Context) -> bool {
+    open_palette(ctx).is_some() && crate::widgets::more_colors_open(ctx)
+}
+
+/// The sheet's height on a phone screen: 55% of the screen height (260 to 520 pt, at most 85%), or
+/// 85% while the More Colors… picker is open, so the picker fits without scrolling.
+pub(crate) fn sheet_height(ctx: &Context, picker: bool) -> f32 {
+    let screen_h = ctx.content_rect().height();
+    if picker { screen_h * 0.85 } else { (screen_h * 0.55).clamp(260.0, 520.0).min(screen_h * 0.85) }
 }
 
 /// The sheet (by index) whose row actions are open in the Sheets sheet.
@@ -174,6 +188,7 @@ fn set_row_actions(ctx: &Context, sheet: Option<usize>) {
 fn close_all(ctx: &Context) {
     set_menu(ctx, None);
     set_palette(ctx, None);
+    crate::widgets::close_more_colors(ctx);
     set_row_actions(ctx, None);
     set_bar_open(ctx, false);
 }
@@ -745,8 +760,8 @@ fn sheet_panel(app: &mut SheetApp, ui: &mut Ui, title: &str, body: impl FnOnce(&
     let ctx = ui.ctx().clone();
     let t = Tokens::get(&ctx);
     let lang = app.ui.language;
-    let screen_h = ctx.content_rect().height();
-    let height = (screen_h * 0.55).clamp(260.0, 520.0).min(screen_h * 0.85);
+    let picker = picker_open(&ctx);
+    let height = sheet_height(&ctx, picker);
     let panel = Panel::bottom("phone_sheet")
         .exact_size(height)
         .frame(Frame::NONE.fill(t.menu_bg).corner_radius(CornerRadius { nw: 16, ne: 16, sw: 0, se: 0 }).inner_margin(Margin::symmetric(16, 0)))
@@ -763,7 +778,8 @@ fn sheet_panel(app: &mut SheetApp, ui: &mut Ui, title: &str, body: impl FnOnce(&
                     close_all(&ctx);
                 }
             });
-            egui::ScrollArea::vertical().show(ui, |ui| {
+            // The picker is a page of its own: a fresh scroll state, so it opens at the top.
+            egui::ScrollArea::vertical().id_salt(("phone_sheet_body", picker)).show(ui, |ui| {
                 body(app, ui);
                 follow_focus(ui);
             });
@@ -791,6 +807,10 @@ fn tab_sheet(app: &mut SheetApp, ui: &mut Ui, tab: usize) {
                 close_all(&ctx);
             }
             ui.add_space(4.0);
+        }
+        // With More Colors… open the sheet shows only the picker, not the command rows.
+        if picker_open(&ctx) {
+            return;
         }
         for (label, icon, act) in rows(tab) {
             if list_row(ui, t, lang.tr(label), *icon, true).clicked() {

@@ -390,7 +390,9 @@ fn palette(ui: &mut Ui, theme_colors: &[u32; 12], none_label: &str, more_colors:
     const COLS: usize = 10;
     let pal_id = ui.scope_id().with("__color_palette");
     let mut cur: Option<(usize, usize)> = ui.data_mut(|d| d.get_temp(pal_id)).unwrap_or(None);
-    let more_id = pal_id.with("more");
+    // On the phone the picker has one fixed id, so the sheet can read it and close it (see `close_more_colors`).
+    let phone = crate::phone::active(ui.ctx());
+    let more_id = if phone { phone_more_id() } else { pal_id.with("more") };
     let mut more: Option<MoreColors> = ui.data_mut(|d| d.get_temp(more_id)).unwrap_or(None);
     let (mut dl, mut dr, mut du, mut dd, mut ent) = (false, false, false, false, false);
     if more.is_none() {
@@ -463,7 +465,6 @@ fn palette(ui: &mut Ui, theme_colors: &[u32; 12], none_label: &str, more_colors:
         });
         ui.data_mut(|d| d.remove_temp::<Option<(usize, usize)>>(pal_id));
     }
-    let phone = crate::phone::active(ui.ctx());
     let mut recent: Vec<String> = ui.ctx().data(|d| d.get_temp(recent_colors_id())).unwrap_or_default();
     if phone && more.is_some() {
         // On the phone an open More Colors… picker is the palette's whole page: no swatches, no None
@@ -597,6 +598,21 @@ fn palette(ui: &mut Ui, theme_colors: &[u32; 12], none_label: &str, more_colors:
     picked
 }
 
+/// The phone's More Colors… picker state: one fixed id, so the sheet can read and clear it.
+fn phone_more_id() -> egui::Id {
+    egui::Id::unique("phone_more_colors_picker")
+}
+
+/// Whether the phone's More Colors… picker is open.
+pub(crate) fn more_colors_open(ctx: &egui::Context) -> bool {
+    ctx.data(|d| d.get_temp::<Option<MoreColors>>(phone_more_id())).flatten().is_some()
+}
+
+/// Closes the phone's More Colors… picker, so the next open starts at the swatches.
+pub(crate) fn close_more_colors(ctx: &egui::Context) {
+    ctx.data_mut(|d| d.insert_temp(phone_more_id(), None::<MoreColors>));
+}
+
 /// The More Colors… picker: the egui colour square, hue bar and RGB fields, then the hex box with the
 /// new colour beside it, and OK / Cancel. OK records the colour as the newest recent colour and returns
 /// it; OK or Cancel closes the picker (`more` becomes None). On the phone every control is 48 pt tall,
@@ -608,10 +624,12 @@ fn more_picker(ui: &mut Ui, more: &mut Option<MoreColors>, recent: &mut Vec<Stri
     let mut done = false;
     ui.scope(|ui| {
         if phone {
-            // Five fixed 48 pt rows (RGB fields, preview, hue bar, hex box, buttons) with their gaps and a
-            // margin come off the visible height; the square takes the rest, no wider than the sheet.
-            let fixed = 5.0 * PHONE_ROW + 5.0 * ui.spacing().item_spacing.y + 8.0;
-            let side = (ui.clip_rect().height() - fixed).min(ui.available_width()).max(PICKER_MIN);
+            // The sheet's height (its title row and margins come off it), less five fixed 48 pt rows (RGB
+            // fields, preview, hue bar, hex box, buttons) with their gaps; the square takes the rest, no
+            // wider than the sheet. Read from the screen, not the clip rect, so the size is the same each frame.
+            let sheet = crate::phone::sheet_height(ui.ctx(), true);
+            let fixed = PICKER_CHROME + 5.0 * PHONE_ROW + 5.0 * ui.spacing().item_spacing.y + 8.0;
+            let side = (sheet - fixed).min(ui.available_width()).max(PICKER_MIN);
             ui.spacing_mut().interact_size = vec2(64.0, PHONE_ROW);
             ui.spacing_mut().slider_width = side;
         }
@@ -668,6 +686,8 @@ const PHONE_SWATCH: f32 = 44.0;
 const PHONE_ROW: f32 = 48.0;
 /// The smallest the More Colors… picker's 2D square gets on the phone.
 const PICKER_MIN: f32 = 160.0;
+/// The sheet's handle and title row above the picker's body on the phone.
+const PICKER_CHROME: f32 = 80.0;
 
 /// Lays `n` swatches out on the phone, `PHONE_COLS` to a row, each `w` wide (the row's width shared
 /// out), and returns the index of the one tapped. `swatch` draws swatch `k` at width `w`.

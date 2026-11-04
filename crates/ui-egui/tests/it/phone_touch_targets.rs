@@ -97,3 +97,70 @@ fn more_colors_is_a_focused_page_that_fits_at_48_pt() {
     }
     assert!(checked >= 3, "the picker has its OK, Cancel and Hex controls ({checked} checked)");
 }
+
+#[test]
+fn more_colors_opens_alone_at_the_top_and_resets_on_close() {
+    let mut h = harness();
+    gridcraft_ui_egui::open_phone_sheet(&h.ctx, "Home");
+    h.run_steps(4);
+    h.get_by_label("Fill Colour").click();
+    h.run_steps(4);
+
+    // Scroll the sheet until More Colors… is in its body (below the title row), as a finger would.
+    let sheet = pos2(206.0, 700.0);
+    h.input_mut().events.push(Event::PointerMoved(sheet));
+    h.run_steps(2);
+    for _ in 0..25 {
+        let y = h.get_by_label("More Colors…").rect().center().y;
+        if (520.0..=820.0).contains(&y) {
+            break;
+        }
+        h.input_mut().events.push(Event::MouseWheel {
+            unit: MouseWheelUnit::Point,
+            delta: vec2(0.0, -100.0),
+            phase: TouchPhase::Move,
+            modifiers: Modifiers::NONE,
+            source: MouseWheelSource::Unknown,
+        });
+        h.run_steps(2);
+    }
+    h.get_by_label("More Colors…").click();
+    h.run_steps(4);
+
+    // The sheet shows only the picker: no command rows, and the picker fits the screen without scrolling.
+    assert!(h.query_by_label("Bold").is_none(), "the Home rows are still shown under More Colors…");
+    let screen = h.ctx.content_rect();
+    // The OK button's label is padded ("  OK  ") as the desktop picker's is.
+    for label in ["  OK  ", "Cancel"] {
+        let r = h.get_by_label(label).rect();
+        assert!(
+            r.top() >= screen.top() && r.bottom() <= screen.bottom() && r.left() >= screen.left() && r.right() <= screen.right(),
+            "{label} is outside the {}x{} screen: {r:?}",
+            screen.width(),
+            screen.height()
+        );
+        assert!(r.height() >= 48.0, "{label} is {} pt tall", r.height());
+    }
+
+    // Close the sheet; reopening Fill Colour starts at the swatches again, not the picker.
+    h.get_by_label("Close").click();
+    h.run_steps(4);
+    gridcraft_ui_egui::open_phone_sheet(&h.ctx, "Home");
+    h.run_steps(4);
+    // The list keeps its scroll, so scroll it back to the top before tapping Fill Colour.
+    h.input_mut().events.push(Event::PointerMoved(pos2(206.0, 700.0)));
+    h.run_steps(2);
+    for _ in 0..25 {
+        h.input_mut().events.push(Event::MouseWheel {
+            unit: MouseWheelUnit::Point,
+            delta: vec2(0.0, 100.0),
+            phase: TouchPhase::Move,
+            modifiers: Modifiers::NONE,
+            source: MouseWheelSource::Unknown,
+        });
+        h.run_steps(2);
+    }
+    h.get_by_label("Fill Colour").click();
+    h.run_steps(4);
+    assert!(h.query_by_label("No Fill").is_some(), "reopening Fill Colour shows the swatches, not the picker");
+}
