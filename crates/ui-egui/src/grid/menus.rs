@@ -1,9 +1,10 @@
 use super::editor::popup_dismissed;
 use super::geo::Geo;
 use super::tables::filter_table_range;
-use super::{Arc, Drag, FillTag, RangeRef, Rect, Sense, Sheet, SheetApp, Stroke, Tokens, col_to_letters, json, pos2, vec2};
+use super::{Arc, Drag, FillTag, RangeRef, Rect, Sense, Sheet, SheetApp, Stroke, StrokeKind, Tokens, col_to_letters, json, pos2, vec2};
 
 /// Draws the filter-header popup: sort, search/select-all, apply/clear, a lazily installed table autofilter, new-open search focus and dismissal.
+/// On the phone the same menu is a bottom sheet: 48 pt rows, Clear Filter and Apply pinned at its foot, and the search box not focused (so the keyboard stays down).
 pub(super) fn filter_menu(app: &mut SheetApp, ui: &mut egui::Ui, geo: &Geo, was_open: bool) {
     let Some((col, row, at)) = app.grid.filter_menu else { return };
     let Some(d) = app.session.active() else { return };
@@ -40,78 +41,25 @@ pub(super) fn filter_menu(app: &mut SheetApp, ui: &mut egui::Ui, geo: &Geo, was_
     let buttons: Vec<egui::Id> = ui.ctx().data_mut(|d| d.get_temp(buttons_key)).unwrap_or_default();
     let on_button = ui.ctx().memory(|m| m.focused()).is_some_and(|f| buttons.contains(&f));
     let enter = !on_button && ui.input_mut(|i| i.consume_key(egui::Modifiers::NONE, egui::Key::Enter));
+    let keys = [key, search_key, buttons_key];
     let mut close = false;
-    let area = egui::Area::new(egui::Id::unique("filter_menu")).fixed_pos(at + vec2(-180.0, 10.0)).order(egui::Order::Foreground);
-    let response = area.show(ui.ctx(), |ui| {
-        egui::Frame::popup(ui.style()).show(ui, |ui| {
-            ui.set_width(230.0);
-            let ascending = ui.button("↑  Sort Ascending");
-            if ascending.clicked() {
-                let _ = app.run("data.sortAscending", json!({"column": col_to_letters(col)}));
-                close = true;
-            }
-            let descending = ui.button("↓  Sort Descending");
-            if descending.clicked() {
-                let _ = app.run("data.sortDescending", json!({"column": col_to_letters(col)}));
-                close = true;
-            }
-            ui.separator();
-            ui.label(egui::RichText::new("Filter").strong());
-            let mut checks: Vec<(String, bool)> = ui.ctx().data_mut(|d| d.get_temp::<Vec<(String, bool)>>(key)).unwrap_or(values.clone());
-            // A search narrows the list; Select All and Apply then only cover the matches.
-            let mut search: String = ui.ctx().data_mut(|d| d.get_temp(search_key)).unwrap_or_default();
-            let field = ui.add(egui::TextEdit::singleline(&mut search).hint_text("Search").desired_width(f32::INFINITY));
-            if !was_open {
-                field.request_focus();
-            }
-            let needle = search.trim().to_lowercase();
-            let matches = |v: &str| needle.is_empty() || v.to_lowercase().contains(&needle);
-            let all = checks.iter().filter(|(v, _)| matches(v)).all(|(_, b)| *b);
-            let mut all_new = all;
-            let label = if needle.is_empty() { "(Select All)" } else { "(Select All Search Results)" };
-            if ui.checkbox(&mut all_new, label).changed() {
-                for c in checks.iter_mut().filter(|(v, _)| matches(v)) {
-                    c.1 = all_new;
-                }
-            }
-            // Full width: shrunk to the longest value, the scroll bar sat mid-menu and the wheel only
-            // worked over the values themselves (#432).
-            egui::ScrollArea::vertical().max_height(220.0).auto_shrink([false, true]).show(ui, |ui| {
-                for (v, on) in checks.iter_mut().filter(|(v, _)| matches(v)) {
-                    ui.checkbox(on, v.as_str());
-                }
-            });
-            ui.ctx().data_mut(|d| {
-                d.insert_temp(key, checks.clone());
-                d.insert_temp(search_key, search.clone());
-            });
-            let checks: Vec<(String, bool)> = checks.iter().map(|(v, on)| (v.clone(), *on && matches(v))).collect();
-            ui.separator();
-            ui.horizontal(|ui| {
-                let clear = ui.button("Clear Filter");
-                if clear.clicked() {
-                    let _ = app.run("data.filterBy", json!({"column": col_to_letters(col), "clear": true}));
-                    close = true;
-                }
-                // Nothing checked would hide every row, so Enter (unlike a click on Apply) does nothing then.
-                let any = checks.iter().any(|(_, on)| *on);
-                let apply = ui.button("Apply");
-                ui.ctx().data_mut(|d| d.insert_temp(buttons_key, vec![ascending.id, descending.id, clear.id, apply.id]));
-                if apply.clicked() || (enter && any) {
-                    let blanks = checks.iter().any(|(v, on)| v == "(Blanks)" && *on);
-                    let vals: Vec<String> = checks.iter().filter(|(v, on)| *on && v != "(Blanks)").map(|(v, _)| v.clone()).collect();
-                    let p = if checks.iter().all(|(_, b)| *b) {
-                        json!({"column": col_to_letters(col), "clear": true})
-                    } else {
-                        json!({"column": col_to_letters(col), "values": vals, "blanks": blanks})
-                    };
-                    let _ = app.run("data.filterBy", p);
-                    close = true;
-                }
+    let dismissed = if crate::phone::active(ui.ctx()) {
+        // A bottom sheet: its own close button, a tap on the dimmed screen and Back (Escape) close it.
+        let (done, _) = crate::phone::dialog_sheet(ui.ctx(), egui::Id::unique("filter_sheet"), "Filter", |ui| {
+            filter_body(app, ui, col, &values, keys, false, enter)
+        });
+        done
+    } else {
+        let area = egui::Area::new(egui::Id::unique("filter_menu")).fixed_pos(at + vec2(-180.0, 10.0)).order(egui::Order::Foreground);
+        let response = area.show(ui.ctx(), |ui| {
+            egui::Frame::popup(ui.style()).show(ui, |ui| {
+                ui.set_width(230.0);
+                close |= filter_body(app, ui, col, &values, keys, !was_open, enter);
             });
         });
-    });
-    if close || popup_dismissed(&response.response, was_open) {
+        popup_dismissed(&response.response, was_open)
+    };
+    if close || dismissed {
         ui.ctx().data_mut(|d| {
             d.remove::<Vec<(String, bool)>>(key);
             d.remove::<String>(search_key);
@@ -119,6 +67,140 @@ pub(super) fn filter_menu(app: &mut SheetApp, ui: &mut egui::Ui, geo: &Geo, was_
         });
         app.grid.filter_menu = None;
     }
+}
+
+/// The filter menu's contents, shared by the desktop popup and the phone sheet. Returns true to close
+/// the menu. `keys` are the checkbox state, search text and button ids; `focus` asks for the search box's
+/// focus (the desktop menu's first open); `enter` is the menu's OK.
+fn filter_body(app: &mut SheetApp, ui: &mut egui::Ui, col: u32, values: &[(String, bool)], keys: [egui::Id; 3], focus: bool, enter: bool) -> bool {
+    let [key, search_key, buttons_key] = keys;
+    let phone = crate::phone::active(ui.ctx());
+    let t = Tokens::get(ui.ctx());
+    let mut close = false;
+    let ascending =
+        if phone { crate::phone::list_row(ui, t, "Sort Ascending", crate::icons::Icon::SortAsc, true) } else { ui.button("↑  Sort Ascending") };
+    if ascending.clicked() {
+        let _ = app.run("data.sortAscending", json!({"column": col_to_letters(col)}));
+        close = true;
+    }
+    let descending =
+        if phone { crate::phone::list_row(ui, t, "Sort Descending", crate::icons::Icon::SortDesc, true) } else { ui.button("↓  Sort Descending") };
+    if descending.clicked() {
+        let _ = app.run("data.sortDescending", json!({"column": col_to_letters(col)}));
+        close = true;
+    }
+    if !phone {
+        ui.separator();
+        ui.label(egui::RichText::new("Filter").strong());
+    }
+    let mut checks: Vec<(String, bool)> = ui.ctx().data_mut(|d| d.get_temp::<Vec<(String, bool)>>(key)).unwrap_or(values.to_vec());
+    // A search narrows the list; Select All and Apply then only cover the matches.
+    let mut search: String = ui.ctx().data_mut(|d| d.get_temp(search_key)).unwrap_or_default();
+    let field = if phone {
+        ui.add(crate::phone::touch_edit(ui, egui::TextEdit::singleline(&mut search).hint_text("Search").desired_width(f32::INFINITY)))
+    } else {
+        ui.add(egui::TextEdit::singleline(&mut search).hint_text("Search").desired_width(f32::INFINITY))
+    };
+    if focus {
+        field.request_focus();
+    }
+    let needle = search.trim().to_lowercase();
+    let matches = |v: &str| needle.is_empty() || v.to_lowercase().contains(&needle);
+    let all = checks.iter().filter(|(v, _)| matches(v)).all(|(_, b)| *b);
+    let mut all_new = all;
+    let label = if needle.is_empty() { "(Select All)" } else { "(Select All Search Results)" };
+    let all_changed = if phone { check_row(ui, label, &mut all_new) } else { ui.checkbox(&mut all_new, label).changed() };
+    if all_changed {
+        for c in checks.iter_mut().filter(|(v, _)| matches(v)) {
+            c.1 = all_new;
+        }
+    }
+    if phone {
+        // The sheet scrolls as a whole, so the values need no scroll area of their own.
+        for (v, on) in checks.iter_mut().filter(|(v, _)| matches(v)) {
+            check_row(ui, v.as_str(), on);
+        }
+    } else {
+        // Full width: shrunk to the longest value, the scroll bar sat mid-menu and the wheel only
+        // worked over the values themselves (#432).
+        egui::ScrollArea::vertical().max_height(220.0).auto_shrink([false, true]).show(ui, |ui| {
+            for (v, on) in checks.iter_mut().filter(|(v, _)| matches(v)) {
+                ui.checkbox(on, v.as_str());
+            }
+        });
+    }
+    ui.ctx().data_mut(|d| {
+        d.insert_temp(key, checks.clone());
+        d.insert_temp(search_key, search.clone());
+    });
+    let checks: Vec<(String, bool)> = checks.iter().map(|(v, on)| (v.clone(), *on && matches(v))).collect();
+    ui.separator();
+    // Nothing checked would hide every row, so Enter (unlike a click on Apply) does nothing then.
+    let any = checks.iter().any(|(_, on)| *on);
+    let (clear, apply) = if phone {
+        match crate::phone::footer_row(ui, &["Clear Filter", "Apply"], 1, false) {
+            Some(picked) => (picked == Some(0), picked == Some(1)),
+            // The sheet's footer is measured a frame late: until then the two buttons sit in the body.
+            None => {
+                ui.horizontal(|ui| {
+                    let w = ((ui.available_width() - 8.0) / 2.0).max(0.0);
+                    let clear = ui.add_sized([w, crate::phone::TOUCH_H], egui::Button::new("Clear Filter")).clicked();
+                    let apply = ui.add_sized([w, crate::phone::TOUCH_H], egui::Button::new("Apply")).clicked();
+                    (clear, apply)
+                })
+                .inner
+            }
+        }
+    } else {
+        ui.horizontal(|ui| {
+            let clear = ui.button("Clear Filter");
+            let clear_clicked = clear.clicked();
+            let apply = ui.button("Apply");
+            ui.ctx().data_mut(|d| d.insert_temp(buttons_key, vec![ascending.id, descending.id, clear.id, apply.id]));
+            (clear_clicked, apply.clicked())
+        })
+        .inner
+    };
+    if clear {
+        let _ = app.run("data.filterBy", json!({"column": col_to_letters(col), "clear": true}));
+        close = true;
+    }
+    if apply || (enter && any) {
+        let blanks = checks.iter().any(|(v, on)| v == "(Blanks)" && *on);
+        let vals: Vec<String> = checks.iter().filter(|(v, on)| *on && v != "(Blanks)").map(|(v, _)| v.clone()).collect();
+        let p = if checks.iter().all(|(_, b)| *b) {
+            json!({"column": col_to_letters(col), "clear": true})
+        } else {
+            json!({"column": col_to_letters(col), "values": vals, "blanks": blanks})
+        };
+        let _ = app.run("data.filterBy", p);
+        close = true;
+    }
+    close
+}
+
+/// A full-width check row on the phone: 48 pt tall, a tap anywhere on it toggles the box. Returns true when it was tapped.
+fn check_row(ui: &mut egui::Ui, label: &str, on: &mut bool) -> bool {
+    let t = Tokens::get(ui.ctx());
+    let (r, resp) = ui.allocate_exact_size(vec2(ui.available_width(), crate::phone::TOUCH_H), Sense::click());
+    let tapped = resp.clicked();
+    if tapped {
+        *on = !*on;
+    }
+    if resp.is_pointer_button_down_on() {
+        ui.painter().rect_filled(r, 0.0, t.pressed);
+    } else if resp.hovered() {
+        ui.painter().rect_filled(r, 0.0, t.hover);
+    }
+    let boxed = Rect::from_center_size(pos2(r.left() + 24.0, r.center().y), vec2(20.0, 20.0));
+    let painter = ui.painter();
+    painter.rect_stroke(boxed, 3.0, Stroke::new(2.0, t.text), StrokeKind::Inside);
+    if *on {
+        crate::icons::paint(painter, boxed.shrink(2.0), crate::icons::Icon::Check, t.accent);
+    }
+    painter.text(pos2(r.left() + 56.0, r.center().y), egui::Align2::LEFT_CENTER, label, crate::theme::ui_font(15.0), t.text);
+    resp.widget_info(|| egui::WidgetInfo::labeled(egui::Role::CheckBox, true, label));
+    tapped
 }
 
 /// Draws and dispatches the cell context menu, including Show Details when offered, clipboard and insert/format actions; closes on Esc or an outside press.

@@ -114,7 +114,8 @@ impl SheetApp {
     }
 
     /// Whether Android Back has something open to close first: a phone sheet or its palette, a dialog
-    /// or message (both bottom sheets on the phone), the File drawer, or the Backstage. The host calls
+    /// or message (both bottom sheets on the phone), the File drawer, the Backstage, or a grid popup (the
+    /// filter, cell, list or header menu, which Escape closes). The host calls
     /// this each frame and closes the innermost part on Back. With unsaved work (Android) Back also
     /// counts: with nothing else open it asks about the work (see `ui`).
     pub fn can_go_back(&self, ctx: &egui::Context) -> bool {
@@ -122,7 +123,16 @@ impl SheetApp {
     }
 
     pub(super) fn something_open(&self, ctx: &egui::Context) -> bool {
-        self.backstage.is_some() || self.editor.is_some() || self.dialog.is_some() || self.message.is_some() || crate::phone::can_go_back(ctx)
+        self.backstage.is_some()
+            || self.editor.is_some()
+            || self.dialog.is_some()
+            || self.message.is_some()
+            || self.grid.filter_menu.is_some()
+            || self.grid.context_menu.is_some()
+            || self.grid.list_picker.is_some()
+            || self.grid.header_menu.is_some()
+            || self.grid.fill_menu.is_some()
+            || crate::phone::can_go_back(ctx)
     }
 
     /// Android: leaving the app would lose unsaved work, so Back asks first.

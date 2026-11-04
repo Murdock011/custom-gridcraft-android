@@ -5,7 +5,7 @@ use super::geo::Geo;
 use super::keyboard::keyboard;
 use super::menus::set_fill_tag;
 use super::selection::select_ranges;
-use super::tables::{is_filter_button, table_headings};
+use super::tables::{filter_button_cell, filter_hit, table_headings};
 use super::{
     CellRef, Color32, CursorIcon, Drag, EditState, MAX_COLS, MAX_ROWS, Painter, Pos2, RangeRef, Rect, Sheet, SheetApp, Stroke, Tokens, Workbook,
     json, pos2, vec2,
@@ -303,7 +303,10 @@ fn handle_column_header_press(app: &mut SheetApp, input: &InteractionInput<'_>, 
         }
         let c = geo.col_at(sh, p.x);
         // A Table heading's filter button, while the header names stand in for the letters.
-        if let Some(h) = table_headings(geo, sh, sel.active).into_iter().find(|h| h.col == c && h.button.is_some_and(|b| b.contains(p))) {
+        let phone = crate::phone::active(&resp.ctx);
+        if let Some(h) =
+            table_headings(geo, sh, sel.active).into_iter().find(|h| h.col == c && h.button.is_some_and(|b| filter_hit(b, phone).contains(p)))
+        {
             app.grid.filter_menu = Some((c, h.header_row, geo.mirror_pos(p)));
             return;
         }
@@ -395,8 +398,8 @@ fn handle_press(app: &mut SheetApp, input: &InteractionInput<'_>) {
         return;
     }
     // Filter dropdown buttons.
-    if is_filter_button(sh, geo, p) {
-        app.grid.filter_menu = Some((c.col, c.row, geo.mirror_pos(p)));
+    if let Some(fc) = filter_button_cell(geo, sh, p, crate::phone::active(&resp.ctx)) {
+        app.grid.filter_menu = Some((fc.col, fc.row, geo.mirror_pos(p)));
         return;
     }
     // A dialog's formula box in point mode (New Formatting Rule) takes the reference; the

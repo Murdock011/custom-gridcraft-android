@@ -85,6 +85,8 @@ enum Act {
     Colour(Palette),
     /// Zoom in or out by this many percent.
     Zoom(i32),
+    /// Insert > Comment: the comment dialog (with its text field), not the command with no text.
+    Comment,
 }
 
 /// The rows of a tab: label, icon, action.
@@ -112,7 +114,7 @@ fn rows(tab: usize) -> &'static [(&'static str, Icon, Act)] {
             ("Chart", Icon::Chart, Act::Run("insert.chart")),
             ("Picture", Icon::Picture, Act::Run("insert.picture")),
             ("Function", Icon::Fx, Act::Dialog("insertFunction", None)),
-            ("Comment", Icon::Comment, Act::Run("review.newComment")),
+            ("Comment", Icon::Comment, Act::Comment),
         ],
         2 => &[("AutoSum", Icon::Sum, Act::Run("formulas.autoSum")), ("Insert Function", Icon::Fx, Act::Dialog("insertFunction", None))],
         3 => &[
@@ -943,6 +945,7 @@ fn run_act(app: &mut SheetApp, ctx: &Context, act: Act) {
             let percent = (i32::from(zoom) + step).clamp(10, 400);
             app.run_or_alert("view.zoom", json!({"percent": percent}));
         }
+        Act::Comment => app.open_dialog("comment", json!({"threaded": true})),
         Act::Colour(_) => {}
     }
 }
@@ -964,7 +967,7 @@ fn icon_button(ui: &mut Ui, t: Tokens, icon: Icon, tip: &str, enabled: bool) -> 
 
 /// A sheet row: the icon, then the label, in a 48 pt touch target across the sheet. A disabled row
 /// is greyed and never clicked.
-fn list_row(ui: &mut Ui, t: Tokens, label: &str, icon: Icon, enabled: bool) -> Response {
+pub(crate) fn list_row(ui: &mut Ui, t: Tokens, label: &str, icon: Icon, enabled: bool) -> Response {
     let sense = if enabled { Sense::click() } else { Sense::hover() };
     let (r, resp) = ui.allocate_exact_size(vec2(ui.available_width(), ROW_H), sense);
     if enabled && resp.is_pointer_button_down_on() {
@@ -1289,6 +1292,8 @@ pub(crate) fn touch_gestures(app: &mut SheetApp, ui: &mut Ui, geo: &Geo, sh: &Sh
     let cur = sel.current();
     let logical = geo.range_rect(sh, cur);
     let mut took = false;
+    // A press on a filter arrow under a handle is the arrow's (see below): a long press does not start there.
+    let mut arrow_down = false;
     let mut handles: Vec<(bool, Pos2)> = Vec::new();
     for (i, (moving_start, corner)) in [(true, logical.left_top()), (false, logical.right_bottom())].into_iter().enumerate() {
         let at = geo.mirror_pos(corner);
@@ -1296,8 +1301,24 @@ pub(crate) fn touch_gestures(app: &mut SheetApp, ui: &mut Ui, geo: &Geo, sh: &Sh
             continue;
         }
         handles.push((moving_start, at));
-        let resp = ui.interact(Rect::from_center_size(at, vec2(HANDLE_HIT, HANDLE_HIT)), ui.scope_id().with(("phone_handle", i)), Sense::drag());
+        let hit = Rect::from_center_size(at, vec2(HANDLE_HIT, HANDLE_HIT));
         ui.painter().circle(at, HANDLE_R, t.accent, Stroke::new(2.0, t.window));
+        // A filter arrow over the handle's dot takes the touches there: its widget is made after the
+        // handle's, and a tap opens its filter menu (the grid never sees the press). The handle keeps
+        // no touch target at its dot then, since egui would give the press to whichever centre is nearer.
+        let arrows = grid::filter_arrows_under(geo, sh, hit);
+        for (cell, arrow) in &arrows {
+            let tap = ui.interact(*arrow, ui.scope_id().with(("phone_filter_arrow", i, cell.col, cell.row)), Sense::click());
+            arrow_down |= tap.is_pointer_button_down_on();
+            if tap.clicked() {
+                app.grid.filter_menu = Some((cell.col, cell.row, arrow.center()));
+                took = true;
+            }
+        }
+        if arrows.iter().any(|(_, arrow)| arrow.contains(at)) {
+            continue;
+        }
+        let resp = ui.interact(hit, ui.scope_id().with(("phone_handle", i)), Sense::drag());
         if !resp.dragged() {
             continue;
         }
@@ -1331,11 +1352,11 @@ pub(crate) fn touch_gestures(app: &mut SheetApp, ui: &mut Ui, geo: &Geo, sh: &Sh
             i.time,
         )
     });
-    if let (true, Some(origin), Some(t0)) = (down && !decided && !multi && !took && !pointer_taken(&ctx), origin, started) {
+    if let (true, Some(origin), Some(t0)) = (down && !decided && !multi && !took && !arrow_down && !pointer_taken(&ctx), origin, started) {
         let p = geo.mirror_pos(origin);
         let on_handle = handles.iter().any(|(_, h)| Rect::from_center_size(*h, vec2(HANDLE_HIT, HANDLE_HIT)).contains(origin));
         let fired = ctx.data(|d| d.get_temp::<f64>(long_press_id()));
-        if geo.in_cells(p) && !on_handle && fired != Some(t0) {
+        if geo.in_cells(p) && !on_handle && !arrow_down && fired != Some(t0) {
             if now - t0 >= LONG_PRESS {
                 ctx.data_mut(|d| d.insert_temp(long_press_id(), t0));
                 let cell = geo.cell_at(sh, p);
@@ -1366,7 +1387,10 @@ fn action_bar(app: &mut SheetApp, ctx: &Context, cells: Rect, selection: Rect) {
     let width = (ctx.content_rect().width() - 2.0 * PILL_SIDE).max(0.0);
     // With More open, the bar grows by the More rows: it stays above (or below) the selection as a whole.
     let more = ctx.data(|d| d.get_temp::<bool>(more_id())).unwrap_or(false);
-    let bar_h = BAR_H + if more { BAR_ITEMS[BAR_VISIBLE..].len() as f32 * TOUCH_H + 8.0 } else { 0.0 };
+    // The active cell's comment (threaded, or a note): More offers to edit or delete it.
+    let comment = app.session.active().and_then(|d| d.wb.active().and_then(|sh| sh.comments.get(&d.selection.active).map(|c| c.threaded)));
+    let comment_rows = if comment.is_some() { 2 } else { 0 };
+    let bar_h = BAR_H + if more { (BAR_ITEMS[BAR_VISIBLE..].len() + comment_rows) as f32 * TOUCH_H + 8.0 } else { 0.0 };
     let above = selection.top() - BAR_GAP - bar_h;
     let below = selection.bottom() + BAR_GAP;
     let y = if above >= cells.top() {
@@ -1377,6 +1401,7 @@ fn action_bar(app: &mut SheetApp, ctx: &Context, cells: Rect, selection: Rect) {
         cells.top() + BAR_GAP
     };
     let mut picked = None;
+    let (mut edit, mut delete) = (None, false);
     let area = egui::Area::new(egui::Id::unique("phone_action_bar_area")).order(egui::Order::Foreground).fixed_pos(Pos2::new(PILL_SIDE, y)).show(
         ctx,
         |ui| {
@@ -1403,13 +1428,29 @@ fn action_bar(app: &mut SheetApp, ctx: &Context, cells: Rect, selection: Rect) {
                                 picked = Some(*act);
                             }
                         }
+                        if let Some(threaded) = comment {
+                            if ui.add_sized([ui.available_width(), TOUCH_H], egui::Button::new(lang.tr("Edit Comment"))).clicked() {
+                                edit = Some(threaded);
+                            }
+                            if ui.add_sized([ui.available_width(), TOUCH_H], egui::Button::new(lang.tr("Delete Comment"))).clicked() {
+                                delete = true;
+                            }
+                        }
                     }
                 });
         },
     );
     ctx.data_mut(|d| d.insert_temp(bar_rect_id(), area.response.rect));
-    if more && (picked.is_some() || ctx.input(|i| i.key_pressed(egui::Key::Escape))) {
+    let done = picked.is_some() || edit.is_some() || delete;
+    if more && (done || ctx.input(|i| i.key_pressed(egui::Key::Escape))) {
         ctx.data_mut(|d| d.insert_temp(more_id(), false));
+    }
+    if let Some(threaded) = edit {
+        set_bar_open(ctx, false);
+        app.open_dialog("comment", json!({"threaded": threaded}));
+    } else if delete {
+        set_bar_open(ctx, false);
+        app.run_or_alert("review.deleteComment", json!({}));
     }
     if let Some(act) = picked {
         set_bar_open(ctx, false);

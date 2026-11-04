@@ -85,6 +85,7 @@ mod phone_bold;
 mod phone_drawer;
 mod phone_workbooks;
 mod phone_edit;
+mod phone_filter_comment;
 mod type_to_edit;
 mod phone_object_drag;
 mod phone_pinch;
