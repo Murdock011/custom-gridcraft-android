@@ -67,6 +67,25 @@ fn pinch_frame(
     (pinch_busy, two_fingers)
 }
 
+/// Whether a touch press began on the selected object's handles or body on the phone. Such a drag
+/// goes to `interact` (resize or move), so the grid must not start a pan for it.
+fn touch_on_selected_object(
+    app: &mut SheetApp,
+    ui: &egui::Ui,
+    sh: &Sheet,
+    scroll: egui::Vec2,
+    make_geo: &dyn Fn(&mut SheetApp, egui::Vec2) -> Geo,
+) -> bool {
+    let Some(o) = app.selected_object else { return false };
+    let Some(press) = ui.input(|i| i.pointer.press_origin()) else { return false };
+    if !crate::phone::active(ui.ctx()) {
+        return false;
+    }
+    let geo = make_geo(app, scroll);
+    let p = geo.mirror_pos(press);
+    crate::chartview::selected_handle(app, &geo, sh, p, true).is_some() || crate::chartview::object_rect(&geo, sh, o).is_some_and(|r| r.contains(p))
+}
+
 /// The grid's rectangle inside the space before it: the vertical scrollbar takes 14 pt on the right,
 /// or on the left for a right-to-left sheet.
 fn sheet_rect(available: Rect, rtl: bool) -> Rect {
@@ -163,8 +182,9 @@ pub fn show(app: &mut SheetApp, ui: &mut egui::Ui) {
         }
     }
     // A one-finger touch drag pans the sheet, the content following the finger; it doesn't select.
-    // (Two fingers pinch-zoom through `zoom_delta` above.)
-    if resp.drag_started() && ui.input(|i| i.any_touches()) {
+    // (Two fingers pinch-zoom through `zoom_delta` above.) A press on the selected object resizes or
+    // moves it instead, as a mouse drag does, so it doesn't pan.
+    if resp.drag_started() && ui.input(|i| i.any_touches()) && !touch_on_selected_object(app, ui, sh, view.scroll, &make_geo) {
         app.grid.touch_pan = true;
     }
     if app.grid.touch_pan && resp.dragged() && ui.input(|i| i.multi_touch().is_none()) {
