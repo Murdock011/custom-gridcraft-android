@@ -1,7 +1,9 @@
 //! The phone's touch targets: the formula bar's controls, the Sheets button and the colour palette
 //! are at least 48 pt (Material's minimum), and the formula bar has no ✕ or ✓ (the edit bar has them).
 
-use egui_kittest::kittest::Queryable;
+use egui::accesskit::Role;
+use egui::{Event, Modifiers, MouseWheelSource, MouseWheelUnit, TouchPhase, pos2, vec2};
+use egui_kittest::kittest::{NodeT, Queryable};
 use gridcraft_engine::Session;
 use gridcraft_ui_egui::SheetApp;
 
@@ -47,4 +49,51 @@ fn phone_touch_targets_are_at_least_48_pt() {
     assert!(no_fill.height() >= 48.0, "No Fill is {} pt tall", no_fill.height());
     let more = h.get_by_label("More Colors…").rect();
     assert!(more.height() >= 48.0, "More Colors… is {} pt tall", more.height());
+}
+
+#[test]
+fn more_colors_is_a_focused_page_that_fits_at_48_pt() {
+    let mut h = harness();
+    gridcraft_ui_egui::open_phone_sheet(&h.ctx, "Home");
+    h.run_steps(4);
+    h.get_by_label("Fill Colour").click();
+    h.run_steps(4);
+
+    // More Colors… is at the foot of the palette, so scroll the sheet to its end as a finger would.
+    let sheet = pos2(206.0, 700.0);
+    h.input_mut().events.push(Event::PointerMoved(sheet));
+    h.run_steps(2);
+    for _ in 0..10 {
+        h.input_mut().events.push(Event::MouseWheel {
+            unit: MouseWheelUnit::Point,
+            delta: vec2(0.0, -1000.0),
+            phase: TouchPhase::Move,
+            modifiers: Modifiers::NONE,
+            source: MouseWheelSource::Unknown,
+        });
+        h.run_steps(2);
+    }
+    h.get_by_label("More Colors…").click();
+    h.run_steps(4);
+
+    // The picker is the palette's only page: no No Fill, no More Colors… button.
+    assert!(h.query_by_label("No Fill").is_none(), "No Fill is still shown under More Colors…");
+    assert!(h.query_by_label("More Colors…").is_none(), "More Colors… is still shown under More Colors…");
+
+    // Every button and text field in the sheet is at least 48 pt tall. The sheet covers the bottom
+    // 55% of the screen (see `phone::sheet_panel`), and the bar under it sits in that band too.
+    let screen = h.ctx.content_rect();
+    let sheet_top = screen.bottom() - screen.height() * 0.55;
+    let mut checked = 0;
+    for role in [Role::Button, Role::TextInput, Role::SpinButton] {
+        for n in h.query_all_by_role(role) {
+            let r = n.rect();
+            if r.center().y < sheet_top {
+                continue;
+            }
+            checked += 1;
+            assert!(r.height() >= 48.0, "{role:?} {:?} is {} pt tall", n.accesskit_node().label(), r.height());
+        }
+    }
+    assert!(checked >= 3, "the picker has its OK, Cancel and Hex controls ({checked} checked)");
 }

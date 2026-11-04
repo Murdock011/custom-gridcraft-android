@@ -464,6 +464,16 @@ fn palette(ui: &mut Ui, theme_colors: &[u32; 12], none_label: &str, more_colors:
         ui.data_mut(|d| d.remove_temp::<Option<(usize, usize)>>(pal_id));
     }
     let phone = crate::phone::active(ui.ctx());
+    let mut recent: Vec<String> = ui.ctx().data(|d| d.get_temp(recent_colors_id())).unwrap_or_default();
+    if phone && more.is_some() {
+        // On the phone an open More Colors… picker is the palette's whole page: no swatches, no None
+        // button, sized to fit the sheet (see `more_picker`).
+        let picked = more_picker(ui, &mut more, &mut recent, true);
+        ui.ctx().data_mut(|d| d.insert_temp(recent_colors_id(), recent));
+        ui.data_mut(|d| d.insert_temp(more_id, more));
+        ui.data_mut(|d| d.insert_temp(pal_id, cur));
+        return picked;
+    }
     let none = if phone { phone_button(ui, none_label) } else { ui.button(none_label) };
     if none.clicked() {
         picked = Some("none".to_string());
@@ -540,7 +550,6 @@ fn palette(ui: &mut Ui, theme_colors: &[u32; 12], none_label: &str, more_colors:
         });
     }
     // Recent Colors: the custom colours picked below, newest first.
-    let mut recent: Vec<String> = ui.ctx().data(|d| d.get_temp(recent_colors_id())).unwrap_or_default();
     if !recent.is_empty() {
         ui.label(egui::RichText::new("Recent Colors").small());
         if phone {
@@ -577,57 +586,77 @@ fn palette(ui: &mut Ui, theme_colors: &[u32; 12], none_label: &str, more_colors:
         let start = recent.first().and_then(|h| parse_hex(h)).unwrap_or([0x44, 0x72, 0xC4]);
         more = Some(MoreColors::new(start));
     }
-    if let Some(m) = more.as_mut() {
-        let mut done = false;
-        // On the phone the picker's widgets are 48 pt tall (buttons and the hex box) and its hue bar
-        // spans the sheet. The scope keeps those sizes to the picker.
-        ui.scope(|ui| {
-            if phone {
-                ui.spacing_mut().interact_size = vec2(64.0, PHONE_ROW);
-                ui.spacing_mut().slider_width = (ui.available_width() - 16.0).max(0.0);
-            }
-            // The saturation / value area with its hue bar and egui's red-green-blue boxes, then the hex
-            // box with the new colour beside it.
-            if egui::color_picker::color_picker_hsva_2d(ui, &mut m.hsva, egui::color_picker::Alpha::Opaque) {
-                m.hex = hex_of(m.hsva.to_srgb());
-            }
-            ui.horizontal(|ui| {
-                let label = ui.label("Hex");
-                let edit = egui::TextEdit::singleline(&mut m.hex).desired_width(72.0).char_limit(7);
-                let edit = if phone { crate::phone::touch_edit(ui, edit) } else { edit };
-                let r = ui.add(edit).labelled_by(label.id);
-                if r.changed()
-                    && let Some(c) = parse_hex(&m.hex)
-                {
-                    m.hsva = egui::ecolor::Hsva::from_srgb(c);
-                }
-                let c = m.hsva.to_srgb();
-                let (sw, _) = ui.allocate_exact_size(vec2(36.0, 18.0), Sense::hover());
-                ui.painter().rect_filled(sw, 1.0, Color32::from_rgb(c[0], c[1], c[2]));
-                ui.painter().rect_stroke(sw, 1.0, Stroke::new(1.0, Color32::from_gray(160)), StrokeKind::Inside);
-                ui.label(egui::RichText::new("New").small());
-            });
-            ui.horizontal(|ui| {
-                if ui.button("  OK  ").clicked() {
-                    // A hex still being typed that is not a colour falls back to the picker's.
-                    let c = parse_hex(&m.hex).unwrap_or_else(|| m.hsva.to_srgb());
-                    let hex = hex_of(c);
-                    remember_color(&mut recent, &hex);
-                    picked = Some(hex);
-                    done = true;
-                }
-                if ui.button("Cancel").clicked() {
-                    done = true;
-                }
-            });
-        });
-        if done {
-            more = None;
-        }
+    if more.is_some()
+        && let Some(hex) = more_picker(ui, &mut more, &mut recent, phone)
+    {
+        picked = Some(hex);
     }
     ui.ctx().data_mut(|d| d.insert_temp(recent_colors_id(), recent));
     ui.data_mut(|d| d.insert_temp(more_id, more));
     ui.data_mut(|d| d.insert_temp(pal_id, cur));
+    picked
+}
+
+/// The More Colors… picker: the egui colour square, hue bar and RGB fields, then the hex box with the
+/// new colour beside it, and OK / Cancel. OK records the colour as the newest recent colour and returns
+/// it; OK or Cancel closes the picker (`more` becomes None). On the phone every control is 48 pt tall,
+/// and the square is as large as the sheet's visible height leaves room for (at least `PICKER_MIN`), so
+/// the picker fits without scrolling.
+fn more_picker(ui: &mut Ui, more: &mut Option<MoreColors>, recent: &mut Vec<String>, phone: bool) -> Option<String> {
+    let m = more.as_mut()?;
+    let mut picked = None;
+    let mut done = false;
+    ui.scope(|ui| {
+        if phone {
+            // Five fixed 48 pt rows (RGB fields, preview, hue bar, hex box, buttons) with their gaps and a
+            // margin come off the visible height; the square takes the rest, no wider than the sheet.
+            let fixed = 5.0 * PHONE_ROW + 5.0 * ui.spacing().item_spacing.y + 8.0;
+            let side = (ui.clip_rect().height() - fixed).min(ui.available_width()).max(PICKER_MIN);
+            ui.spacing_mut().interact_size = vec2(64.0, PHONE_ROW);
+            ui.spacing_mut().slider_width = side;
+        }
+        // The saturation / value area with its hue bar and egui's red-green-blue boxes, then the hex
+        // box with the new colour beside it.
+        if egui::color_picker::color_picker_hsva_2d(ui, &mut m.hsva, egui::color_picker::Alpha::Opaque) {
+            m.hex = hex_of(m.hsva.to_srgb());
+        }
+        ui.horizontal(|ui| {
+            let label = ui.label("Hex");
+            let edit = egui::TextEdit::singleline(&mut m.hex).desired_width(72.0).char_limit(7);
+            let edit = if phone { crate::phone::touch_edit(ui, edit) } else { edit };
+            let r = ui.add(edit).labelled_by(label.id);
+            if r.changed()
+                && let Some(c) = parse_hex(&m.hex)
+            {
+                m.hsva = egui::ecolor::Hsva::from_srgb(c);
+            }
+            let c = m.hsva.to_srgb();
+            let (sw, _) = ui.allocate_exact_size(vec2(36.0, if phone { PHONE_ROW } else { 18.0 }), Sense::hover());
+            ui.painter().rect_filled(sw, 1.0, Color32::from_rgb(c[0], c[1], c[2]));
+            ui.painter().rect_stroke(sw, 1.0, Stroke::new(1.0, Color32::from_gray(160)), StrokeKind::Inside);
+            ui.label(egui::RichText::new("New").small());
+        });
+        ui.horizontal(|ui| {
+            // On the phone OK and Cancel split the row evenly, each 48 pt tall.
+            let half = ((ui.available_width() - ui.spacing().item_spacing.x) / 2.0).max(0.0);
+            let ok = if phone { ui.add(egui::Button::new("  OK  ").min_size(vec2(half, PHONE_ROW))) } else { ui.button("  OK  ") };
+            if ok.clicked() {
+                // A hex still being typed that is not a colour falls back to the picker's.
+                let c = parse_hex(&m.hex).unwrap_or_else(|| m.hsva.to_srgb());
+                let hex = hex_of(c);
+                remember_color(recent, &hex);
+                picked = Some(hex);
+                done = true;
+            }
+            let cancel = if phone { ui.add(egui::Button::new("Cancel").min_size(vec2(half, PHONE_ROW))) } else { ui.button("Cancel") };
+            if cancel.clicked() {
+                done = true;
+            }
+        });
+    });
+    if done {
+        *more = None;
+    }
     picked
 }
 
@@ -637,6 +666,8 @@ const PHONE_COLS: usize = 6;
 const PHONE_GAP: f32 = 6.0;
 const PHONE_SWATCH: f32 = 44.0;
 const PHONE_ROW: f32 = 48.0;
+/// The smallest the More Colors… picker's 2D square gets on the phone.
+const PICKER_MIN: f32 = 160.0;
 
 /// Lays `n` swatches out on the phone, `PHONE_COLS` to a row, each `w` wide (the row's width shared
 /// out), and returns the index of the one tapped. `swatch` draws swatch `k` at width `w`.
