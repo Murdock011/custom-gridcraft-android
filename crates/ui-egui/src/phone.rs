@@ -600,13 +600,16 @@ pub fn bottom_bar(app: &mut SheetApp, ui: &mut Ui) {
 }
 
 /// Whether the on-screen keyboard is up: the window (egui's content rect, which the host shrinks by
-/// the keyboard's inset) has shrunk well below the tallest it has been.
+/// the keyboard's inset) has shrunk well below the tallest it has been. The keyboard never changes
+/// the width, so a width change (rotation) starts the tallest over at the current height.
 pub(crate) fn keyboard_up(ctx: &Context) -> bool {
-    let h = ctx.content_rect().height();
+    let size = ctx.content_rect().size();
+    let h = size.y;
     let id = egui::Id::unique("phone_tallest_height");
     let tallest = ctx.data_mut(|d| {
-        let m = d.get_temp::<f32>(id).unwrap_or(0.0).max(h);
-        d.insert_temp(id, m);
+        let (w, t) = d.get_temp::<(f32, f32)>(id).unwrap_or((size.x, 0.0));
+        let m = if (w - size.x).abs() > 1.0 { h } else { t.max(h) };
+        d.insert_temp(id, (size.x, m));
         m
     });
     active(ctx) && h < tallest * 0.75
@@ -1323,8 +1326,9 @@ fn action_bar(app: &mut SheetApp, ctx: &Context, cells: Rect, selection: Rect) {
         cells.top() + BAR_GAP
     };
     let mut picked = None;
-    let area =
-        egui::Area::new(egui::Id::unique("phone_action_bar_area")).order(egui::Order::Foreground).fixed_pos(Pos2::new(PILL_SIDE, y)).show(ctx, |ui| {
+    let area = egui::Area::new(egui::Id::unique("phone_action_bar_area")).order(egui::Order::Foreground).fixed_pos(Pos2::new(PILL_SIDE, y)).show(
+        ctx,
+        |ui| {
             Frame::NONE
                 .fill(t.menu_bg)
                 .stroke(Stroke::new(1.0, t.ribbon_border))
@@ -1350,7 +1354,8 @@ fn action_bar(app: &mut SheetApp, ctx: &Context, cells: Rect, selection: Rect) {
                         }
                     }
                 });
-        });
+        },
+    );
     ctx.data_mut(|d| d.insert_temp(bar_rect_id(), area.response.rect));
     if more && (picked.is_some() || ctx.input(|i| i.key_pressed(egui::Key::Escape))) {
         ctx.data_mut(|d| d.insert_temp(more_id(), false));
@@ -1391,6 +1396,23 @@ mod tests {
         assert_eq!(handle_range(a1_b4, false, CellRef::new(5, 3)).a1(), "A1:D6");
         // The top-left handle dragged to C2: the area is B2:C4, normalised around the fixed B4 corner.
         assert_eq!(handle_range(a1_b4, true, CellRef::new(1, 2)).a1(), "B2:C4");
+    }
+
+    #[test]
+    fn rotating_to_landscape_does_not_read_as_the_keyboard() {
+        fn frame(ctx: &Context, w: f32, h: f32) -> bool {
+            let mut up = false;
+            let input = egui::RawInput { screen_rect: Some(Rect::from_min_size(Pos2::ZERO, egui::vec2(w, h))), ..Default::default() };
+            let mut out = ctx.run_ui(input, |ui| up = keyboard_up(ui.ctx()));
+            out.textures_delta.clear();
+            up
+        }
+        let ctx = Context::default();
+        frame(&ctx, 400.0, 900.0);
+        // Portrait to landscape: shorter, but the width changed, so no keyboard.
+        assert!(!frame(&ctx, 900.0, 400.0));
+        // Same width, much shorter: the keyboard is up.
+        assert!(frame(&ctx, 900.0, 200.0));
     }
 
     #[test]
