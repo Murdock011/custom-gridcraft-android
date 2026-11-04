@@ -1237,6 +1237,12 @@ pub fn action_bar_open(ctx: &Context) -> bool {
     bar_open(ctx)
 }
 
+/// Whether the action bar or a sheet covers the grid. The grid's comment popups stay down meanwhile:
+/// they would draw over the bar's buttons.
+pub(crate) fn covered(ctx: &Context) -> bool {
+    bar_open(ctx) || menu_tab(ctx).is_some()
+}
+
 fn bar_open(ctx: &Context) -> bool {
     ctx.data(|d| d.get_temp::<bool>(bar_id())).unwrap_or(false)
 }
@@ -1292,15 +1298,25 @@ pub(crate) fn touch_gestures(app: &mut SheetApp, ui: &mut Ui, geo: &Geo, sh: &Sh
     let cur = sel.current();
     let logical = geo.range_rect(sh, cur);
     let mut took = false;
+    // A press held on a handle, not yet moved: the grid stays out of it, and a long press may open the bar.
+    let mut held_on_handle = false;
     // A press on a filter arrow under a handle is the arrow's (see below): a long press does not start there.
     let mut arrow_down = false;
-    let mut handles: Vec<(bool, Pos2)> = Vec::new();
+    let (down, origin, started, decided, multi, now) = ctx.input(|i| {
+        (
+            i.pointer.primary_down(),
+            i.pointer.press_origin(),
+            i.pointer.press_start_time(),
+            i.pointer.is_decidedly_dragging(),
+            i.multi_touch().is_some(),
+            i.time,
+        )
+    });
     for (i, (moving_start, corner)) in [(true, logical.left_top()), (false, logical.right_bottom())].into_iter().enumerate() {
         let at = geo.mirror_pos(corner);
         if !geo.cells.contains(at) {
             continue;
         }
-        handles.push((moving_start, at));
         let hit = Rect::from_center_size(at, vec2(HANDLE_HIT, HANDLE_HIT));
         ui.painter().circle(at, HANDLE_R, t.accent, Stroke::new(2.0, t.window));
         // A filter arrow over the handle's dot takes the touches there: its widget is made after the
@@ -1322,6 +1338,12 @@ pub(crate) fn touch_gestures(app: &mut SheetApp, ui: &mut Ui, geo: &Geo, sh: &Sh
         if !resp.dragged() {
             continue;
         }
+        // The handle reports a drag at the press itself, so a press held still is only held: the drag
+        // starts once the finger moves, and a long press may still open the bar.
+        held_on_handle = true;
+        if !decided {
+            continue;
+        }
         took = true;
         if let Some(p) = resp.interact_pointer_pos().map(|p| geo.mirror_pos(p)) {
             let p = Pos2::new(p.x.clamp(geo.cells.left() + 1.0, geo.cells.right() - 1.0), p.y.clamp(geo.cells.top() + 1.0, geo.cells.bottom() - 1.0));
@@ -1341,22 +1363,12 @@ pub(crate) fn touch_gestures(app: &mut SheetApp, ui: &mut Ui, geo: &Geo, sh: &Sh
         }
     }
 
-    // A long press: held without moving, on a cell but not on a handle. It runs once per press.
-    let (down, origin, started, decided, multi, now) = ctx.input(|i| {
-        (
-            i.pointer.primary_down(),
-            i.pointer.press_origin(),
-            i.pointer.press_start_time(),
-            i.pointer.is_decidedly_dragging(),
-            i.multi_touch().is_some(),
-            i.time,
-        )
-    });
+    // A long press: held without moving, on a cell (a press inside a handle's touch square included, see
+    // above). It runs once per press.
     if let (true, Some(origin), Some(t0)) = (down && !decided && !multi && !took && !arrow_down && !pointer_taken(&ctx), origin, started) {
         let p = geo.mirror_pos(origin);
-        let on_handle = handles.iter().any(|(_, h)| Rect::from_center_size(*h, vec2(HANDLE_HIT, HANDLE_HIT)).contains(origin));
         let fired = ctx.data(|d| d.get_temp::<f64>(long_press_id()));
-        if geo.in_cells(p) && !on_handle && !arrow_down && fired != Some(t0) {
+        if geo.in_cells(p) && !arrow_down && fired != Some(t0) {
             if now - t0 >= LONG_PRESS {
                 ctx.data_mut(|d| d.insert_temp(long_press_id(), t0));
                 let cell = geo.cell_at(sh, p);
@@ -1376,7 +1388,7 @@ pub(crate) fn touch_gestures(app: &mut SheetApp, ui: &mut Ui, geo: &Geo, sh: &Sh
     if bar_open(&ctx) {
         action_bar(app, &ctx, geo.cells, geo.mirror_rect(logical));
     }
-    took
+    took || held_on_handle
 }
 
 /// The action bar: a row of 48 pt-plus buttons in a card above the selection (below it when there is

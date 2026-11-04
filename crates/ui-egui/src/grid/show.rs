@@ -771,9 +771,11 @@ pub(crate) fn paint_overlays(input: OverlayInput<'_>) {
     // Notes: shown on hover (or always when marked visible).
     let hover = app.grid.hover_cell;
     let all_notes = app.session.show_all_notes;
+    // On the phone the popups stay down under the action bar, a sheet or a dialog (they would draw over them).
+    let popups_down = crate::phone::active(ui.ctx()) && (crate::phone::covered(ui.ctx()) || app.dialog.is_some());
     for (c, cm) in &sh.comments {
         let show = cm.visible || (all_notes && !cm.threaded) || hover == Some(*c);
-        if !show || app.grid.drag != Drag::None {
+        if !show || popups_down || app.grid.drag != Drag::None {
             continue;
         }
         let r = geo.cell_rect(sh, *c);
