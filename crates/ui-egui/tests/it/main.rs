@@ -89,6 +89,7 @@ mod type_to_edit;
 mod phone_pinch;
 mod phone_sheets;
 mod phone_touch;
+mod phone_touch_targets;
 mod pivot_pane;
 mod pivot_show_details;
 mod pivot_show_details_menu;

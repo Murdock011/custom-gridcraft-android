@@ -80,9 +80,13 @@ pub fn show(app: &mut SheetApp, ui: &mut egui::Ui) {
     let target = one + (lines - 1) as f32 * row_h;
     let h = ui.ctx().animate_value_with_time(egui::Id::unique("formula_bar.height"), target, EASE_SECONDS);
     let mut layout = BarLayout { height: h, ..Default::default() };
+    // On the phone the bar is a 48 pt touch row: no vertical margin, so the Name Box and the icon
+    // buttons get the whole height, and the field is inset by hand.
+    let phone = crate::phone::active(ui.ctx());
+    let v_margin = if phone { 0 } else { 3 };
     egui::Panel::top("formula_bar")
         .exact_size(h)
-        .frame(egui::Frame::NONE.fill(t.window).inner_margin(egui::Margin { left: 8, right: 8, top: 3, bottom: 3 }))
+        .frame(egui::Frame::NONE.fill(t.window).inner_margin(egui::Margin { left: 8, right: 8, top: v_margin, bottom: v_margin }))
         .show(ui, |ui| {
             // Top-aligned: the Name Box and buttons stay on the first line as the field grows.
             ui.with_layout(egui::Layout::left_to_right(egui::Align::Min), |ui| {
@@ -91,25 +95,42 @@ pub fn show(app: &mut SheetApp, ui: &mut egui::Ui) {
                 ui.add_space(4.0);
                 let editing = app.editor.is_some();
                 let c = if editing { t.text } else { t.text_disabled };
-                let cancel = crate::widgets::icon_button(ui, Icon::Close, c, "Cancel", vec2(22.0, 24.0));
-                if cancel.clicked() && editing {
-                    app.cancel_edit();
+                // The phone's edit bar (phone.rs) carries the ✕ and ✓ at 48 pt, so the bar has neither.
+                let mut buttons = Rect::NOTHING;
+                if !phone {
+                    let cancel = crate::widgets::icon_button(ui, Icon::Close, c, "Cancel", vec2(22.0, 24.0));
+                    if cancel.clicked() && editing {
+                        app.cancel_edit();
+                    }
+                    if crate::widgets::icon_button(ui, Icon::Check, c, "Enter", vec2(22.0, 24.0)).clicked() && editing {
+                        app.commit_edit(0, 0, false, false);
+                    }
+                    buttons = cancel.rect;
                 }
-                if crate::widgets::icon_button(ui, Icon::Check, c, "Enter", vec2(22.0, 24.0)).clicked() && editing {
-                    app.commit_edit(0, 0, false, false);
+                let fx_size = if phone { vec2(48.0, 48.0) } else { vec2(26.0, 24.0) };
+                let fx = crate::widgets::icon_button(ui, Icon::Fx, t.text, "Insert Function", fx_size);
+                if phone {
+                    // The phone's icon buttons are named for screen readers (and the touch-target test).
+                    let name = app.ui.language.tr("Insert Function").to_string();
+                    fx.widget_info(|| egui::WidgetInfo::labeled(egui::Role::Button, true, name.clone()));
                 }
-                let fx = crate::widgets::icon_button(ui, Icon::Fx, t.text, "Insert Function", vec2(26.0, 24.0));
                 if fx.clicked() {
                     app.open_dialog("insertFunction", json!({}));
                 }
-                layout.buttons = cancel.rect.union(fx.rect);
+                layout.buttons = buttons.union(fx.rect);
                 if let Some(badge) = python_badge(app, ui, &t) {
                     layout.buttons = layout.buttons.union(badge);
                 }
                 ui.add_space(4.0);
-                // The formula field fills the rest, as tall as the bar.
-                let avail = ui.available_width() - 24.0;
-                let field = Rect::from_min_size(ui.cursor().min, vec2(avail, ui.available_height()));
+                // The formula field fills the rest, as tall as the bar. The chevron takes its own
+                // width (20 pt, or 48 on the phone) and a 4 pt gap.
+                let chevron_w = if phone { 48.0 } else { 20.0 };
+                let avail = ui.available_width() - chevron_w - 4.0;
+                let field = if phone {
+                    Rect::from_min_size(ui.cursor().min + vec2(0.0, 3.0), vec2(avail, ui.available_height() - 6.0))
+                } else {
+                    Rect::from_min_size(ui.cursor().min, vec2(avail, ui.available_height()))
+                };
                 ui.painter().rect_filled(field, 4.0, t.input_bg);
                 ui.painter().rect_stroke(field, 4.0, Stroke::new(1.0, t.input_border), StrokeKind::Inside);
                 let inner = field.shrink2(vec2(6.0, 3.0));
@@ -152,7 +173,13 @@ pub fn show(app: &mut SheetApp, ui: &mut egui::Ui) {
                 layout.caret = info.caret;
                 ui.allocate_space(vec2(avail, field.height()));
                 let chevron = if app.ui.formula_bar_expanded { Icon::ChevronUp } else { Icon::Chevron };
-                if crate::widgets::icon_button(ui, chevron, t.text_dim, "Expand formula bar", vec2(20.0, 24.0)).clicked() {
+                let chevron_size = if phone { vec2(48.0, 48.0) } else { vec2(20.0, 24.0) };
+                let expand = crate::widgets::icon_button(ui, chevron, t.text_dim, "Expand formula bar", chevron_size);
+                if phone {
+                    let name = app.ui.language.tr("Expand formula bar").to_string();
+                    expand.widget_info(|| egui::WidgetInfo::labeled(egui::Role::Button, true, name.clone()));
+                }
+                if expand.clicked() {
                     app.ui.formula_bar_expanded = !app.ui.formula_bar_expanded;
                 }
             });
@@ -283,16 +310,20 @@ fn name_box(app: &mut SheetApp, ui: &mut egui::Ui, t: &Tokens) -> Rect {
     let id = egui::Id::unique("gridcraft.name_box");
     let shown = app.name_box_text();
     let mut text = app.name_box.clone().unwrap_or(shown.clone());
-    let rect = Rect::from_min_size(ui.cursor().min, vec2(118.0, 24.0));
+    // On the phone the box is 48 pt tall (a touch target) with its text centred; desktop is 24 pt.
+    let phone = crate::phone::active(ui.ctx());
+    let box_h = if phone { 48.0 } else { 24.0 };
+    let rect = Rect::from_min_size(ui.cursor().min, vec2(118.0, box_h));
     ui.painter().rect_filled(rect, 4.0, t.input_bg);
     ui.painter().rect_stroke(rect, 4.0, Stroke::new(1.0, t.input_border), StrokeKind::Inside);
-    let mut child = ui.new_child(egui::UiBuilder::new().max_rect(Rect::from_min_size(rect.min + vec2(6.0, 3.0), vec2(96.0, 18.0))));
+    let inner = if phone { rect.shrink2(vec2(6.0, 0.0)) } else { Rect::from_min_size(rect.min + vec2(6.0, 3.0), vec2(96.0, 18.0)) };
+    let mut child = ui.new_child(egui::UiBuilder::new().max_rect(inner));
     // The box has no visible label of its own: screen readers and the strict accessibility check
     // need a name (egui 0.37 makes unnamed text inputs a test failure).
     let accessible_name = app.ui.language.tr("Name Box").to_string();
-    let resp = child
-        .add(TextEdit::singleline(&mut text).id(id).frame(egui::Frame::NONE).font(theme::ui_font(13.0)).desired_width(96.0))
-        .accessible_name(accessible_name);
+    let edit = TextEdit::singleline(&mut text).id(id).frame(egui::Frame::NONE).font(theme::ui_font(13.0)).desired_width(96.0);
+    let edit = if phone { crate::phone::touch_edit(&child, edit) } else { edit };
+    let resp = child.add(edit).accessible_name(accessible_name);
     if resp.gained_focus() {
         app.name_box = Some(shown.clone());
     }
@@ -323,11 +354,11 @@ fn name_box(app: &mut SheetApp, ui: &mut egui::Ui, t: &Tokens) -> Rect {
         }
         app.name_box = None;
     }
-    ui.allocate_space(vec2(118.0, 24.0));
+    ui.allocate_space(vec2(118.0, box_h));
     // Dropdown of names.
     let names: Vec<String> =
         app.session.active().map(|d| d.wb.names.iter().filter(|n| !n.hidden).map(|n| n.name.clone()).collect()).unwrap_or_default();
-    let mb = Rect::from_min_size(pos2(rect.right() - 16.0, rect.top() + 4.0), vec2(14.0, 16.0));
+    let mb = Rect::from_min_size(pos2(rect.right() - 16.0, rect.top() + (rect.height() - 16.0) / 2.0), vec2(14.0, 16.0));
     icons::paint(ui.painter(), mb, Icon::Chevron, t.text_dim);
     let r = ui.interact(mb, id.with("drop"), Sense::click());
     egui::Popup::menu(&r).show(|ui| {

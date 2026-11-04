@@ -463,33 +463,82 @@ fn palette(ui: &mut Ui, theme_colors: &[u32; 12], none_label: &str, more_colors:
         });
         ui.data_mut(|d| d.remove_temp::<Option<(usize, usize)>>(pal_id));
     }
-    if ui.button(none_label).clicked() {
+    let phone = crate::phone::active(ui.ctx());
+    let none = if phone { phone_button(ui, none_label) } else { ui.button(none_label) };
+    if none.clicked() {
         picked = Some("none".to_string());
     }
     ui.label(egui::RichText::new("Theme Colors").small());
     let order = [0usize, 1, 2, 3, 4, 5, 6, 7, 8, 9];
     let tints = [0.0f64, 0.8, 0.6, 0.4, -0.25, -0.5];
-    egui::Grid::new(ui.scope_id().with("theme_grid")).spacing(vec2(2.0, 2.0)).show(ui, |ui| {
-        for (row, tint) in tints.iter().enumerate() {
-            for (col, &i) in order.iter().enumerate() {
-                let base = theme_colors.get(i).copied().unwrap_or(0);
-                let rgb = [(base >> 16) as u8, (base >> 8) as u8, base as u8];
-                let c = gridcraft_engine::model::style::apply_tint(rgb, *tint);
-                let col32 = Color32::from_rgb(c[0], c[1], c[2]);
+    if phone {
+        // The phone's grid is transposed: each row is one theme colour, its six tints across. Swatch
+        // k is theme column k / 6 and tint row k % 6, the same colour the desktop cell holds.
+        let tapped = phone_swatches(ui, order.len() * tints.len(), |ui, k, w| {
+            let (col, row) = (k / tints.len(), k % tints.len());
+            let base = theme_colors.get(order.get(col).copied().unwrap_or(0)).copied().unwrap_or(0);
+            let rgb = [(base >> 16) as u8, (base >> 8) as u8, base as u8];
+            let c = gridcraft_engine::model::style::apply_tint(rgb, tints.get(row).copied().unwrap_or(0.0));
+            phone_swatch(ui, w, Color32::from_rgb(c[0], c[1], c[2]), cur == Some((row, col)))
+        });
+        if let Some(k) = tapped {
+            let base = theme_colors.get(order.get(k / tints.len()).copied().unwrap_or(0)).copied().unwrap_or(0);
+            picked = Some(theme_hex(base, tints.get(k % tints.len()).copied().unwrap_or(0.0)));
+        }
+    } else {
+        egui::Grid::new(ui.scope_id().with("theme_grid")).spacing(vec2(2.0, 2.0)).show(ui, |ui| {
+            for (row, tint) in tints.iter().enumerate() {
+                for (col, &i) in order.iter().enumerate() {
+                    let base = theme_colors.get(i).copied().unwrap_or(0);
+                    let rgb = [(base >> 16) as u8, (base >> 8) as u8, base as u8];
+                    let c = gridcraft_engine::model::style::apply_tint(rgb, *tint);
+                    let col32 = Color32::from_rgb(c[0], c[1], c[2]);
+                    let (r, resp) = ui.allocate_exact_size(vec2(16.0, 14.0), Sense::click());
+                    ui.painter().rect_filled(r, 1.0, col32);
+                    ui.painter().rect_stroke(r, 1.0, Stroke::new(1.0, t.separator), StrokeKind::Inside);
+                    if resp.hovered() || cur == Some((row, col)) {
+                        ui.painter().rect_stroke(r.expand(1.0), 1.0, Stroke::new(1.5, t.cat(Cat::Orange)), StrokeKind::Outside);
+                    }
+                    if resp.clicked() {
+                        picked = Some(theme_hex(base, *tint));
+                    }
+                }
+                ui.end_row();
+            }
+        });
+    }
+    ui.label(egui::RichText::new("Standard Colors").small());
+    if phone {
+        let tapped = phone_swatches(ui, std_hex.len(), |ui, k, w| {
+            let hex = std_hex.get(k).copied().unwrap_or("#000000");
+            let c = gridcraft_engine::model::Color::from_hex(hex)
+                .and_then(|c| c.resolve(&Default::default()))
+                .map(theme::color32)
+                .unwrap_or(Color32::BLACK);
+            phone_swatch(ui, w, c, cur == Some((ROWS - 1, k)))
+        });
+        if let Some(hex) = tapped.and_then(|k| std_hex.get(k)) {
+            picked = Some(hex.to_string());
+        }
+    } else {
+        ui.horizontal(|ui| {
+            ui.spacing_mut().item_spacing.x = 2.0;
+            for (col, hex) in std_hex.iter().enumerate() {
+                let c = gridcraft_engine::model::Color::from_hex(hex)
+                    .and_then(|c| c.resolve(&Default::default()))
+                    .map(theme::color32)
+                    .unwrap_or(Color32::BLACK);
                 let (r, resp) = ui.allocate_exact_size(vec2(16.0, 14.0), Sense::click());
-                ui.painter().rect_filled(r, 1.0, col32);
-                ui.painter().rect_stroke(r, 1.0, Stroke::new(1.0, t.separator), StrokeKind::Inside);
-                if resp.hovered() || cur == Some((row, col)) {
+                ui.painter().rect_filled(r, 1.0, c);
+                if resp.hovered() || cur == Some((ROWS - 1, col)) {
                     ui.painter().rect_stroke(r.expand(1.0), 1.0, Stroke::new(1.5, t.cat(Cat::Orange)), StrokeKind::Outside);
                 }
                 if resp.clicked() {
-                    picked = Some(theme_hex(base, *tint));
+                    picked = Some(hex.to_string());
                 }
             }
-            ui.end_row();
-        }
-    });
-    ui.label(egui::RichText::new("Standard Colors").small());
+        });
+    }
     ui.horizontal(|ui| {
         ui.spacing_mut().item_spacing.x = 2.0;
         for (col, hex) in std_hex.iter().enumerate() {
@@ -511,62 +560,83 @@ fn palette(ui: &mut Ui, theme_colors: &[u32; 12], none_label: &str, more_colors:
     let mut recent: Vec<String> = ui.ctx().data(|d| d.get_temp(recent_colors_id())).unwrap_or_default();
     if !recent.is_empty() {
         ui.label(egui::RichText::new("Recent Colors").small());
-        ui.horizontal(|ui| {
-            ui.spacing_mut().item_spacing.x = 2.0;
-            for hex in &recent {
-                let c = parse_hex(hex).map_or(Color32::BLACK, |c| Color32::from_rgb(c[0], c[1], c[2]));
-                let (r, resp) = ui.allocate_exact_size(vec2(16.0, 14.0), Sense::click());
-                ui.painter().rect_filled(r, 1.0, c);
-                ui.painter().rect_stroke(r, 1.0, Stroke::new(1.0, Color32::from_gray(200)), StrokeKind::Inside);
-                if resp.hovered() {
-                    ui.painter().rect_stroke(r.expand(1.0), 1.0, Stroke::new(1.5, Color32::from_rgb(0xE8, 0x7D, 0x2B)), StrokeKind::Outside);
-                }
-                if resp.on_hover_text(hex).clicked() {
-                    picked = Some(hex.clone());
-                }
+        if phone {
+            let tapped = phone_swatches(ui, recent.len(), |ui, k, w| {
+                let c = recent.get(k).and_then(|h| parse_hex(h)).map_or(Color32::BLACK, |c| Color32::from_rgb(c[0], c[1], c[2]));
+                phone_swatch(ui, w, c, false)
+            });
+            if let Some(hex) = tapped.and_then(|k| recent.get(k)) {
+                picked = Some(hex.clone());
             }
-        });
+        } else {
+            ui.horizontal(|ui| {
+                ui.spacing_mut().item_spacing.x = 2.0;
+                for hex in &recent {
+                    let c = parse_hex(hex).map_or(Color32::BLACK, |c| Color32::from_rgb(c[0], c[1], c[2]));
+                    let (r, resp) = ui.allocate_exact_size(vec2(16.0, 14.0), Sense::click());
+                    ui.painter().rect_filled(r, 1.0, c);
+                    ui.painter().rect_stroke(r, 1.0, Stroke::new(1.0, Color32::from_gray(200)), StrokeKind::Inside);
+                    if resp.hovered() {
+                        ui.painter().rect_stroke(r.expand(1.0), 1.0, Stroke::new(1.5, Color32::from_rgb(0xE8, 0x7D, 0x2B)), StrokeKind::Outside);
+                    }
+                    if resp.on_hover_text(hex).clicked() {
+                        picked = Some(hex.clone());
+                    }
+                }
+            });
+        }
     }
     if more_colors {
         ui.separator();
     }
-    if more_colors && ui.button("More Colors…").clicked() {
+    let more_clicked = more_colors && (if phone { phone_button(ui, "More Colors…") } else { ui.button("More Colors…") }).clicked();
+    if more_clicked {
         let start = recent.first().and_then(|h| parse_hex(h)).unwrap_or([0x44, 0x72, 0xC4]);
         more = Some(MoreColors::new(start));
     }
     if let Some(m) = more.as_mut() {
         let mut done = false;
-        // The saturation / value area with its hue bar and egui's red-green-blue boxes, then the hex
-        // box with the new colour beside it.
-        if egui::color_picker::color_picker_hsva_2d(ui, &mut m.hsva, egui::color_picker::Alpha::Opaque) {
-            m.hex = hex_of(m.hsva.to_srgb());
-        }
-        ui.horizontal(|ui| {
-            let label = ui.label("Hex");
-            let r = ui.add(egui::TextEdit::singleline(&mut m.hex).desired_width(72.0).char_limit(7)).labelled_by(label.id);
-            if r.changed()
-                && let Some(c) = parse_hex(&m.hex)
-            {
-                m.hsva = egui::ecolor::Hsva::from_srgb(c);
+        // On the phone the picker's widgets are 48 pt tall (buttons and the hex box) and its hue bar
+        // spans the sheet. The scope keeps those sizes to the picker.
+        ui.scope(|ui| {
+            if phone {
+                ui.spacing_mut().interact_size = vec2(64.0, PHONE_ROW);
+                ui.spacing_mut().slider_width = (ui.available_width() - 16.0).max(0.0);
             }
-            let c = m.hsva.to_srgb();
-            let (sw, _) = ui.allocate_exact_size(vec2(36.0, 18.0), Sense::hover());
-            ui.painter().rect_filled(sw, 1.0, Color32::from_rgb(c[0], c[1], c[2]));
-            ui.painter().rect_stroke(sw, 1.0, Stroke::new(1.0, Color32::from_gray(160)), StrokeKind::Inside);
-            ui.label(egui::RichText::new("New").small());
-        });
-        ui.horizontal(|ui| {
-            if ui.button("  OK  ").clicked() {
-                // A hex still being typed that is not a colour falls back to the picker's.
-                let c = parse_hex(&m.hex).unwrap_or_else(|| m.hsva.to_srgb());
-                let hex = hex_of(c);
-                remember_color(&mut recent, &hex);
-                picked = Some(hex);
-                done = true;
+            // The saturation / value area with its hue bar and egui's red-green-blue boxes, then the hex
+            // box with the new colour beside it.
+            if egui::color_picker::color_picker_hsva_2d(ui, &mut m.hsva, egui::color_picker::Alpha::Opaque) {
+                m.hex = hex_of(m.hsva.to_srgb());
             }
-            if ui.button("Cancel").clicked() {
-                done = true;
-            }
+            ui.horizontal(|ui| {
+                let label = ui.label("Hex");
+                let edit = egui::TextEdit::singleline(&mut m.hex).desired_width(72.0).char_limit(7);
+                let edit = if phone { crate::phone::touch_edit(ui, edit) } else { edit };
+                let r = ui.add(edit).labelled_by(label.id);
+                if r.changed()
+                    && let Some(c) = parse_hex(&m.hex)
+                {
+                    m.hsva = egui::ecolor::Hsva::from_srgb(c);
+                }
+                let c = m.hsva.to_srgb();
+                let (sw, _) = ui.allocate_exact_size(vec2(36.0, 18.0), Sense::hover());
+                ui.painter().rect_filled(sw, 1.0, Color32::from_rgb(c[0], c[1], c[2]));
+                ui.painter().rect_stroke(sw, 1.0, Stroke::new(1.0, Color32::from_gray(160)), StrokeKind::Inside);
+                ui.label(egui::RichText::new("New").small());
+            });
+            ui.horizontal(|ui| {
+                if ui.button("  OK  ").clicked() {
+                    // A hex still being typed that is not a colour falls back to the picker's.
+                    let c = parse_hex(&m.hex).unwrap_or_else(|| m.hsva.to_srgb());
+                    let hex = hex_of(c);
+                    remember_color(&mut recent, &hex);
+                    picked = Some(hex);
+                    done = true;
+                }
+                if ui.button("Cancel").clicked() {
+                    done = true;
+                }
+            });
         });
         if done {
             more = None;
@@ -576,6 +646,49 @@ fn palette(ui: &mut Ui, theme_colors: &[u32; 12], none_label: &str, more_colors:
     ui.data_mut(|d| d.insert_temp(more_id, more));
     ui.data_mut(|d| d.insert_temp(pal_id, cur));
     picked
+}
+
+/// The phone palette: swatches per row, the gap between them, a swatch's visible height and the row
+/// height (its 48 pt touch target).
+const PHONE_COLS: usize = 6;
+const PHONE_GAP: f32 = 6.0;
+const PHONE_SWATCH: f32 = 44.0;
+const PHONE_ROW: f32 = 48.0;
+
+/// Lays `n` swatches out on the phone, `PHONE_COLS` to a row, each `w` wide (the row's width shared
+/// out), and returns the index of the one tapped. `swatch` draws swatch `k` at width `w`.
+fn phone_swatches(ui: &mut Ui, n: usize, mut swatch: impl FnMut(&mut Ui, usize, f32) -> Response) -> Option<usize> {
+    let w = (ui.available_width() - (PHONE_COLS - 1) as f32 * PHONE_GAP) / PHONE_COLS as f32;
+    let mut tapped = None;
+    for start in (0..n).step_by(PHONE_COLS) {
+        ui.horizontal(|ui| {
+            ui.spacing_mut().item_spacing.x = PHONE_GAP;
+            for k in start..(start + PHONE_COLS).min(n) {
+                if swatch(ui, k, w).clicked() {
+                    tapped = Some(k);
+                }
+            }
+        });
+    }
+    tapped
+}
+
+/// One phone swatch: `w` wide, 44 pt tall in a 48 pt row, outlined when it is hovered or selected.
+fn phone_swatch(ui: &mut Ui, w: f32, color: Color32, selected: bool) -> Response {
+    let t = Tokens::get(ui.ctx());
+    let (r, resp) = ui.allocate_exact_size(vec2(w, PHONE_ROW), Sense::click());
+    let sw = Rect::from_center_size(r.center(), vec2(w, PHONE_SWATCH));
+    ui.painter().rect_filled(sw, 2.0, color);
+    ui.painter().rect_stroke(sw, 2.0, Stroke::new(1.0, t.separator), StrokeKind::Inside);
+    if resp.hovered() || selected {
+        ui.painter().rect_stroke(sw.expand(2.0), 3.0, Stroke::new(2.0, t.cat(Cat::Orange)), StrokeKind::Outside);
+    }
+    resp
+}
+
+/// A full-width 48 pt button in the phone palette.
+fn phone_button(ui: &mut Ui, label: &str) -> Response {
+    ui.add(egui::Button::new(label).min_size(vec2(ui.available_width(), PHONE_ROW)))
 }
 
 /// Draws the modal warning/error message; OK, Enter or Esc clears it and restores editor focus when an edit exists.

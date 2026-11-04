@@ -32,7 +32,7 @@ pub(super) fn format_cells(app: &mut SheetApp, ui: &mut egui::Ui, d: &mut Dialog
         "Number" => {
             let mut code = st.num_fmt.as_str().to_string();
             ui.columns(2, |cols| {
-                cols[0].label(egui::RichText::new(lang.tr("Category:")).strong());
+                cols[0].with_layout(egui::Layout::top_down(egui::Align::Min), |ui| ui.label(egui::RichText::new(lang.tr("Category:")).strong()));
                 for name in
                     ["General", "Number", "Currency", "Accounting", "Short Date", "Long Date", "Time", "Percentage", "Fraction", "Scientific", "Text"]
                 {
@@ -42,11 +42,13 @@ pub(super) fn format_cells(app: &mut SheetApp, ui: &mut egui::Ui, d: &mut Dialog
                         code = c;
                     }
                 }
-                cols[1].label(egui::RichText::new(lang.tr("Sample")).strong());
+                cols[1].with_layout(egui::Layout::top_down(egui::Align::Min), |ui| ui.label(egui::RichText::new(lang.tr("Sample")).strong()));
                 let preview = app.session.active().map(|doc| gridcraft_engine::display::format(&sample, &code, &doc.wb).text).unwrap_or_default();
                 cols[1].label(egui::RichText::new(preview).font(theme::ui_font(15.0)));
                 cols[1].add_space(8.0);
-                let label = cols[1].label(lang.tr("Type (custom format code):"));
+                // ui.columns lays its cells out justified, which stretches a wrapped label's letter
+                // spacing; a top-down layout keeps the text left-aligned as written.
+                let label = cols[1].with_layout(egui::Layout::top_down(egui::Align::Min), |ui| ui.label(lang.tr("Type (custom format code):"))).inner;
                 let edit = crate::phone::touch_edit(&cols[1], egui::TextEdit::singleline(&mut code));
                 cols[1].add(edit).labelled_by(label.id);
                 cols[1].horizontal_wrapped(|ui| {
@@ -68,7 +70,11 @@ pub(super) fn format_cells(app: &mut SheetApp, ui: &mut egui::Ui, d: &mut Dialog
                         "[h]:mm:ss",
                         "@",
                     ] {
-                        let clicked = if row_h > 0.0 { ui.add(egui::Button::new(c).min_size(egui::vec2(0.0, row_h))).clicked() } else { ui.small_button(c).clicked() };
+                        let clicked = if row_h > 0.0 {
+                            ui.add(egui::Button::new(c).min_size(egui::vec2(0.0, row_h))).clicked()
+                        } else {
+                            ui.small_button(c).clicked()
+                        };
                         if clicked {
                             code = c.to_string();
                         }

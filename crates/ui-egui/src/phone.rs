@@ -30,8 +30,8 @@ const APP_BAR_H: f32 = 64.0;
 const ICON_BTN: f32 = 48.0;
 /// A sheet row: the 48 pt touch target.
 const ROW_H: f32 = 48.0;
-/// The shortest bar under the grid (formula bar) on the phone: a 44 pt touch target.
-pub const BAR_MIN_H: f32 = 44.0;
+/// The shortest bar under the grid (formula bar) on the phone: a 48 pt touch target.
+pub const BAR_MIN_H: f32 = 48.0;
 /// The floating bar: its height, the gap around it, and its inset from the screen's sides.
 const PILL_H: f32 = 56.0;
 const FLOAT_GAP: f32 = 8.0;
@@ -706,7 +706,8 @@ fn sheet_button(app: &mut SheetApp, ui: &mut Ui, pill: Rect) {
     let t = Tokens::get(&ctx);
     let lang = app.ui.language;
     let name = app.session.active().and_then(|d| d.wb.active().map(|s| s.name.clone())).unwrap_or_default();
-    let btn = Rect::from_min_size(pill.left_top() + vec2(4.0, 4.0), vec2(SHEET_BTN_W, pill.height() - 8.0));
+    // At least 48 pt tall (a touch target), inside the pill with a 3 pt inset top and bottom.
+    let btn = Rect::from_min_size(pill.left_top() + vec2(4.0, 3.0), vec2(SHEET_BTN_W, (pill.height() - 6.0).max(48.0)));
     let resp = ui.interact(btn, ui.scope_id().with("phone_sheet_button"), Sense::click());
     let painter = ui.painter();
     let base = if resp.is_pointer_button_down_on() {
@@ -1143,7 +1144,7 @@ pub(crate) fn message_sheet(ctx: &Context, title: &str, msg: &str) -> bool {
 /// Touch selection on the grid: a handle at each corner of the selection, and a long press that
 /// selects a cell and opens the action bar above (or below) the selection.
 /// A handle's dot is 12 pt; its touch target is 44 pt.
-const HANDLE_HIT: f32 = 44.0;
+const HANDLE_HIT: f32 = 48.0;
 const HANDLE_R: f32 = 6.0;
 /// A press held this long without moving opens the action bar.
 const LONG_PRESS: f64 = 0.5;
