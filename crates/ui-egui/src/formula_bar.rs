@@ -92,11 +92,14 @@ pub fn show(app: &mut SheetApp, ui: &mut egui::Ui) {
     let font = theme::ui_font(13.0);
     let row_h = ui.ctx().fonts_mut(|f| f.row_height(&font));
     let last = BarLayout::get(ui.ctx());
-    // Height follows the content's line count (last frame's), 1 to MAX_LINES; the chevron pins it
-    // at MAX_LINES. It eases only when that target changes.
-    let most = max_lines(ui.ctx().content_rect().height(), ui.available_rect_before_wrap().height(), row_h);
-    let lines = if app.ui.formula_bar_expanded { app.ui.formula_bar_lines.clamp(1, most) } else { last.lines.clamp(1, MAX_LINES) };
+    // Height follows the content's line count (last frame's), 1 to MAX_LINES; expanded (the
+    // chevron), it is the height the bottom edge was dragged to. It eases only when that target
+    // changes.
     let one = crate::phone::bar_height(ui.ctx(), one_line(row_h));
+    // On the phone the sheet tabs are a touch row too, so they take more of the room left below.
+    let keep_below = KEEP_BELOW + crate::phone::bar_height(ui.ctx(), 32.0) - 32.0;
+    let most = max_lines(ui.ctx().content_rect().height(), ui.available_rect_before_wrap().height(), row_h, one, keep_below);
+    let lines = if app.ui.formula_bar_expanded { app.ui.formula_bar_lines.clamp(1, most) } else { last.lines.clamp(1, MAX_LINES) };
     let target = one + (lines - 1) as f32 * row_h;
     let h = ui.ctx().animate_value_with_time(egui::Id::unique("formula_bar.height"), target, EASE_SECONDS);
     let mut layout = BarLayout { height: h, ..Default::default() };
@@ -211,12 +214,12 @@ pub fn show(app: &mut SheetApp, ui: &mut egui::Ui) {
 /// The most lines the bar takes in a window `window_h` tall with `room` left under the ribbon:
 /// half the window, as in Excel (never fewer than the chevron's [`MAX_LINES`]), and no more than
 /// leaves [`KEEP_BELOW`] for the status bar, sheet tabs and a few rows of the grid.
-fn max_lines(window_h: f32, room: f32, row_h: f32) -> usize {
+fn max_lines(window_h: f32, room: f32, row_h: f32, one: f32, keep_below: f32) -> usize {
     let lines_in = |h: f32| {
-        let fit = ((h - one_line(row_h)) / row_h).floor();
+        let fit = ((h - one) / row_h).floor();
         if fit.is_finite() && fit > 0.0 { fit as usize + 1 } else { 1 }
     };
-    lines_in(window_h * 0.5).clamp(MAX_LINES, MAX_DRAG_LINES).min(lines_in(room - KEEP_BELOW))
+    lines_in(window_h * 0.5).clamp(MAX_LINES, MAX_DRAG_LINES).min(lines_in(room - keep_below))
 }
 
 /// The lines a bar whose top is at `top` shows with its bottom edge dragged to `y`, in whole lines.
