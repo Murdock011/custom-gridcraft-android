@@ -121,25 +121,248 @@ pub(crate) fn build_params(d: &Dialog) -> Json {
     v
 }
 
+/// The body of the open dialog, drawn in its window on the desktop and in its bottom sheet on the phone.
+#[allow(clippy::too_many_arguments)]
+fn draw_body(app: &mut SheetApp, ui: &mut egui::Ui, d: &mut Dialog, collapsed: &Option<String>, width: f32, confirm: &mut bool, open: &mut bool) {
+    if let Some(key) = collapsed {
+        let title = d.title.clone();
+        ref_edit(app, ui, d, key, RefLabel::Named(&title), (width - 40.0).min(380.0));
+        return;
+    }
+    match d.name.as_str() {
+        "formatCells" => format_cells(app, ui, d, confirm),
+        "dataValidation" => data_validation_form(app, ui, d, confirm, open),
+        "advancedFilter" => advanced_filter_form(app, ui, d, confirm, open),
+        "insertFunction" => insert_function(app, ui, d, confirm),
+        "find" => find(app, ui, d),
+        "goTo" => go_to(app, ui, d, confirm),
+        "zoom" => zoom(ui, d, confirm, open),
+        "sort" => sort(app, ui, d, confirm),
+        "nameManager" => name_manager(app, ui, d, open),
+        "pasteName" => paste_name(app, ui, d, confirm, open),
+        "manageRules" => manage_rules(app, ui),
+        "recommendedCharts" => recommended_charts(app, ui, d, confirm, open),
+        "selectData" => select_data(app, ui, d, confirm, open),
+        "commandSearch" => command_search(app, ui, d, confirm),
+        "goalSeek" => goal_seek(app, ui, d, confirm, open),
+        "equation" => crate::equation::editor(app, ui, d, confirm, open),
+        "pasteSpecial" => paste_special(app, ui, d, confirm, open),
+        "analysisToolPak" => analysis_toolpak(app, ui, d, confirm, open),
+        "solver" => solver(app, ui, d, confirm, open),
+        "solverResults" => solver_results(app, ui, d, open),
+        "spelling" => spelling(app, ui, d, open),
+        "assignAction" => crate::control_ui::assign_dialog(app, ui, d, open),
+        "formatControl" => crate::control_ui::format_dialog(app, ui, d, open),
+        "controlQuestion" => crate::control_ui::question_dialog(app, ui, d, open),
+        "agents" => {
+            ui.label("GridCraft is fully drivable by agents. Every menu item, button and gesture is a command:");
+            ui.add_space(4.0);
+            ui.monospace("gridcraft --control 7979        # JSON-lines control channel\ngridcraft-cli mcp --connect 7979   # MCP bridged to this window\ngridcraft-cli mcp                   # headless MCP server");
+            ui.add_space(4.0);
+            ui.label(format!("{} engine commands are available. See docs/mcp.md and docs/control-protocol.md.", gridcraft_engine::command_specs().len()));
+        }
+        "about" => about(ui, d),
+        "journal" => {
+            egui::ScrollArea::vertical().max_height(360.0).show(ui, |ui| {
+                for (id, p) in app.session.journal.iter().rev().take(500) {
+                    ui.monospace(format!("{id} {p}"));
+                }
+            });
+        }
+        "macros" => crate::macro_ui::macros_dialog(app, ui, d, open),
+        "recordMacro" => crate::macro_ui::record_dialog(app, ui, d, open),
+        "statistics" | "accessibility" | "errorChecking" | "evaluateFormula" | "comments" => {
+            let r = if d.name == "comments" {
+                app.session.active().and_then(|doc| doc.wb.active().map(|s| json!(s.comments.iter().map(|(c, m)| json!({"cell": c.a1(), "author": m.author, "text": m.text})).collect::<Vec<_>>())))
+            } else {
+                d.result.clone()
+            };
+            egui::ScrollArea::vertical().max_height(360.0).show(ui, |ui| {
+                ui.monospace(serde_json::to_string_pretty(&r.unwrap_or(Json::Null)).unwrap_or_default());
+            });
+        }
+        "insertPicture" => {
+            // A private inbox dies with this dialog; late browser results
+            // cannot affect a later picture choice or another workbook.
+            let arrived = d.picture_inbox.as_ref().and_then(|inbox| {
+                inbox.lock().unwrap_or_else(std::sync::PoisonError::into_inner).pop()
+            });
+            if let Some((name, bytes)) = arrived {
+                d.picture_inbox = None;
+                if bytes.len() > 16 * 1024 * 1024 {
+                    app.message = Some((d.title.clone(), "Choose a PNG or JPEG no larger than 16 MB.".into()));
+                } else {
+                    d.values.remove("path");
+                    d.values.insert("alt".into(), json!(name));
+                    d.values.insert("base64".into(), json!(gridcraft_engine::io::base64_encode(&bytes)));
+                }
+            }
+            if app.services.pick_picture_async.is_some() {
+                let name = d.values.get("alt").and_then(Json::as_str).unwrap_or("No picture selected");
+                ui.label(name);
+            } else {
+                ui.label("Picture file path (PNG or JPEG):");
+                let mut path = d.values.get("path").and_then(Json::as_str).unwrap_or("").to_string();
+                if ui.add(crate::phone::touch_edit(ui, egui::TextEdit::singleline(&mut path))).changed() {
+                    d.values.remove("base64");
+                    d.values.insert("path".into(), json!(path));
+                }
+            }
+            if (app.services.pick_picture.is_some() || app.services.pick_picture_async.is_some()) && ui.button("Browse…").clicked() {
+                if let Some(start) = &app.services.pick_picture_async {
+                    let inbox = crate::Inbox::default();
+                    start(inbox.clone());
+                    d.picture_inbox = Some(inbox);
+                } else if let Some(pick) = &app.services.pick_picture
+                    && let Some(path) = pick()
+                {
+                    d.values.remove("base64");
+                    let alt = std::path::Path::new(&path).file_name().and_then(std::ffi::OsStr::to_str).unwrap_or("");
+                    d.values.insert("alt".into(), json!(alt));
+                    d.values.insert("path".into(), json!(path));
+                }
+            }
+            ui.label("Description (optional):");
+            let mut alt = d.values.get("alt").and_then(Json::as_str).unwrap_or("").to_string();
+            if ui.add(crate::phone::touch_edit(ui, egui::TextEdit::singleline(&mut alt))).changed() {
+                d.values.insert("alt".into(), json!(alt));
+            }
+            if d.values.get("placement").and_then(Json::as_str) == Some("cell") {
+                ui.label(egui::RichText::new("Fits inside the selected cell and moves with its content.").small());
+            }
+            ok_cancel(ui, confirm, open);
+        }
+        "pickList" => {
+            let items: Vec<String> = app
+                .session
+                .active()
+                .and_then(|doc| {
+                    let sh = doc.wb.active()?;
+                    let a = doc.selection.active;
+                    let mut seen = std::collections::BTreeSet::new();
+                    let mut r = a.row;
+                    while r > 0 && !sh.value(gridcraft_engine::core::CellRef::new(r - 1, a.col)).is_empty() {
+                        r -= 1;
+                        seen.insert(sh.value(gridcraft_engine::core::CellRef::new(r, a.col)).display());
+                    }
+                    Some(seen.into_iter().collect())
+                })
+                .unwrap_or_default();
+            for it in items {
+                if ui.button(&it).clicked() {
+                    app.run_or_alert("cell.set", json!({"input": it}));
+                    *open = false;
+                }
+            }
+        }
+        "saveCopy" => {
+            let fmt = d.values.get("format").and_then(Json::as_str).unwrap_or("xlsx").to_string();
+            ui.label(format!("Save a copy as .{fmt}"));
+            let mut path = d.values.get("path").and_then(Json::as_str).unwrap_or("").to_string();
+            ui.add(crate::phone::touch_edit(ui, egui::TextEdit::singleline(&mut path)));
+            d.values.insert("path".into(), json!(path.clone()));
+            ok_cancel(ui, confirm, open);
+            if *confirm {
+                // A bare name has no folder: written as typed it would land in the
+                // process's working directory (`/` from the Finder, the install folder on
+                // Windows), never where the user looks. The picker chooses the folder.
+                let pick = app.services.pick_save.as_ref();
+                let target = if path.is_empty() {
+                    pick.and_then(|f| f(&format!("Copy.{fmt}")))
+                } else if let Some(f) = pick.filter(|_| std::path::Path::new(&path).is_relative()) {
+                    f(&if path.ends_with(&format!(".{fmt}")) { path } else { format!("{path}.{fmt}") })
+                } else {
+                    Some(path)
+                };
+                if let Some(t) = target {
+                    let id = match fmt.as_str() {
+                        "csv" => "file.exportCsv",
+                        "html" => "file.exportHtml",
+                        _ => "file.saveAs",
+                    };
+                    app.run_or_alert(id, json!({"path": t}));
+                }
+            }
+        }
+        "saveChanges" => {
+            ui.label(format!("Do you want to save the changes you made to {}?", d.values.get("title").and_then(Json::as_str).unwrap_or("this workbook")));
+            let quitting = d.values.get("quit").and_then(Json::as_bool) == Some(true);
+            let answers = [("Don't Save", crate::SaveAnswer::DontSave), ("Cancel", crate::SaveAnswer::Cancel), ("Save", crate::SaveAnswer::Save)];
+            // On the phone the three answers are pinned at the bottom of the sheet (see `phone::footer_row`).
+            match crate::phone::footer_row(ui, &["Don't Save", "Cancel", "Save"], 2, false) {
+                Some(clicked) => {
+                    if let Some(i) = clicked
+                        && app.answer_save_changes(answers[i].1, quitting, ui.ctx())
+                    {
+                        *open = false;
+                    }
+                }
+                None => {
+                    ui.horizontal(|ui| {
+                        for (label, answer) in answers {
+                            if ui.button(label).clicked() && app.answer_save_changes(answer, quitting, ui.ctx()) {
+                                *open = false;
+                            }
+                        }
+                    });
+                }
+            }
+        }
+        "start" => {
+            ui.heading("Start a new workbook");
+            ui.horizontal_wrapped(|ui| {
+                if ui.button("Blank workbook").clicked() {
+                    app.run_or_alert("file.new", json!({}));
+                    *open = false;
+                }
+                for (n, t) in gridcraft_engine::sample::SAMPLES {
+                    if ui.button(*t).clicked() {
+                        app.run_or_alert("file.new", json!({"sample": n}));
+                        *open = false;
+                    }
+                }
+            });
+            ui.separator();
+            ui.label(egui::RichText::new("Recent").strong());
+            for path in app.ui.recent.clone() {
+                if ui.link(&path).clicked() {
+                    app.open_path(&path);
+                    *open = false;
+                }
+            }
+            if ui.button("Open…").clicked() {
+                app.open_dialog("open", json!({}));
+                *open = false;
+            }
+        }
+        _ => form(app, ui, d, confirm, open),
+    }
+}
+
+/// Draws the macro step editor window and keeps the dialog where it belongs.
+fn show_macro_editor(app: &mut SheetApp, ctx: &egui::Context, mut d: Dialog) {
+    let home = app.ui_window();
+    let mut open = true;
+    crate::macro_editor::window(app, ctx, &mut d, &mut open);
+    if !open {
+        app.macros.editor = None;
+        app.grid.macro_overlay = None;
+    } else if app.ui_window() != home {
+        // Something run from the editor switched windows: the editor stays in its own.
+        app.return_dialog(home, d);
+    } else {
+        app.dialog = Some(d);
+    }
+}
+
 /// Takes and draws the active dialog, dispatches its body by name, consumes picture-inbox results, runs OK/confirm commands, handles Esc/close and restores the back-dialog stack.
 pub fn show(app: &mut SheetApp, ctx: &egui::Context) {
     let Some(mut d) = app.dialog.take() else { return };
-    let home = app.ui_window();
     // The macro step editor is a large resizable window of its own.
     if d.name == "macroEditor" {
-        let mut open = true;
-        crate::macro_editor::window(app, ctx, &mut d, &mut open);
-        if !open {
-            app.macros.editor = None;
-            app.grid.macro_overlay = None;
-        } else if app.ui_window() != home {
-            // Something run from the editor switched windows: the editor stays in its own.
-            app.return_dialog(home, d);
-        } else {
-            app.dialog = Some(d);
-        }
-        return;
+        return show_macro_editor(app, ctx, d);
     }
+    let home = app.ui_window();
     if d.name == "pasteSpecial" {
         paste_special_shortcuts(&mut d, ctx);
     }
@@ -176,228 +399,13 @@ pub fn show(app: &mut SheetApp, ctx: &egui::Context) {
     };
     let (window, collapsed) = place_window(app, ctx, &mut d, window, window_id);
     // The body, drawn in the window on the desktop and in a bottom sheet on the phone.
-    let mut draw = |app: &mut SheetApp, ui: &mut egui::Ui, d: &mut Dialog| {
-            if let Some(key) = &collapsed {
-                let title = d.title.clone();
-                ref_edit(app, ui, d, key, RefLabel::Named(&title), (width - 40.0).min(380.0));
-                return;
-            }
-            match d.name.as_str() {
-                "formatCells" => format_cells(app, ui, d, &mut confirm),
-                "dataValidation" => data_validation_form(app, ui, d, &mut confirm, &mut open),
-                "advancedFilter" => advanced_filter_form(app, ui, d, &mut confirm, &mut open),
-                "insertFunction" => insert_function(app, ui, d, &mut confirm),
-                "find" => find(app, ui, d),
-                "goTo" => go_to(app, ui, d, &mut confirm),
-                "zoom" => zoom(ui, d, &mut confirm, &mut open),
-                "sort" => sort(app, ui, d, &mut confirm),
-                "nameManager" => name_manager(app, ui, d, &mut open),
-                "pasteName" => paste_name(app, ui, d, &mut confirm, &mut open),
-                "manageRules" => manage_rules(app, ui),
-                "recommendedCharts" => recommended_charts(app, ui, d, &mut confirm, &mut open),
-                "selectData" => select_data(app, ui, d, &mut confirm, &mut open),
-                "commandSearch" => command_search(app, ui, d, &mut confirm),
-                "goalSeek" => goal_seek(app, ui, d, &mut confirm, &mut open),
-                "equation" => crate::equation::editor(app, ui, d, &mut confirm, &mut open),
-                "pasteSpecial" => paste_special(app, ui, d, &mut confirm, &mut open),
-                "analysisToolPak" => analysis_toolpak(app, ui, d, &mut confirm, &mut open),
-                "solver" => solver(app, ui, d, &mut confirm, &mut open),
-                "solverResults" => solver_results(app, ui, d, &mut open),
-                "spelling" => spelling(app, ui, d, &mut open),
-                "assignAction" => crate::control_ui::assign_dialog(app, ui, d, &mut open),
-                "formatControl" => crate::control_ui::format_dialog(app, ui, d, &mut open),
-                "controlQuestion" => crate::control_ui::question_dialog(app, ui, d, &mut open),
-                "agents" => {
-                    ui.label("GridCraft is fully drivable by agents. Every menu item, button and gesture is a command:");
-                    ui.add_space(4.0);
-                    ui.monospace("gridcraft --control 7979        # JSON-lines control channel\ngridcraft-cli mcp --connect 7979   # MCP bridged to this window\ngridcraft-cli mcp                   # headless MCP server");
-                    ui.add_space(4.0);
-                    ui.label(format!("{} engine commands are available. See docs/mcp.md and docs/control-protocol.md.", gridcraft_engine::command_specs().len()));
-                }
-                "about" => about(ui, d),
-                "journal" => {
-                    egui::ScrollArea::vertical().max_height(360.0).show(ui, |ui| {
-                        for (id, p) in app.session.journal.iter().rev().take(500) {
-                            ui.monospace(format!("{id} {p}"));
-                        }
-                    });
-                }
-                "macros" => crate::macro_ui::macros_dialog(app, ui, d, &mut open),
-                "recordMacro" => crate::macro_ui::record_dialog(app, ui, d, &mut open),
-                "statistics" | "accessibility" | "errorChecking" | "evaluateFormula" | "comments" => {
-                    let r = if d.name == "comments" {
-                        app.session.active().and_then(|doc| doc.wb.active().map(|s| json!(s.comments.iter().map(|(c, m)| json!({"cell": c.a1(), "author": m.author, "text": m.text})).collect::<Vec<_>>())))
-                    } else {
-                        d.result.clone()
-                    };
-                    egui::ScrollArea::vertical().max_height(360.0).show(ui, |ui| {
-                        ui.monospace(serde_json::to_string_pretty(&r.unwrap_or(Json::Null)).unwrap_or_default());
-                    });
-                }
-                "insertPicture" => {
-                    // A private inbox dies with this dialog; late browser results
-                    // cannot affect a later picture choice or another workbook.
-                    let arrived = d.picture_inbox.as_ref().and_then(|inbox| {
-                        inbox.lock().unwrap_or_else(std::sync::PoisonError::into_inner).pop()
-                    });
-                    if let Some((name, bytes)) = arrived {
-                        d.picture_inbox = None;
-                        if bytes.len() > 16 * 1024 * 1024 {
-                            app.message = Some((d.title.clone(), "Choose a PNG or JPEG no larger than 16 MB.".into()));
-                        } else {
-                            d.values.remove("path");
-                            d.values.insert("alt".into(), json!(name));
-                            d.values.insert("base64".into(), json!(gridcraft_engine::io::base64_encode(&bytes)));
-                        }
-                    }
-                    if app.services.pick_picture_async.is_some() {
-                        let name = d.values.get("alt").and_then(Json::as_str).unwrap_or("No picture selected");
-                        ui.label(name);
-                    } else {
-                        ui.label("Picture file path (PNG or JPEG):");
-                        let mut path = d.values.get("path").and_then(Json::as_str).unwrap_or("").to_string();
-                        if ui.add(crate::phone::touch_edit(ui, egui::TextEdit::singleline(&mut path))).changed() {
-                            d.values.remove("base64");
-                            d.values.insert("path".into(), json!(path));
-                        }
-                    }
-                    if (app.services.pick_picture.is_some() || app.services.pick_picture_async.is_some()) && ui.button("Browse…").clicked() {
-                        if let Some(start) = &app.services.pick_picture_async {
-                            let inbox = crate::Inbox::default();
-                            start(inbox.clone());
-                            d.picture_inbox = Some(inbox);
-                        } else if let Some(pick) = &app.services.pick_picture
-                            && let Some(path) = pick()
-                        {
-                            d.values.remove("base64");
-                            let alt = std::path::Path::new(&path).file_name().and_then(std::ffi::OsStr::to_str).unwrap_or("");
-                            d.values.insert("alt".into(), json!(alt));
-                            d.values.insert("path".into(), json!(path));
-                        }
-                    }
-                    ui.label("Description (optional):");
-                    let mut alt = d.values.get("alt").and_then(Json::as_str).unwrap_or("").to_string();
-                    if ui.add(crate::phone::touch_edit(ui, egui::TextEdit::singleline(&mut alt))).changed() {
-                        d.values.insert("alt".into(), json!(alt));
-                    }
-                    if d.values.get("placement").and_then(Json::as_str) == Some("cell") {
-                        ui.label(egui::RichText::new("Fits inside the selected cell and moves with its content.").small());
-                    }
-                    ok_cancel(ui, &mut confirm, &mut open);
-                }
-                "pickList" => {
-                    let items: Vec<String> = app
-                        .session
-                        .active()
-                        .and_then(|doc| {
-                            let sh = doc.wb.active()?;
-                            let a = doc.selection.active;
-                            let mut seen = std::collections::BTreeSet::new();
-                            let mut r = a.row;
-                            while r > 0 && !sh.value(gridcraft_engine::core::CellRef::new(r - 1, a.col)).is_empty() {
-                                r -= 1;
-                                seen.insert(sh.value(gridcraft_engine::core::CellRef::new(r, a.col)).display());
-                            }
-                            Some(seen.into_iter().collect())
-                        })
-                        .unwrap_or_default();
-                    for it in items {
-                        if ui.button(&it).clicked() {
-                            app.run_or_alert("cell.set", json!({"input": it}));
-                            open = false;
-                        }
-                    }
-                }
-                "saveCopy" => {
-                    let fmt = d.values.get("format").and_then(Json::as_str).unwrap_or("xlsx").to_string();
-                    ui.label(format!("Save a copy as .{fmt}"));
-                    let mut path = d.values.get("path").and_then(Json::as_str).unwrap_or("").to_string();
-                    ui.add(crate::phone::touch_edit(ui, egui::TextEdit::singleline(&mut path)));
-                    d.values.insert("path".into(), json!(path.clone()));
-                    ok_cancel(ui, &mut confirm, &mut open);
-                    if confirm {
-                        // A bare name has no folder: written as typed it would land in the
-                        // process's working directory (`/` from the Finder, the install folder on
-                        // Windows), never where the user looks. The picker chooses the folder.
-                        let pick = app.services.pick_save.as_ref();
-                        let target = if path.is_empty() {
-                            pick.and_then(|f| f(&format!("Copy.{fmt}")))
-                        } else if let Some(f) = pick.filter(|_| std::path::Path::new(&path).is_relative()) {
-                            f(&if path.ends_with(&format!(".{fmt}")) { path } else { format!("{path}.{fmt}") })
-                        } else {
-                            Some(path)
-                        };
-                        if let Some(t) = target {
-                            let id = match fmt.as_str() {
-                                "csv" => "file.exportCsv",
-                                "html" => "file.exportHtml",
-                                _ => "file.saveAs",
-                            };
-                            app.run_or_alert(id, json!({"path": t}));
-                        }
-                    }
-                }
-                "saveChanges" => {
-                    ui.label(format!("Do you want to save the changes you made to {}?", d.values.get("title").and_then(Json::as_str).unwrap_or("this workbook")));
-                    let quitting = d.values.get("quit").and_then(Json::as_bool) == Some(true);
-                    let answers = [("Don't Save", crate::SaveAnswer::DontSave), ("Cancel", crate::SaveAnswer::Cancel), ("Save", crate::SaveAnswer::Save)];
-                    // On the phone the three answers are pinned at the bottom of the sheet (see `phone::footer_row`).
-                    match crate::phone::footer_row(ui, &["Don't Save", "Cancel", "Save"], 2, false) {
-                        Some(clicked) => {
-                            if let Some(i) = clicked
-                                && app.answer_save_changes(answers[i].1, quitting, ui.ctx())
-                            {
-                                open = false;
-                            }
-                        }
-                        None => {
-                            ui.horizontal(|ui| {
-                                for (label, answer) in answers {
-                                    if ui.button(label).clicked() && app.answer_save_changes(answer, quitting, ui.ctx()) {
-                                        open = false;
-                                    }
-                                }
-                            });
-                        }
-                    }
-                }
-                "start" => {
-                    ui.heading("Start a new workbook");
-                    ui.horizontal_wrapped(|ui| {
-                        if ui.button("Blank workbook").clicked() {
-                            app.run_or_alert("file.new", json!({}));
-                            open = false;
-                        }
-                        for (n, t) in gridcraft_engine::sample::SAMPLES {
-                            if ui.button(*t).clicked() {
-                                app.run_or_alert("file.new", json!({"sample": n}));
-                                open = false;
-                            }
-                        }
-                    });
-                    ui.separator();
-                    ui.label(egui::RichText::new("Recent").strong());
-                    for path in app.ui.recent.clone() {
-                        if ui.link(&path).clicked() {
-                            app.open_path(&path);
-                            open = false;
-                        }
-                    }
-                    if ui.button("Open…").clicked() {
-                        app.open_dialog("open", json!({}));
-                        open = false;
-                    }
-                }
-                _ => form(app, ui, d, &mut confirm, &mut open),
-            }
-    };
     let shown = if crate::phone::active(ctx) {
         // The window is not shown here; dropping it releases its hold on `win_open`.
         drop(window);
         let sheet_title = app.ui.language.tr(&d.title).to_string();
         let sheet_id = egui::Id::unique("dialog").with(&d.name);
         let (done, _) = crate::phone::dialog_sheet(ctx, sheet_id, &sheet_title, |ui| {
-            draw(app, ui, &mut d);
+            draw_body(app, ui, &mut d, &collapsed, width, &mut confirm, &mut open);
             false
         });
         if done {
@@ -407,7 +415,7 @@ pub fn show(app: &mut SheetApp, ctx: &egui::Context) {
     } else {
         window.show(ctx, |ui| {
             ui.set_min_width(width - 20.0);
-            draw(app, ui, &mut d);
+            draw_body(app, ui, &mut d, &collapsed, width, &mut confirm, &mut open);
         })
     };
     window_shown(ctx, &mut d, collapsed.is_some(), shown.map(|r| r.response.rect));
