@@ -59,14 +59,18 @@ fn more_colors_is_a_focused_page_that_fits_at_48_pt() {
     h.get_by_label("Fill Colour").click();
     h.run_steps(4);
 
-    // More Colors… is at the foot of the palette, so scroll the sheet to its end as a finger would.
+    // Scroll the sheet until More Colors… is in its body (below the title row), as a finger would.
     let sheet = pos2(206.0, 700.0);
     h.input_mut().events.push(Event::PointerMoved(sheet));
     h.run_steps(2);
-    for _ in 0..10 {
+    for _ in 0..25 {
+        let y = h.get_by_label("More Colors…").rect().center().y;
+        if (520.0..=820.0).contains(&y) {
+            break;
+        }
         h.input_mut().events.push(Event::MouseWheel {
             unit: MouseWheelUnit::Point,
-            delta: vec2(0.0, -1000.0),
+            delta: vec2(0.0, -100.0),
             phase: TouchPhase::Move,
             modifiers: Modifiers::NONE,
             source: MouseWheelSource::Unknown,
@@ -95,6 +99,20 @@ fn more_colors_is_a_focused_page_that_fits_at_48_pt() {
             assert!(r.height() >= 48.0, "{role:?} {:?} is {} pt tall", n.accesskit_node().label(), r.height());
         }
     }
+    // Every button of the picker page, from its title row (Close) down to the tab bar when drawn, is at
+    // least 48 x 48 pt: the colour type toggle, the copy button, OK, Cancel and Close.
+    let page_top = h.get_by_label("Close").rect().top();
+    let tabs_top = h.query_by_label_contains("Sheets:").map_or(screen.bottom(), |n| n.rect().top());
+    let mut buttons = 0;
+    for n in h.query_all_by_role(Role::Button) {
+        let r = n.rect();
+        if r.top() < page_top || r.bottom() > tabs_top {
+            continue;
+        }
+        buttons += 1;
+        assert!(r.width() >= 48.0 && r.height() >= 48.0, "Button {:?} is {} x {} pt", n.accesskit_node().label(), r.width(), r.height());
+    }
+    assert!(buttons >= 5, "the picker has its toggle, copy, OK, Cancel and Close buttons ({buttons} checked)");
     assert!(checked >= 3, "the picker has its OK, Cancel and Hex controls ({checked} checked)");
 }
 

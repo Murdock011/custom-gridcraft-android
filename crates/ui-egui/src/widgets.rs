@@ -631,6 +631,9 @@ fn more_picker(ui: &mut Ui, more: &mut Option<MoreColors>, recent: &mut Vec<Stri
             let fixed = PICKER_CHROME + 5.0 * PHONE_ROW + 5.0 * ui.spacing().item_spacing.y + 8.0;
             let side = (sheet - fixed).min(ui.available_width()).max(PICKER_MIN);
             ui.spacing_mut().interact_size = vec2(64.0, PHONE_ROW);
+            // egui sizes a button to its label plus padding (only its height has a minimum), so the
+            // picker's "U8" and copy buttons would be ~25 pt wide. Pad them to 48 pt.
+            ui.spacing_mut().button_padding = vec2(20.0, 12.0);
             ui.spacing_mut().slider_width = side;
         }
         // The saturation / value area with its hue bar and egui's red-green-blue boxes, then the hex
