@@ -1196,7 +1196,7 @@ pub(crate) fn message_sheet(ctx: &Context, title: &str, msg: &str) -> bool {
 
 /// Touch selection on the grid: a handle at each corner of the selection, and a long press that
 /// selects a cell and opens the action bar above (or below) the selection.
-/// A handle's dot is 12 pt; its touch target is 44 pt.
+/// A handle's dot is 12 pt; its touch target is 48 pt.
 const HANDLE_HIT: f32 = 48.0;
 const HANDLE_R: f32 = 6.0;
 /// A press held this long without moving opens the action bar.
@@ -1319,15 +1319,19 @@ pub(crate) fn touch_gestures(app: &mut SheetApp, ui: &mut Ui, geo: &Geo, sh: &Sh
         )
     });
     for (i, (moving_start, corner)) in [(true, logical.left_top()), (false, logical.right_bottom())].into_iter().enumerate() {
-        let at = geo.mirror_pos(corner);
-        if !geo.cells.contains(at) {
+        // The dot sits diagonally outside the corner, a radius out on each axis, so it never covers the
+        // corner cell's text. Its touch square is centred on the dot. The handle shows while its corner is
+        // on the grid, so A1's dot is drawn half off the grid's top-left edge.
+        if !geo.cells.contains(geo.mirror_pos(corner)) {
             continue;
         }
+        let out = if moving_start { -HANDLE_R } else { HANDLE_R };
+        let at = geo.mirror_pos(corner + vec2(out, out));
         let hit = Rect::from_center_size(at, vec2(HANDLE_HIT, HANDLE_HIT));
         ui.painter().circle(at, HANDLE_R, t.accent, Stroke::new(2.0, t.window));
-        // A filter arrow over the handle's dot takes the touches there: its widget is made after the
+        // A filter arrow over the handle's corner takes the touches there: its widget is made after the
         // handle's, and a tap opens its filter menu (the grid never sees the press). The handle keeps
-        // no touch target at its dot then, since egui would give the press to whichever centre is nearer.
+        // no touch target then, since egui would give the press to whichever centre is nearer.
         let arrows = grid::filter_arrows_under(geo, sh, hit);
         for (cell, arrow) in &arrows {
             let tap = ui.interact(*arrow, ui.scope_id().with(("phone_filter_arrow", i, cell.col, cell.row)), Sense::click());
@@ -1337,7 +1341,7 @@ pub(crate) fn touch_gestures(app: &mut SheetApp, ui: &mut Ui, geo: &Geo, sh: &Sh
                 took = true;
             }
         }
-        if arrows.iter().any(|(_, arrow)| arrow.contains(at)) {
+        if arrows.iter().any(|(_, arrow)| arrow.contains(geo.mirror_pos(corner))) {
             continue;
         }
         let resp = ui.interact(hit, ui.scope_id().with(("phone_handle", i)), Sense::drag());

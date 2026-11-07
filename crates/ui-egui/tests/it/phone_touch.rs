@@ -89,6 +89,11 @@ fn cell_centre(h: &egui_kittest::Harness<'static, SheetApp>, cell: &str) -> egui
     cell_rect(h, cell).center()
 }
 
+/// The centre of `cell`'s bottom-right handle dot: a handle radius (6 pt) diagonally past the corner.
+fn bottom_right_dot(h: &egui_kittest::Harness<'static, SheetApp>, cell: &str) -> egui::Pos2 {
+    cell_rect(h, cell).right_bottom() + vec2(6.0, 6.0)
+}
+
 /// A press on a selected cell that lands inside its top-left handle's 48 pt touch square (the handle's
 /// dot is 16 pt away, so the press is on the cell, not on the dot).
 fn press_in_handle_square(h: &egui_kittest::Harness<'static, SheetApp>, cell: &str) -> egui::Pos2 {
@@ -144,13 +149,8 @@ fn a_handle_drag_still_extends_the_selection() {
     let mut h = harness(|_| {});
     let at = cell_centre(&h, "B2");
     tap(&mut h, at);
-    // Press on B2's bottom-right handle and move well past the drag threshold, in one step, to D4.
-    let corner = {
-        let app = h.state();
-        let sh = app.session.active().unwrap().wb.active().unwrap();
-        let geo = gridcraft_ui_egui::grid::Geo::new(sh, app.grid.rect.unwrap(), app.view().scroll);
-        geo.cell_rect(sh, CellRef::parse("B2").unwrap()).right_bottom()
-    };
+    // Press on B2's bottom-right handle dot and move well past the drag threshold, in one step, to D4.
+    let corner = bottom_right_dot(&h, "B2");
     let to = cell_centre(&h, "D4");
     h.input_mut().events.push(Event::PointerMoved(corner));
     h.run_steps(2);
@@ -169,11 +169,23 @@ fn a_tap_beside_a_handle_selects_the_cell_there() {
     let mut h = harness(|_| {});
     let a1 = cell_centre(&h, "A1");
     tap(&mut h, a1);
-    // 8 pt right of A1's bottom-right handle dot, a little above the row line: inside B1's left part.
-    let dot = cell_rect(&h, "A1").right_bottom();
-    tap(&mut h, dot + vec2(8.0, -5.0));
+    // 8 pt right of A1's bottom-right corner, a little above the row line: inside B1's left part, and
+    // inside the handle's touch square, so the handle takes the tap.
+    let corner = cell_rect(&h, "A1").right_bottom();
+    tap(&mut h, corner + vec2(8.0, -5.0));
     assert_eq!(h.state().session.active().unwrap().selection.active.a1(), "B1", "the tap inside B1 selects B1");
     assert!(!phone_action_bar_open(&h.ctx), "a tap opens no action bar");
+}
+
+#[test]
+fn the_bottom_right_handle_dot_is_outside_the_selection() {
+    // The dot sits a handle radius past the selection's corner, so it never covers the cell's last digit.
+    let mut h = harness(|_| {});
+    let b2 = cell_centre(&h, "B2");
+    tap(&mut h, b2);
+    let selection = cell_rect(&h, "B2");
+    let dot = bottom_right_dot(&h, "B2");
+    assert!(dot.x > selection.right() && dot.y > selection.bottom(), "the dot {dot:?} is outside B2 {selection:?}");
 }
 
 #[test]
@@ -181,7 +193,7 @@ fn a_drag_from_a_handle_extends_the_selection_to_the_cell() {
     let mut h = harness(|_| {});
     let a1 = cell_centre(&h, "A1");
     tap(&mut h, a1);
-    let corner = cell_rect(&h, "A1").right_bottom();
+    let corner = bottom_right_dot(&h, "A1");
     let to = cell_centre(&h, "C3");
     h.input_mut().events.push(Event::PointerMoved(corner));
     h.run_steps(2);
@@ -201,7 +213,7 @@ fn the_comment_popup_is_not_drawn_under_the_action_bar() {
     });
     let b2 = cell_centre(&h, "B2");
     tap(&mut h, b2);
-    h.run_steps(2);
+    h.run_steps(8);
     assert!(h.query_all_by_label_contains("Zebra note").next().is_some(), "the comment popup shows beside the selected cell");
 
     let at = press_in_handle_square(&h, "B2");
