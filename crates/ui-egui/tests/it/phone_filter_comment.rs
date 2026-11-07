@@ -105,8 +105,36 @@ fn filter_arrow_opens_a_touch_sheet_that_does_not_take_focus() {
 #[test]
 fn a_tap_beside_the_arrow_still_opens_the_menu() {
     let mut h = harness(fruit_session());
-    // 16 pt right of the arrow: outside the arrow, inside its 48 pt touch square (in column B).
-    let at = a1_arrow(&h) + vec2(16.0, 0.0);
+    // 12 pt left of the arrow: outside the arrow, inside its touch square (the right half of A1).
+    let at = a1_arrow(&h) + vec2(-12.0, 0.0);
     tap(&mut h, at);
-    assert!(h.state().grid.filter_menu.is_some(), "the 48 pt square takes the press");
+    assert!(h.state().grid.filter_menu.is_some(), "the touch square takes the press");
+}
+
+#[test]
+fn a_tap_in_the_middle_of_a_filtered_header_selects_it() {
+    let mut s = Session::new();
+    s.new_workbook();
+    s.execute("range.setValues", json!({"range": "A1:B4", "values": [["Fruit", "Qty"], ["Apple", 1], ["Banana", 2], ["Cherry", 3]]})).unwrap();
+    s.execute("data.filter", json!({"range": "A1:B4"})).unwrap();
+    s.execute("selection.set", json!({"cell": "A1"})).unwrap();
+    let mut h = harness(s);
+    let centre = {
+        let app = h.state();
+        let sh = app.session.active().unwrap().wb.active().unwrap();
+        let geo = grid::Geo::new(sh, app.grid.rect.unwrap(), app.view().scroll);
+        geo.cell_rect(sh, CellRef::parse("B1").unwrap()).center()
+    };
+    tap(&mut h, centre);
+    assert!(h.state().grid.filter_menu.is_none(), "the middle of B1 opens no filter sheet");
+    assert_eq!(h.state().session.active().unwrap().selection.active.a1(), "B1", "the tap selects B1");
+
+    let arrow = {
+        let app = h.state();
+        let sh = app.session.active().unwrap().wb.active().unwrap();
+        let geo = grid::Geo::new(sh, app.grid.rect.unwrap(), app.view().scroll);
+        grid::filter_button_rect(&geo, sh, CellRef::parse("B1").unwrap()).center()
+    };
+    tap(&mut h, arrow);
+    assert!(h.state().grid.filter_menu.is_some(), "the arrow on B1 opens the filter sheet");
 }

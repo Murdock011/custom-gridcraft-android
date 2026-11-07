@@ -76,36 +76,47 @@ pub(super) fn paint_filter_button(p: &Painter, r: Rect, filtered: bool) {
     );
 }
 
-/// The square a filter arrow takes presses in: 48 pt on the phone, centred on the arrow (the arrow
-/// itself is about 12 pt); on the desktop the arrow alone.
-pub(super) fn filter_hit(r: Rect, phone: bool) -> Rect {
-    if phone { Rect::from_center_size(r.center(), vec2(48.0, 48.0)) } else { r }
+/// The square a filter arrow takes presses in. On the desktop, the arrow alone. On the phone: 48 pt tall,
+/// centred on the arrow, and across the right half of its header `cell` (at least the arrow plus 8 pt).
+/// It never reaches the cell's centre, so a tap on the rest of the cell selects it.
+pub(super) fn filter_hit(cell: Rect, r: Rect, phone: bool) -> Rect {
+    if !phone {
+        return r;
+    }
+    let w = (r.width() + 8.0).max(cell.width() / 2.0);
+    let left = (cell.right() - w).max(cell.center().x + 1.0);
+    Rect::from_min_max(pos2(left, r.center().y - 24.0), pos2(cell.right(), r.center().y + 24.0))
 }
 
-/// The header cells whose filter arrows are at `p`'s cell or, on the phone, around it (a 48 pt square
-/// reaches past the arrow's own cell), with each arrow's hit square.
-fn filter_arrow_cells(geo: &Geo, sh: &Sheet, p: Pos2, phone: bool) -> Vec<(CellRef, Rect)> {
+/// The header cells whose filter arrows are at `p`'s cell, or with `around`, also the cells next to it
+/// (a handle's square reaches past its own cell), with each arrow's hit square.
+fn filter_arrow_cells(geo: &Geo, sh: &Sheet, p: Pos2, phone: bool, around: bool) -> Vec<(CellRef, Rect)> {
     let c = geo.cell_at(sh, p);
     let mut cells = vec![c];
-    if phone {
+    if around {
         let near = |v: u32, d: i64| u32::try_from(i64::from(v) + d).ok();
         cells = (-1..=1)
             .flat_map(|dc| (-1..=0).map(move |dr| (dc, dr)))
             .filter_map(|(dc, dr)| Some(CellRef::new(near(c.row, dr)?, near(c.col, dc)?)))
             .collect();
     }
-    cells.into_iter().filter(|&k| sh.has_filter_button(k)).map(|k| (k, filter_hit(filter_button_rect(geo, sh, k), phone))).collect()
+    cells
+        .into_iter()
+        .filter(|&k| sh.has_filter_button(k))
+        .map(|k| (k, filter_hit(geo.cell_rect(sh, k), filter_button_rect(geo, sh, k), phone)))
+        .collect()
 }
 
-/// The header cell whose filter arrow `p` presses, if any.
+/// The header cell whose filter arrow `p` presses, if any. On the phone a tap counts only in the
+/// arrow's own cell: the square spills vertically, and a neighbour's tap must not open this menu.
 pub(super) fn filter_button_cell(geo: &Geo, sh: &Sheet, p: Pos2, phone: bool) -> Option<CellRef> {
-    filter_arrow_cells(geo, sh, p, phone).into_iter().find(|(_, r)| r.contains(p)).map(|(k, _)| k)
+    filter_arrow_cells(geo, sh, p, phone, false).into_iter().find(|(_, r)| r.contains(p)).map(|(k, _)| k)
 }
 
-/// The phone's filter arrows that a selection handle's touch square `hit` overlaps, with their 48 pt
+/// The phone's filter arrows that a selection handle's touch square `hit` overlaps, with their hit
 /// squares. The handle is drawn under them, so an arrow's tap goes to the arrow.
 pub(crate) fn filter_arrows_under(geo: &Geo, sh: &Sheet, hit: Rect) -> Vec<(CellRef, Rect)> {
-    filter_arrow_cells(geo, sh, hit.center(), true).into_iter().filter(|(_, r)| r.intersects(hit)).collect()
+    filter_arrow_cells(geo, sh, hit.center(), true, true).into_iter().filter(|(_, r)| r.intersects(hit)).collect()
 }
 
 /// The table whose header cell (`row`, `col`) was clicked, not just the first table in the column.

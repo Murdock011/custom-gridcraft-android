@@ -305,7 +305,7 @@ fn handle_column_header_press(app: &mut SheetApp, input: &InteractionInput<'_>, 
         // A Table heading's filter button, while the header names stand in for the letters.
         let phone = crate::phone::active(&resp.ctx);
         if let Some(h) =
-            table_headings(geo, sh, sel.active).into_iter().find(|h| h.col == c && h.button.is_some_and(|b| filter_hit(b, phone).contains(p)))
+            table_headings(geo, sh, sel.active).into_iter().find(|h| h.col == c && h.button.is_some_and(|b| filter_hit(h.rect, b, phone).contains(p)))
         {
             app.grid.filter_menu = Some((c, h.header_row, geo.mirror_pos(p)));
             return;
