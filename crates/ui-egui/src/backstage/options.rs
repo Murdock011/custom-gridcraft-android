@@ -5,7 +5,8 @@ use super::{Backstage, Icon, Language, SheetApp, Tokens, Ui, dim, i18n, icons, s
 
 /// Excel's File › Options page: General (display theme, interface language and Show formula bar),
 /// Editing (AutoComplete) and Save (the autosave checkbox toggling `app.ui.autosave`), plus Formulas
-/// (calculation mode and iterative calculation) when a document is active. Theme, language, formula
+/// (calculation mode and iterative calculation) and the display options for this workbook (sheet
+/// tabs and scroll bars) when a document is active. Theme, language, formula
 /// bar, AutoComplete and calculation changes run their commands through `run_or_alert`; calculation
 /// settings are saved with the workbook.
 ///
@@ -65,6 +66,10 @@ fn formula_bar_option(app: &mut SheetApp, ui: &mut Ui, lang: Language) {
     if option_check(ui, &mut formula_bar, lang.tr("Show formula bar")) {
         app.run_or_alert("view.formulaBar", json!({"on": formula_bar}));
     }
+    let mut highlight_row = app.ui.highlight_active_row;
+    if option_check(ui, &mut highlight_row, lang.tr("Highlight the active cell's row")) {
+        app.run_or_alert("options.highlightActiveRow", json!({"on": highlight_row}));
+    }
 }
 
 /// AutoComplete for cell values (Editing).
@@ -86,7 +91,20 @@ fn save_option(app: &mut SheetApp, ui: &mut Ui, lang: Language) {
 /// Formulas: the calculation mode and iterative calculation. Needs an open workbook; without one
 /// the section is left out.
 fn formulas_options(app: &mut SheetApp, ui: &mut Ui, lang: Language) {
-    let Some(calc) = app.session.active().map(|d| d.wb.calc.clone()) else { return };
+    let Some((calc, view)) = app.session.active().map(|d| (d.wb.calc.clone(), d.wb.view)) else { return };
+    ui.add_space(18.0);
+    // Excel's Advanced › Display options for this workbook: saved with the workbook (#3101).
+    section(ui, lang, "Display options for this workbook");
+    for (on, label, id) in [
+        (view.show_horizontal_scroll, "Show horizontal scroll bar", "view.showHorizontalScrollBar"),
+        (view.show_vertical_scroll, "Show vertical scroll bar", "view.showVerticalScrollBar"),
+        (view.show_sheet_tabs, "Show sheet tabs", "view.showSheetTabs"),
+    ] {
+        let mut on = on;
+        if option_check(ui, &mut on, lang.tr(label)) {
+            app.run_or_alert(id, json!({"on": on}));
+        }
+    }
     ui.add_space(18.0);
     section(ui, lang, "Formulas");
     ui.label(lang.tr("Workbook calculation"));

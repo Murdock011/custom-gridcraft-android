@@ -5,7 +5,7 @@ of the GridCraft engine (see the [README](../README.md)). This page lists every 
 **below the user interface**, so anyone can see exactly where it departs from upstream. All of
 these were written by AI coding agents.
 
-Baseline: upstream GridCraft tag `v0.16.0`, branch `custom-android`.
+Baseline: upstream GridCraft tag `v0.17.0`, branch `custom-android`.
 
 "Engine" here means every crate except `crates/ui-egui` (the interface) and `apps/` (the programs
 that host it). The Android host lives entirely in `apps/gridcraft-android` and needs no engine
@@ -25,4 +25,4 @@ change.
 
 None.
 
-Last updated: 2026-11-03.
+Last updated: 2026-11-07.

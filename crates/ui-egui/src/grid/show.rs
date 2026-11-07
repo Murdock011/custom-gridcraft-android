@@ -86,10 +86,9 @@ fn touch_on_selected_object(
     crate::chartview::selected_handle(app, &geo, sh, p, true).is_some() || crate::chartview::object_rect(&geo, sh, o).is_some_and(|r| r.contains(p))
 }
 
-/// The grid's rectangle inside the space before it: the vertical scrollbar takes 14 pt on the right,
+/// The grid's rectangle inside the space before it: the vertical scrollbar takes `bar` pt on the right,
 /// or on the left for a right-to-left sheet.
-fn sheet_rect(available: Rect, rtl: bool) -> Rect {
-    let bar = 14.0_f32.min(available.width());
+fn sheet_rect(available: Rect, rtl: bool, bar: f32) -> Rect {
     if rtl {
         Rect::from_min_max(pos2(available.left() + bar, available.top()), available.max)
     } else {
@@ -102,7 +101,7 @@ pub fn show(app: &mut SheetApp, ui: &mut egui::Ui) {
     let available = ui.available_rect_before_wrap();
     // A right-to-left sheet has its vertical scrollbar on the left.
     let rtl = app.session.active().and_then(|d| d.wb.active()).is_some_and(|s| s.right_to_left);
-    let rect = sheet_rect(available, rtl);
+    let rect = sheet_rect(available, rtl, vertical_bar_width(app, available));
     // A press taken by an open phone sheet is not a grid gesture (see `phone::take_pointer`).
     let sense = if crate::phone::pointer_taken(ui.ctx()) { Sense::hover() } else { Sense::click_and_drag() };
     let resp = ui.allocate_rect(rect, sense);
@@ -293,6 +292,12 @@ pub fn show(app: &mut SheetApp, ui: &mut egui::Ui) {
     ui.painter().rect_filled(Rect::from_min_max(pos2(track_x.0, rect.top()), pos2(track_x.1, rect.bottom())), 0.0, t.tab_bar);
     vertical_scrollbar(app, ui, sh, &geo, track_x, max_y, &t);
     update_clipboard_repaint(app, ui, now);
+}
+
+/// The vertical scroll bar's width: none when the workbook hides it (File › Options ›
+/// Display options for this workbook), and the grid takes its room.
+fn vertical_bar_width(app: &SheetApp, available: Rect) -> f32 {
+    if app.session.active().is_none_or(|d| d.wb.view.show_vertical_scroll) { 14.0_f32.min(available.width()) } else { 0.0 }
 }
 
 fn vertical_scroll_track(available: Rect, grid: Rect, rtl: bool) -> (f32, f32) {
@@ -488,7 +493,19 @@ fn paint_panes(input: PanesInput<'_>, cf: &mut CfCache) -> Vec<PaneQuad> {
             continue;
         }
         let p = painter.with_clip_rect(*clip);
-        paint_quadrant(QuadrantPaint { painter: &p, geo, workbook: wb, sheet_index: si, sheet: sh, rows: *rows, cols: *cols, cf, tokens: t });
+        let active_row = app.ui.highlight_active_row.then_some(sel.active.row);
+        paint_quadrant(QuadrantPaint {
+            painter: &p,
+            geo,
+            workbook: wb,
+            sheet_index: si,
+            sheet: sh,
+            rows: *rows,
+            cols: *cols,
+            cf,
+            tokens: t,
+            active_row,
+        });
         paint_selection(SelectionPaintInput { painter: &p, geo, sheet: sh, selection: sel, outline, tokens: t, app, rows: *rows, cols: *cols });
     }
     // Freeze lines.
@@ -504,6 +521,10 @@ fn paint_panes(input: PanesInput<'_>, cf: &mut CfCache) -> Vec<PaneQuad> {
 /// The worksheet is painted virtually, so it needs its own scrollbar rather than a
 /// ScrollArea containing all million rows. Keep the scroll extent stable during a drag.
 fn vertical_scrollbar(app: &mut SheetApp, ui: &mut egui::Ui, sh: &Sheet, geo: &Geo, track_x: (f32, f32), limit: f32, t: &Tokens) {
+    // A workbook that hides its vertical scroll bar leaves it no width.
+    if track_x.1 <= track_x.0 {
+        return;
+    }
     let track = Rect::from_min_max(pos2(track_x.0, geo.cells.top() + geo.frozen_h), pos2(track_x.1, geo.cells.bottom()));
     if track.height() <= 0.0 || track.width() <= 0.0 {
         return;
