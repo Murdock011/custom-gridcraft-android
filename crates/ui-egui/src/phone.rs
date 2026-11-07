@@ -1327,7 +1327,9 @@ pub(crate) fn touch_gestures(app: &mut SheetApp, ui: &mut Ui, geo: &Geo, sh: &Sh
         }
         let out = if moving_start { -HANDLE_R } else { HANDLE_R };
         let at = geo.mirror_pos(corner + vec2(out, out));
-        let hit = Rect::from_center_size(at, vec2(HANDLE_HIT, HANDLE_HIT));
+        // Clipped to the cells: a press on the headings, the select-all corner or the scroll bar is not the
+        // handle's, so the header sees its tap.
+        let hit = Rect::from_center_size(at, vec2(HANDLE_HIT, HANDLE_HIT)).intersect(geo.cells);
         ui.painter().circle(at, HANDLE_R, t.accent, Stroke::new(2.0, t.window));
         // A filter arrow over the handle's corner takes the touches there: its widget is made after the
         // handle's, and a tap opens its filter menu (the grid never sees the press). The handle keeps

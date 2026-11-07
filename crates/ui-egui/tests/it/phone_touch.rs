@@ -1,7 +1,7 @@
 //! The phone's touch selection: the action bar that a long press opens runs its commands, and its
 //! dialog entries open the dialogs.
 
-use egui::{Event, Modifiers, PointerButton, vec2};
+use egui::{Event, Modifiers, PointerButton, pos2, vec2};
 use egui_kittest::kittest::Queryable;
 use gridcraft_engine::Session;
 use gridcraft_engine::core::CellRef;
@@ -77,12 +77,18 @@ fn copy_in_the_action_bar_puts_the_selection_on_the_clipboard() {
     assert!(filled_at(&h, 0, 0), "Copy keeps the cells");
 }
 
+/// The grid's geometry on the first sheet, for the current frame.
+fn geo_of(h: &egui_kittest::Harness<'static, SheetApp>) -> gridcraft_ui_egui::grid::Geo {
+    let app = h.state();
+    let sh = app.session.active().unwrap().wb.active().unwrap();
+    gridcraft_ui_egui::grid::Geo::new(sh, app.grid.rect.unwrap(), app.view().scroll)
+}
+
 /// `cell`'s rectangle on the first sheet, in screen points.
 fn cell_rect(h: &egui_kittest::Harness<'static, SheetApp>, cell: &str) -> egui::Rect {
     let app = h.state();
     let sh = app.session.active().unwrap().wb.active().unwrap();
-    let geo = gridcraft_ui_egui::grid::Geo::new(sh, app.grid.rect.unwrap(), app.view().scroll);
-    geo.cell_rect(sh, CellRef::parse(cell).unwrap())
+    geo_of(h).cell_rect(sh, CellRef::parse(cell).unwrap())
 }
 
 fn cell_centre(h: &egui_kittest::Harness<'static, SheetApp>, cell: &str) -> egui::Pos2 {
@@ -175,6 +181,27 @@ fn a_tap_beside_a_handle_selects_the_cell_there() {
     tap(&mut h, corner + vec2(8.0, -5.0));
     assert_eq!(h.state().session.active().unwrap().selection.active.a1(), "B1", "the tap inside B1 selects B1");
     assert!(!phone_action_bar_open(&h.ctx), "a tap opens no action bar");
+}
+
+#[test]
+fn a_tap_on_a_header_inside_a_selection_dot_square_reaches_the_header() {
+    // B1's top-left dot sits outside the corner, and its touch square reaches over column A's heading and
+    // row 1's heading. Those taps are the headers', not the handle's.
+    let mut h = harness(|_| {});
+    let b1 = cell_centre(&h, "B1");
+    tap(&mut h, b1);
+    assert_eq!(h.state().session.active().unwrap().selection.active.a1(), "B1", "a tap selects B1");
+
+    let geo = geo_of(&h);
+    let corner = cell_rect(&h, "B1").left_top();
+    // Inside the dot's square, on column A's column heading.
+    tap(&mut h, pos2(corner.x - 10.0, geo.cells.top() - geo.header_h / 2.0));
+    assert_eq!(h.state().session.active().unwrap().selection.current().a1(), "A:A", "a tap on column A's heading selects column A");
+
+    tap(&mut h, b1);
+    // Near the dot, on row 1's heading.
+    tap(&mut h, pos2(geo.cells.left() - geo.header_w / 2.0, corner.y + 4.0));
+    assert_eq!(h.state().session.active().unwrap().selection.current().a1(), "1:1", "a tap on row 1's heading selects row 1");
 }
 
 #[test]
