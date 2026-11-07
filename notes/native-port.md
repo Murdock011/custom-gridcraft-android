@@ -1070,3 +1070,8 @@ commit f90bbd27. Not yet device-checked or merged into `custom-android`.
 - `cargo xtask wasm`: pass.
 - x86_64 APK (`build-native.sh x86_64`): BUILD SUCCESSFUL, `packaging/android-native/app/build/outputs/apk/debug/app-debug.apk`.
 - Not done: emulator before/after comparison of the phone screens.
+- Device check (emulator, 2026-11-07): merged with the tap fix (bc619cc4) in 8f39faeb. 15 phone screens
+  captured before (bc619cc4) and after with ~/.cache/gc-spike/capture.sh: identical except the new
+  General option "Highlight the active cell's row" (phone layout, works: the row is tinted). No crash.
+  Engine test `io::tests::save_keeps_the_destination_access_restrictions` fails here on v0.17.0 alone too
+  (file mode 664 after save; environment umask), not ours.
