@@ -1075,3 +1075,13 @@ commit f90bbd27. Not yet device-checked or merged into `custom-android`.
   General option "Highlight the active cell's row" (phone layout, works: the row is tinted). No crash.
   Engine test `io::tests::save_keeps_the_destination_access_restrictions` fails here on v0.17.0 alone too
   (file mode 664 after save; environment umask), not ours.
+
+## Update 30: small touch polish (2026-11-07)
+- More Colors: the egui "U8" format toggle and copy button are at least 48 pt wide on the phone (df25858e).
+- Selection dots sit just outside the selection's corners, so they no longer hide the first/last character of
+  the selected cell; their 48 pt touch squares are clipped to the cells, so header taps next to a dot reach the
+  header (6e9229c3, e72da9dc).
+- Data-validation input messages and hyperlink tips stay hidden while the long-press bar, a sheet or a dialog
+  is open, like comment popups (fd61d546).
+- Device-checked on the emulator: the "5" in B1 fully visible with the dots outside; U8/copy full size;
+  column A header tap beside B1's dot selects column A. Validation popup: kittest only.
