@@ -1030,3 +1030,43 @@ Host tests: 1088 pass, 2 fail on missing glyphs (also on origin/main).
 - Seen, fine: AutoSum, range handle drag, Sort A to Z, Undo, Back → Save Changes, crash recovery.
 - Open/minor: the picker's egui "U8" format toggle and copy button are 48 tall but narrow; the bottom-right
   selection handle covers the last digit of right-aligned numbers; Insert Function search uses suggestions.
+
+## Update 29: engine 0.17.0 merge (2026-11-07)
+
+Upstream tag `v0.17.0` (a6a6a49a) merged into the fork on branch `engine-017` (worktree `gc-merge-wt`), merge
+commit f90bbd27. Not yet device-checked or merged into `custom-android`.
+
+### Conflicts and how they were resolved
+
+- `backstage/options.rs`: upstream's highlight-active-row checkbox now sits in the General category (in
+  `formula_bar_option`, so the phone's General page has it too); the new "Display options for this workbook"
+  section (scroll bars, sheet tabs) is in Formulas. Phone category split kept.
+- `dialogs/show.rs`: upstream's new control dialogs (assignAction, formatControl, controlQuestion) added to the
+  body match with the phone's `d`. Clippy's cognitive-complexity limit then failed on `show()`, so the body
+  moved to `draw_body` and the macro editor branch to `show_macro_editor` (no behaviour change).
+- `formula_bar.rs`: upstream's expandable height (`formula_bar_lines`, dragged edge, `resize_handle`) kept with
+  the phone's bar height. Fix: `max_lines` takes the phone's bar height and keeps room for the phone's 48 pt
+  tabs, so an expanded bar leaves the grid its rows (test `an_expanded_formula_bar_leaves_room_for_the_worksheet_in_a_short_window`).
+- `grid/cursor.rs`, `grid/interact.rs`: upstream's control hover (PointingHand) and form-control press kept;
+  `touch` (phone::active) now passed through `object_under` and `chartview::selected_handle`, and
+  `form_controls` passes it to `objects::handle_at`.
+- `grid/show.rs`: upstream's `vertical_bar_width` (scroll bar can be hidden) kept with our `pointer_taken`
+  sense; `sheet_rect` takes the bar width.
+- `tabs.rs`: upstream's show-sheet-tabs / horizontal scroll toggle kept; phone bar height (`bar_height`) and
+  40 pt tab rows re-applied; `activate_sheet` stays `pub(crate)`.
+- README engine line 0.17.0; ATTRIBUTION and docs/UPSTREAM-README.md needed no change (upstream changed
+  neither README nor ATTRIBUTION in 0.17.0, and there are no new asset files). docs/ENGINE-CHANGES.md baseline
+  set to v0.17.0.
+- Workspace version 0.17.0; the android crate stays in the workspace (`apps/*`).
+
+### Test status
+
+- Host clippy `-D warnings` (ui-egui + android, all targets): pass.
+- `cargo test -p gridcraft-ui-egui -p gridcraft-android --no-fail-fast`: 1588 pass, 2 fail. The 2 failures are the
+  known glyph ones (`column_autocomplete_folds_case_beyond_ascii`, `language_switch_renders_the_ribbon_and_persists`).
+- `cargo test -p gridcraft-engine`: 985 pass, 1 fail: `io::tests::save_keeps_the_destination_access_restrictions`
+  (a saved file comes back mode 664). It also fails on v0.17.0 alone here, so it is not from the merge (the
+  sandbox's umask/fs setup).
+- `cargo xtask wasm`: pass.
+- x86_64 APK (`build-native.sh x86_64`): BUILD SUCCESSFUL, `packaging/android-native/app/build/outputs/apk/debug/app-debug.apk`.
+- Not done: emulator before/after comparison of the phone screens.
