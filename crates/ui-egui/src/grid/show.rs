@@ -757,6 +757,8 @@ pub(crate) struct OverlayInput<'a> {
 
 pub(crate) fn paint_overlays(input: OverlayInput<'_>) {
     let OverlayInput { app, ui, painter: p, geo, workbook: wb, sheet_index: si, sheet: sh, selection: sel } = input;
+    // On the phone the popups stay down under the action bar, a sheet or a dialog (they would draw over them).
+    let popups_down = crate::phone::active(ui.ctx()) && (crate::phone::covered(ui.ctx()) || app.dialog.is_some());
     // Validation dropdown arrow for the active cell.
     if app.editor.is_none()
         && let Some(r) = validation_arrow(sh, geo, sel.active)
@@ -768,6 +770,7 @@ pub(crate) fn paint_overlays(input: OverlayInput<'_>) {
     }
     // Input message of the active cell's validation, hidden while its list is open: it would cover the items.
     if app.editor.is_none()
+        && !popups_down
         && app.grid.list_picker != Some(sel.active)
         && let Some(dv) = sh.validations.iter().find(|d| d.ranges.iter().any(|r| r.contains(sel.active)))
         && dv.show_input
@@ -792,8 +795,6 @@ pub(crate) fn paint_overlays(input: OverlayInput<'_>) {
     // Notes: shown on hover (or always when marked visible).
     let hover = app.grid.hover_cell;
     let all_notes = app.session.show_all_notes;
-    // On the phone the popups stay down under the action bar, a sheet or a dialog (they would draw over them).
-    let popups_down = crate::phone::active(ui.ctx()) && (crate::phone::covered(ui.ctx()) || app.dialog.is_some());
     for (c, cm) in &sh.comments {
         let show = cm.visible || (all_notes && !cm.threaded) || hover == Some(*c);
         if !show || popups_down || app.grid.drag != Drag::None {
@@ -824,6 +825,7 @@ pub(crate) fn paint_overlays(input: OverlayInput<'_>) {
     // Hyperlink tooltip.
     if let Some(h) = hover.and_then(|c| sh.hyperlinks.get(&c))
         && app.editor.is_none()
+        && !popups_down
     {
         let tip = h.tooltip.clone().unwrap_or_else(|| format!("{}\nClick once to follow. Click and hold to select this cell.", h.target));
         egui::Tooltip::always_open(ui.ctx().clone(), ui.layer_id(), egui::Id::unique("link_tip"), egui::PopupAnchor::Pointer).show(|ui| {

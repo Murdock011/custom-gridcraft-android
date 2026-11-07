@@ -223,3 +223,23 @@ fn the_comment_popup_is_not_drawn_under_the_action_bar() {
     assert!(h.query_all_by_label_contains("Zebra note").next().is_none(), "the comment popup is not drawn while the action bar is open");
     release(&mut h, at);
 }
+
+#[test]
+fn the_validation_input_message_is_not_drawn_under_the_action_bar() {
+    const MESSAGE: &str = "Pick a colour from the list";
+    let mut h = harness(|s| {
+        s.execute("data.validation", json!({"range": "B2", "type": "list", "formula1": "\"Red,Green,Blue\"", "inputMessage": MESSAGE}))
+            .expect("validation");
+    });
+    let b2 = cell_centre(&h, "B2");
+    tap(&mut h, b2);
+    h.run_steps(2);
+    assert!(h.query_by_label(MESSAGE).is_some(), "the selected cell's input message shows");
+
+    let at = press_in_handle_square(&h, "B2");
+    hold_until_bar_opens(&mut h, at);
+    assert!(phone_action_bar_open(&h.ctx), "the long press opens the action bar");
+    h.run_steps(2);
+    assert!(h.query_by_label(MESSAGE).is_none(), "the input message is not drawn while the action bar is open");
+    release(&mut h, at);
+}
