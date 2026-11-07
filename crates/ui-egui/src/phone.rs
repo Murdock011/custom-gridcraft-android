@@ -1261,6 +1261,12 @@ fn long_press_id() -> egui::Id {
     egui::Id::unique("phone_long_press_fired")
 }
 
+/// A press that began on a handle's touch square and has not moved yet: its start time and origin. The
+/// handle takes the press, so the grid never sees its release; a release without a drag is a tap there.
+fn handle_tap_id() -> egui::Id {
+    egui::Id::unique("phone_handle_tap_press")
+}
+
 /// The selection area after a handle drag: the corner opposite the dragged handle stays where it is,
 /// and the dragged corner goes to `cell`. `moving_start` is the top-left handle.
 pub(crate) fn handle_range(current: RangeRef, moving_start: bool, cell: CellRef) -> RangeRef {
@@ -1342,6 +1348,9 @@ pub(crate) fn touch_gestures(app: &mut SheetApp, ui: &mut Ui, geo: &Geo, sh: &Sh
         // starts once the finger moves, and a long press may still open the bar.
         held_on_handle = true;
         if !decided {
+            if let (Some(t0), Some(at)) = (started, origin) {
+                ctx.data_mut(|d| d.insert_temp(handle_tap_id(), (t0, at)));
+            }
             continue;
         }
         took = true;
@@ -1360,6 +1369,22 @@ pub(crate) fn touch_gestures(app: &mut SheetApp, ui: &mut Ui, geo: &Geo, sh: &Sh
             }
             grid::scroll_by(app, edge_scroll(geo.cells, p));
             ctx.request_repaint();
+        }
+    }
+
+    // A press that began on a handle's touch square: a drag ends it, a second touch cancels it, and a
+    // release without a drag or a long press is a tap at the press, which selects the cell there.
+    if let Some((t0, at)) = ctx.data(|d| d.get_temp::<(f64, Pos2)>(handle_tap_id())) {
+        if decided || multi || down && !held_on_handle {
+            ctx.data_mut(|d| d.remove::<(f64, Pos2)>(handle_tap_id()));
+        } else if !down {
+            ctx.data_mut(|d| d.remove::<(f64, Pos2)>(handle_tap_id()));
+            let fired = ctx.data(|d| d.get_temp::<f64>(long_press_id()));
+            let p = geo.mirror_pos(at);
+            if !took && fired != Some(t0) && geo.in_cells(p) {
+                let _ = app.session.run("selection.set", json!({"cell": geo.cell_at(sh, p).a1()}));
+                ctx.request_repaint();
+            }
         }
     }
 

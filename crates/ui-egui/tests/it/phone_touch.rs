@@ -165,6 +165,36 @@ fn a_handle_drag_still_extends_the_selection() {
 }
 
 #[test]
+fn a_tap_beside_a_handle_selects_the_cell_there() {
+    let mut h = harness(|_| {});
+    let a1 = cell_centre(&h, "A1");
+    tap(&mut h, a1);
+    // 8 pt right of A1's bottom-right handle dot, a little above the row line: inside B1's left part.
+    let dot = cell_rect(&h, "A1").right_bottom();
+    tap(&mut h, dot + vec2(8.0, -5.0));
+    assert_eq!(h.state().session.active().unwrap().selection.active.a1(), "B1", "the tap inside B1 selects B1");
+    assert!(!phone_action_bar_open(&h.ctx), "a tap opens no action bar");
+}
+
+#[test]
+fn a_drag_from_a_handle_extends_the_selection_to_the_cell() {
+    let mut h = harness(|_| {});
+    let a1 = cell_centre(&h, "A1");
+    tap(&mut h, a1);
+    let corner = cell_rect(&h, "A1").right_bottom();
+    let to = cell_centre(&h, "C3");
+    h.input_mut().events.push(Event::PointerMoved(corner));
+    h.run_steps(2);
+    h.input_mut().events.push(Event::PointerButton { pos: corner, button: PointerButton::Primary, pressed: true, modifiers: Modifiers::NONE });
+    h.run_steps(2);
+    h.input_mut().events.push(Event::PointerMoved(to));
+    h.run_steps(3);
+    h.input_mut().events.push(Event::PointerButton { pos: to, button: PointerButton::Primary, pressed: false, modifiers: Modifiers::NONE });
+    h.run_steps(4);
+    assert_eq!(h.state().session.active().unwrap().selection.current().a1(), "A1:C3", "the drag extends the selection to C3");
+}
+
+#[test]
 fn the_comment_popup_is_not_drawn_under_the_action_bar() {
     let mut h = harness(|s| {
         s.execute("review.newComment", json!({"cell": "B2", "text": "Zebra note", "author": "Ada"})).expect("comment");
