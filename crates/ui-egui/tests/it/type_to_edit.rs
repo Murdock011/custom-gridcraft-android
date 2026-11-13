@@ -29,8 +29,20 @@ fn select(h: &mut Harness, cell: &str) {
 }
 
 fn enter(h: &mut Harness) {
-    h.input_mut().events.push(Event::Key { key: Key::Enter, physical_key: Some(Key::Enter), pressed: true, repeat: false, modifiers: Modifiers::NONE });
-    h.input_mut().events.push(Event::Key { key: Key::Enter, physical_key: Some(Key::Enter), pressed: false, repeat: false, modifiers: Modifiers::NONE });
+    h.input_mut().events.push(Event::Key {
+        key: Key::Enter,
+        physical_key: Some(Key::Enter),
+        pressed: true,
+        repeat: false,
+        modifiers: Modifiers::NONE,
+    });
+    h.input_mut().events.push(Event::Key {
+        key: Key::Enter,
+        physical_key: Some(Key::Enter),
+        pressed: false,
+        repeat: false,
+        modifiers: Modifiers::NONE,
+    });
     h.run_steps(3);
 }
 

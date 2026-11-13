@@ -45,11 +45,7 @@ fn pending_docs(session: &Session) -> Vec<Pending> {
         .documents()
         .iter()
         .filter(|d| d.is_dirty())
-        .map(|d| Pending {
-            name: d.display_title(),
-            location: d.path.clone().filter(|l| files::parse_location(l).is_some()),
-            wb: d.wb.clone(),
-        })
+        .map(|d| Pending { name: d.display_title(), location: d.path.clone().filter(|l| files::parse_location(l).is_some()), wb: d.wb.clone() })
         .collect()
 }
 

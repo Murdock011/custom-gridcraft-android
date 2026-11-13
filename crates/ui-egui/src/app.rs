@@ -1,9 +1,9 @@
 #[cfg(test)]
 use super::clock::monotonic_ms;
 use super::clock::now_ms;
+use super::phone;
 use super::services::{Chrome, Services};
 use super::state::{NoticeKind, OpenWindow, SaveAnswer, SheetView};
-use super::phone;
 #[cfg(not(target_arch = "wasm32"))]
 use super::updates_ui;
 use super::{

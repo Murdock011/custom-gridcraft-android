@@ -45,14 +45,14 @@ pub use editor::validation_arrow;
 #[cfg(test)]
 use editor::{editor_slack, editor_width, list_picker_height};
 pub use geo::Geo;
-pub use interact::{follow_link, freeze_handles, point_move};
 pub(crate) use interact::scroll_by;
+pub use interact::{follow_link, freeze_handles, point_move};
 pub(crate) use quadrant::{QuadrantPaint, paint_quadrant};
 pub use selection::selection_fill;
 pub(crate) use selection::{SelectionPaintInput, paint_selection};
 pub(crate) use show::horizontal_scrollbar;
-pub(crate) use tables::filter_arrows_under;
 pub use show::show;
+pub(crate) use tables::filter_arrows_under;
 #[cfg(test)]
 use tables::filter_table_range;
 pub use tables::{TableHeading, filter_button_rect, heading_table, table_headings};
@@ -237,6 +237,14 @@ impl Trace {
 
 #[derive(Default)]
 pub struct GridState {
+    /// The active sheet's line positions and outlines, kept with a weak reference to the sheet
+    /// they were built from: while it still upgrades to the very sheet shown, the sheet hasn't
+    /// changed (every change goes through `Arc::make_mut`, which moves or copies a sheet that
+    /// has a weak reference to it), so they still hold.
+    pub(crate) lines: Option<(std::sync::Weak<Sheet>, geo::SheetLines)>,
+    /// The conditional formatting statistics (minimum, maximum, percentiles, duplicates) of the
+    /// active sheet's rules, kept the same way: they are read from that sheet's cells alone.
+    pub(crate) cf: Option<(std::sync::Weak<Sheet>, CfCache)>,
     pub drag: Drag,
     pub ensure_visible: bool,
     /// With `ensure_visible`: scroll to the moving end of the selection instead of the active cell

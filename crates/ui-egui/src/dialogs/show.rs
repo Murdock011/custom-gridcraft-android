@@ -159,7 +159,10 @@ fn draw_body(app: &mut SheetApp, ui: &mut egui::Ui, d: &mut Dialog, collapsed: &
             ui.add_space(4.0);
             ui.monospace("gridcraft --control 7979        # JSON-lines control channel\ngridcraft-cli mcp --connect 7979   # MCP bridged to this window\ngridcraft-cli mcp                   # headless MCP server");
             ui.add_space(4.0);
-            ui.label(format!("{} engine commands are available. See docs/mcp.md and docs/control-protocol.md.", gridcraft_engine::command_specs().len()));
+            ui.label(format!(
+                "{} engine commands are available. See docs/mcp.md and docs/control-protocol.md.",
+                gridcraft_engine::command_specs().len()
+            ));
         }
         "about" => about(ui, d),
         "journal" => {
@@ -173,7 +176,11 @@ fn draw_body(app: &mut SheetApp, ui: &mut egui::Ui, d: &mut Dialog, collapsed: &
         "recordMacro" => crate::macro_ui::record_dialog(app, ui, d, open),
         "statistics" | "accessibility" | "errorChecking" | "evaluateFormula" | "comments" => {
             let r = if d.name == "comments" {
-                app.session.active().and_then(|doc| doc.wb.active().map(|s| json!(s.comments.iter().map(|(c, m)| json!({"cell": c.a1(), "author": m.author, "text": m.text})).collect::<Vec<_>>())))
+                app.session.active().and_then(|doc| {
+                    doc.wb.active().map(|s| {
+                        json!(s.comments.iter().map(|(c, m)| json!({"cell": c.a1(), "author": m.author, "text": m.text})).collect::<Vec<_>>())
+                    })
+                })
             } else {
                 d.result.clone()
             };
@@ -184,9 +191,7 @@ fn draw_body(app: &mut SheetApp, ui: &mut egui::Ui, d: &mut Dialog, collapsed: &
         "insertPicture" => {
             // A private inbox dies with this dialog; late browser results
             // cannot affect a later picture choice or another workbook.
-            let arrived = d.picture_inbox.as_ref().and_then(|inbox| {
-                inbox.lock().unwrap_or_else(std::sync::PoisonError::into_inner).pop()
-            });
+            let arrived = d.picture_inbox.as_ref().and_then(|inbox| inbox.lock().unwrap_or_else(std::sync::PoisonError::into_inner).pop());
             if let Some((name, bytes)) = arrived {
                 d.picture_inbox = None;
                 if bytes.len() > 16 * 1024 * 1024 {
@@ -285,7 +290,10 @@ fn draw_body(app: &mut SheetApp, ui: &mut egui::Ui, d: &mut Dialog, collapsed: &
             }
         }
         "saveChanges" => {
-            ui.label(format!("Do you want to save the changes you made to {}?", d.values.get("title").and_then(Json::as_str).unwrap_or("this workbook")));
+            ui.label(format!(
+                "Do you want to save the changes you made to {}?",
+                d.values.get("title").and_then(Json::as_str).unwrap_or("this workbook")
+            ));
             let quitting = d.values.get("quit").and_then(Json::as_bool) == Some(true);
             let answers = [("Don't Save", crate::SaveAnswer::DontSave), ("Cancel", crate::SaveAnswer::Cancel), ("Save", crate::SaveAnswer::Save)];
             // On the phone the three answers are pinned at the bottom of the sheet (see `phone::footer_row`).
@@ -676,7 +684,10 @@ pub(super) fn form_fields(app: &SheetApp, ui: &mut egui::Ui, d: &mut Dialog) {
                     ui.vertical(|ui| {
                         let label = ui.label(lang.tr(label));
                         let mut s = d.values.get(key).and_then(Json::as_str).unwrap_or_default().to_string();
-                        if ui.add(crate::phone::touch_edit(ui, egui::TextEdit::singleline(&mut s).password(!d.show_password).desired_width(320.0))).labelled_by(label.id).changed()
+                        if ui
+                            .add(crate::phone::touch_edit(ui, egui::TextEdit::singleline(&mut s).password(!d.show_password).desired_width(320.0)))
+                            .labelled_by(label.id)
+                            .changed()
                         {
                             d.values.insert(key.into(), json!(s));
                         }

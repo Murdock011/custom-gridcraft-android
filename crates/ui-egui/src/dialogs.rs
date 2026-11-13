@@ -350,7 +350,8 @@ impl Dialog {
                     Some(i) => d.wb.sheets.get(i).map(|s| s.name.clone()),
                     None => d.wb.active().map(|s| s.name.clone()),
                 });
-                let mut d = Dialog::form("renameSheet", "Rename Sheet", "sheet.rename", vec![Text { key: "name", label: "Name:" }], json!({"name": name}));
+                let mut d =
+                    Dialog::form("renameSheet", "Rename Sheet", "sheet.rename", vec![Text { key: "name", label: "Name:" }], json!({"name": name}));
                 if let Some(s) = params.get("sheet") {
                     d.values.insert("sheet".into(), s.clone());
                 }

@@ -115,11 +115,7 @@ fn formulas_options(app: &mut SheetApp, ui: &mut Ui, lang: Language) {
 
 /// A checkbox on the desktop, a 48 pt switch row on a phone. True when the value changed.
 fn option_check(ui: &mut Ui, value: &mut bool, text: &str) -> bool {
-    if crate::phone::active(ui.ctx()) {
-        toggle_row(ui, Tokens::get(ui.ctx()), value, text).changed()
-    } else {
-        ui.checkbox(value, text).changed()
-    }
+    if crate::phone::active(ui.ctx()) { toggle_row(ui, Tokens::get(ui.ctx()), value, text).changed() } else { ui.checkbox(value, text).changed() }
 }
 
 /// A 48 pt category row with its icon and a chevron (the phone's Options list).

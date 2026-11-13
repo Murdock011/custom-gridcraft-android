@@ -32,7 +32,7 @@ It is a sister project of
 [Custom WordCraft for Android](https://github.com/Murdock011/custom-wordcraft-android), built the
 same way. Changes below the interface are listed in
 [docs/ENGINE-CHANGES.md](docs/ENGINE-CHANGES.md) (none so far). It is currently based on GridCraft
-engine **0.17.0**.
+engine **0.19.1**.
 
 ## Download
 

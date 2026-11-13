@@ -1085,3 +1085,11 @@ commit f90bbd27. Not yet device-checked or merged into `custom-android`.
   is open, like comment popups (fd61d546).
 - Device-checked on the emulator: the "5" in B1 fully visible with the dots outside; U8/copy full size;
   column A header tap beside B1's dot selects column A. Validation popup: kittest only.
+
+## Update 31: engine 0.19.1 merge (2026-11-13)
+- Upstream tag `v0.19.1` merged into the fork branch. Conflicts: `Cargo.toml` (workspace version 0.19.1) and `Cargo.lock` (upstream's, then `cargo update -w` to re-add the android crate).
+- A shallow clone gives a wrong merge base; fetch the full history before merging.
+- Upstream's layering check now needs every workspace crate in `xtask/src/layers.rs`: `android` is registered as an app (L7).
+- `cargo fmt` reformatted `apps/gridcraft-android` to upstream's wider line width.
+- Checks run: clippy `-D warnings` (ui-egui, android, all targets), `cargo test -p gridcraft-engine -p gridcraft-ui-egui -p gridcraft-android` (2 failures, the known glyph tests `column_autocomplete_folds_case_beyond_ascii` and `language_switch_renders_the_ribbon_and_persists`), `xtask layers`, `assets`, `parity --check`, `keytips --check`.
+- Not run: `cargo xtask wasm` (no wasm target here), the Android APK build, any device check.
