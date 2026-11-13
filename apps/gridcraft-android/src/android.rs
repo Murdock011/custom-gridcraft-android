@@ -37,11 +37,7 @@ fn android_main(app: AndroidApp) {
     // A surface that failed to configure can make wgpu panic on the first paint (`get_current_texture_view`).
     // Catch that here (last-resort guard, the release profile unwinds) so the activity survives it.
     let run = std::panic::catch_unwind(std::panic::AssertUnwindSafe(move || {
-        eframe::run_native(
-            "GridCraft",
-            options,
-            Box::new(|cc| Ok(Box::new(crate::app::Shell::new(&cc.egui_ctx)) as Box<dyn eframe::App>)),
-        )
+        eframe::run_native("GridCraft", options, Box::new(|cc| Ok(Box::new(crate::app::Shell::new(&cc.egui_ctx)) as Box<dyn eframe::App>)))
     }));
     match run {
         Ok(Ok(())) => {}
@@ -92,11 +88,7 @@ fn gpu_setup() -> Result<eframe::egui_wgpu::WgpuSetup, String> {
         .cloned()
         .ok_or_else(|| "no Vulkan or OpenGL ES adapter".to_string())?;
     log::info!("GPU adapter: {:?}", adapter.get_info());
-    let base = if adapter.get_info().backend == wgpu::Backend::Gl {
-        wgpu::Limits::downlevel_webgl2_defaults()
-    } else {
-        wgpu::Limits::default()
-    };
+    let base = if adapter.get_info().backend == wgpu::Backend::Gl { wgpu::Limits::downlevel_webgl2_defaults() } else { wgpu::Limits::default() };
     // The limits eframe asks for by default (8192-pixel textures, enough for a 4K screen).
     let descriptor = wgpu::DeviceDescriptor {
         label: Some("gridcraft device"),
