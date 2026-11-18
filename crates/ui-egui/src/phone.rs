@@ -23,6 +23,7 @@ use crate::theme::{self, Tokens};
 use crate::widgets::color_palette;
 
 mod tiles;
+mod tools;
 
 /// Windows narrower than this (points) get the phone layout. A phone held upright is about 390 pt.
 pub const MAX_WIDTH: f32 = 600.0;
@@ -68,9 +69,10 @@ const TABS: [(&str, Icon); 7] = [
     ("Review", Icon::Spell),
 ];
 const BAR_TABS: usize = 4;
-/// Menu states past the command tabs: the More list and the Sheets sheet.
+/// Menu states past the command tabs: the More list, the Sheets sheet and All tools.
 const MORE: usize = TABS.len();
 const SHEETS: usize = TABS.len() + 1;
+const TOOLS: usize = TABS.len() + 2;
 
 /// The app bar's height for this window: shorter in a short window, so the grid keeps its room.
 fn app_bar_h(ctx: &Context) -> f32 {
@@ -218,6 +220,7 @@ fn set_row_actions(ctx: &Context, sheet: Option<usize>) {
 /// Closes the open sheet, with its palette and row actions.
 fn close_all(ctx: &Context) {
     set_menu(ctx, None);
+    tools::clear(ctx);
     set_palette(ctx, None);
     crate::widgets::close_more_colors(ctx);
     set_row_actions(ctx, None);
@@ -294,6 +297,8 @@ pub fn can_go_back(ctx: &Context) -> bool {
 pub fn back_step(ctx: &Context) {
     if bar_open(ctx) {
         set_bar_open(ctx, false);
+    } else if menu_tab(ctx) == Some(TOOLS) {
+        tools::back(ctx);
     } else if row_actions(ctx).is_some() {
         set_row_actions(ctx, None);
     } else if open_palette(ctx).is_some() {
@@ -310,6 +315,12 @@ pub fn open_by_name(ctx: &Context, which: &str) {
         set_menu(ctx, Some(SHEETS));
     } else if which == "more" {
         set_menu(ctx, Some(MORE));
+    } else if which == "tools" {
+        tools::open(ctx, tools::Tool::Tabs);
+    } else if let Some(q) = which.strip_prefix("search:") {
+        tools::open(ctx, tools::Tool::Search(q.to_string()));
+    } else if let Some(tab) = which.strip_prefix("tools:").and_then(|n| tools::TABS.iter().find(|t| **t == n)) {
+        tools::open(ctx, tools::Tool::Tab(tab));
     } else if let Some(n) = which.strip_prefix("actions:").and_then(|n| n.parse().ok()) {
         set_menu(ctx, Some(SHEETS));
         set_row_actions(ctx, Some(n));
@@ -597,6 +608,7 @@ pub fn bottom_bar(app: &mut SheetApp, ui: &mut Ui) {
     match menu_tab(&ctx) {
         Some(SHEETS) => sheets_sheet(app, ui),
         Some(MORE) => more_sheet(app, ui),
+        Some(TOOLS) => tools_sheet(app, ui),
         Some(tab) => tab_sheet(app, ui, tab),
         None => {}
     }
@@ -606,7 +618,7 @@ pub fn bottom_bar(app: &mut SheetApp, ui: &mut Ui) {
 fn on_slot(open: Option<usize>) -> Option<usize> {
     match open {
         Some(t) if t < BAR_TABS => Some(t),
-        Some(t) if t <= MORE => Some(MORE),
+        Some(t) if t <= MORE || t == TOOLS => Some(MORE),
         _ => None,
     }
 }
@@ -627,6 +639,8 @@ fn tab_bar(app: &mut SheetApp, ui: &mut Ui) {
     let lang = app.ui.language;
     let open = menu_tab(&ctx);
     let on = on_slot(open);
+    // A dot on More while a contextual tab (a table, a chart) applies: its commands are in More.
+    let contextual = !tools::contextual_now(app).is_empty();
     let panel = Panel::bottom("phone_tab_bar").exact_size(TAB_BAR_H).frame(Frame::NONE.fill(t.window)).show(ui, |ui| {
         let bar = ui.max_rect();
         ui.painter().hline(bar.x_range(), bar.top(), Stroke::new(1.0, t.separator));
@@ -653,6 +667,9 @@ fn tab_bar(app: &mut SheetApp, ui: &mut Ui) {
             }
             let ink = if is_on { t.accent } else { t.text };
             icons::paint(painter, Rect::from_center_size(indicator.center(), vec2(24.0, 24.0)), icon, ink);
+            if slot == MORE && contextual {
+                painter.circle_filled(Pos2::new(indicator.center().x + 13.0, indicator.top() + 6.0), 4.0, t.accent);
+            }
             let font = if is_on { theme::ui_bold(12.0) } else { theme::ui_font(12.0) };
             painter.text(
                 Pos2::new(cell.center().x, bar.top() + 50.0),
@@ -828,9 +845,12 @@ fn sheet_panel(app: &mut SheetApp, ui: &mut Ui, title: &str, back: Option<fn(&Co
     let t = Tokens::get(&ctx);
     let lang = app.ui.language;
     let picker = picker_open(&ctx);
+    // All tools has long lists: it takes the picker's height.
+    let tall = picker || menu_tab(&ctx) == Some(TOOLS);
     // The open sub-page is part of the scroll state's id: opening or switching one starts the body at the top.
     let page = open_palette(&ctx).map(|p| p as u8 + 1).unwrap_or(0);
-    let height = sheet_height(&ctx, picker);
+    let height = sheet_height(&ctx, tall);
+    let tools_depth = tools::stack(&ctx).len();
     let panel = Panel::bottom("phone_sheet")
         .exact_size(height)
         .frame(Frame::NONE.fill(t.window).inner_margin(Margin::symmetric(GUTTER as i8, 0)))
@@ -856,7 +876,7 @@ fn sheet_panel(app: &mut SheetApp, ui: &mut Ui, title: &str, back: Option<fn(&Co
                 }
             });
             // The picker and an opened sub-page are pages of their own: a fresh scroll state, so they open at the top.
-            egui::ScrollArea::vertical().id_salt(("phone_sheet_body", picker, page)).show(ui, |ui| {
+            egui::ScrollArea::vertical().id_salt(("phone_sheet_body", picker, page, tools_depth)).show(ui, |ui| {
                 body(app, ui);
                 follow_focus(ui);
             });
@@ -978,19 +998,49 @@ fn choice_row(ui: &mut Ui, t: Tokens, label: &str, on: bool) -> Response {
     resp
 }
 
-/// The More sheet: the command tabs that do not fit on the bar.
+/// The More sheet: Search, the contextual tabs that apply now (under "Selection"), the tabs without a
+/// slot in the tab bar, then All tools.
 fn more_sheet(app: &mut SheetApp, ui: &mut Ui) {
     let title = app.ui.language.tr("More");
     sheet_panel(app, ui, title, None, |app, ui| {
         let ctx = ui.ctx().clone();
         let t = Tokens::get(&ctx);
         let lang = app.ui.language;
+        if list_row(ui, t, lang.tr("Search"), Icon::Search, true).clicked() {
+            tools::open(&ctx, tools::Tool::Search(String::new()));
+        }
+        let contextual = tools::contextual_now(app);
+        if !contextual.is_empty() {
+            tiles::heading(ui, t, lang.tr("Selection"));
+            for tab in contextual {
+                if list_row(ui, t, lang.tr(tools::tab_label(tab)), Icon::Table, true).clicked() {
+                    tools::open(&ctx, tools::Tool::Tab(tab));
+                }
+            }
+        }
+        tiles::heading(ui, t, lang.tr("More tabs"));
         for (i, (label, icon)) in TABS.iter().enumerate().skip(BAR_TABS) {
             if list_row(ui, t, lang.tr(label), *icon, true).clicked() {
                 set_menu(&ctx, Some(i));
             }
         }
+        let (r, _) = ui.allocate_exact_size(vec2(ui.available_width(), 9.0), Sense::hover());
+        ui.painter().hline(r.x_range(), r.center().y, Stroke::new(1.0, t.separator));
+        if list_row(ui, t, lang.tr("All tools"), Icon::SheetList, true).clicked() {
+            tools::open(&ctx, tools::Tool::Tabs);
+        }
     });
+}
+
+/// All tools, in the sheet frame: the top screen's title, a back arrow and Close.
+fn tools_sheet(app: &mut SheetApp, ui: &mut Ui) {
+    let ctx = ui.ctx().clone();
+    let Some(top) = tools::stack(&ctx).last().cloned() else {
+        set_menu(&ctx, Some(MORE));
+        return more_sheet(app, ui);
+    };
+    let title = app.ui.language.tr(&tools::title(&top)).to_string();
+    sheet_panel(app, ui, &title, Some(tools::back), tools::body);
 }
 
 /// The Sheets sheet: one row per visible sheet (tap to switch, ⋯ for its actions), then New sheet.

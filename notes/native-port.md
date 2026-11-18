@@ -1143,3 +1143,31 @@ The first step of the shared phone plan for WordCraft, GridCraft and DeckCraft.
   `ATTRIBUTION.md` rows, as before), and snapshot renders of every sheet at 412x915 and 360x800.
   Not run on a device or emulator.
 
+## Update 33: the shared phone shell, step 3 (All tools and More)
+
+- `phone/tools.rs`, ported from DeckCraft's `phone_tools`: every action command of the engine
+  (`command_specs`, queries left out) by ribbon tab, grouped by ribbon group, with the count on
+  each tab. A command with no tab is listed under Other Commands. Search matches the label (also
+  translated) or the id. A disabled command shows the engine's reason under its label.
+- A command runs as the ribbon runs it. One that needs values opens, in order: its dialog (by its
+  own name, or the ribbon's: `insertLink`, `dataValidation`, `find` for Replace, `cfQuick` for
+  Conditional Formatting, `sparkline`); a picker when it needs one value from a list (spelled out
+  in its params doc, or the sheets' font, size, number format and zoom lists); else it runs; and
+  only if that fails, a form with a label above each field and one button named after the
+  command. The params docs are read by a small parser in the UI crate (the engine has none).
+- The tile sheets use the same path: a tile whose command needs values (Orientation, Row Height,
+  Sort…) opens its dialog or a picker, and Back returns to the sheet. Before, such a tile ran the
+  command with no values.
+- More: Search, the contextual tabs that apply now under Selection (Table Design and Chart Design
+  from the ribbon's own check; the PivotTable tabs while the sheet has a PivotTable), the tabs
+  without a slot (View, Page Layout, Review), then All tools. A dot on More shows while a
+  contextual tab applies. All tools uses the sheet frame at the colour picker's height; Back steps
+  out one screen at a time and from the list of tabs returns to More.
+- Tests: every action command is in exactly one tab; the params parser, picker lists, value
+  parsing and readable words; every tile that needs values opens a dialog or the tools without an
+  error; All tools lists a tab's commands from the engine; Search runs Bold and Freeze Panes; a
+  picker's Back returns to its sheet; Back walks tab → tabs → More → closed; a table adds Table
+  Design under Selection.
+- Checked: CI gate (all but the two `interaction` font tests, as before), layers, wasm, doctests,
+  and renders of More, All tools, a tab, Search and the dot. Not run on a device or emulator.
+

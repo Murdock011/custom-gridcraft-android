@@ -50,7 +50,8 @@ far. When a release is made it will be on the
   and Save, and a fixed tab bar at the bottom (the sheet button, Home, Insert, Formulas, Data,
   More) whose tabs open bottom sheets of touch-sized tiles above it, grouped in sections (Home has
   font, size, alignment, number, clipboard, cells, styles and editing). Tapping the open tab again
-  closes its sheet; View, Page Layout and Review are in More. Back closes an open sheet. The layout follows the
+  closes its sheet; View, Page Layout and Review are in More. More also has Search and All tools:
+  every command of the engine by ribbon tab, so nothing on the desktop ribbon is out of reach. Back closes an open sheet. The layout follows the
   shared phone plan for the Craft apps; more of it is still to come.
 - Saving through the Android system save dialog (Save As), and saving back to a workbook opened
   from the file picker. The unsaved-changes dot clears after a successful save.

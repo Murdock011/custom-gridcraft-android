@@ -323,6 +323,14 @@ pub(super) fn body(app: &mut SheetApp, ui: &mut Ui, tab: usize) {
 pub(super) fn tap(app: &mut SheetApp, ctx: &Context, item: &Item) {
     match item.act {
         Act::Page(p) => set_palette(ctx, Some(p)),
+        // A command that needs values: a picker, its dialog, or a form, as All tools does; Back
+        // returns to this tab.
+        Act::Run(id) if cmd::find_command(id).is_some_and(|s| !super::tools::required(s.params).is_empty()) => {
+            if let Some(spec) = cmd::find_command(id) {
+                let tab = super::menu_tab(ctx);
+                super::tools::start(app, ctx, spec, tab);
+            }
+        }
         other => {
             run_act(app, ctx, other);
             if !item.keep {
@@ -442,6 +450,62 @@ mod tests {
                     if std::env::var_os("PRINT_PHONE_LABELS").is_some() {
                         println!("{tab}\t{}\t{}\t{}", section.heading, item.cmd, label(item));
                     }
+                }
+            }
+        }
+    }
+
+    /// Every tile whose command needs values opens its dialog, or a picker or form in the tools, and
+    /// never ends in an error message.
+    #[test]
+    fn every_tile_that_needs_values_opens_a_dialog_or_a_picker() {
+        use egui_kittest::kittest::Queryable;
+        for (tab, (tab_name, _)) in super::super::TABS.iter().enumerate() {
+            for section in sections(tab) {
+                for item in section.items {
+                    let Act::Run(id) = item.act else { continue };
+                    let Some(spec) = cmd::find_command(id) else { continue };
+                    if super::super::tools::required(spec.params).is_empty() {
+                        continue;
+                    }
+                    let mut s = gridcraft_engine::Session::new();
+                    s.new_workbook();
+                    let mut h = egui_kittest::Harness::builder().with_size(egui::vec2(412.0, 915.0)).build_ui_state(
+                        |ui, app: &mut SheetApp| {
+                            let ctx = ui.ctx().clone();
+                            app.logic(&ctx);
+                            app.ui(ui);
+                        },
+                        SheetApp::new(s, Default::default()),
+                    );
+                    h.run_steps(4);
+                    super::super::open_by_name(&h.ctx, tab_name);
+                    h.run_steps(4);
+                    if !enabled(h.state(), item) {
+                        continue;
+                    }
+                    // A tile low in the sheet is scrolled into view first, as a finger would.
+                    let tab_bar_top = h.ctx.content_rect().bottom() - super::super::TAB_BAR_H;
+                    for _ in 0..40 {
+                        if h.get_by_label(label(item)).rect().bottom() <= tab_bar_top {
+                            break;
+                        }
+                        h.input_mut().events.push(egui::Event::PointerMoved(egui::pos2(206.0, tab_bar_top - 40.0)));
+                        h.input_mut().events.push(egui::Event::MouseWheel {
+                            unit: egui::MouseWheelUnit::Point,
+                            delta: egui::vec2(0.0, -60.0),
+                            phase: egui::TouchPhase::Move,
+                            modifiers: egui::Modifiers::NONE,
+                            source: egui::MouseWheelSource::Unknown,
+                        });
+                        h.run_steps(2);
+                    }
+                    h.get_by_label(label(item)).click();
+                    h.run_steps(4);
+                    let app = h.state();
+                    assert!(app.message.is_none(), "{id} ended in an error: {:?}", app.message);
+                    let in_tools = super::super::menu_tab(&h.ctx) == Some(super::super::TOOLS);
+                    assert!(app.dialog.is_some() || in_tools, "{id} opened neither a dialog nor the tools");
                 }
             }
         }

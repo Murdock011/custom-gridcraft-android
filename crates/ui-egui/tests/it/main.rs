@@ -93,6 +93,7 @@ mod phone_filter_comment;
 mod phone_object_drag;
 mod phone_pinch;
 mod phone_sheets;
+mod phone_tools;
 mod phone_touch;
 mod phone_touch_targets;
 mod phone_workbooks;
