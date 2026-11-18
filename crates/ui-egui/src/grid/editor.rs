@@ -49,7 +49,11 @@ pub(super) fn in_cell_editor(app: &mut SheetApp, ui: &mut egui::Ui, geo: &Geo, s
     };
     // Grows to the left on a right-to-left sheet.
     let erect = geo.mirror_rect(Rect::from_min_size(rect.min, vec2(w, h)));
+    let t = Tokens::get(ui.ctx());
     let fill = match st.fill.pattern {
+        // The dark grid (a phone in dark theme) edits on the grid's own dark: the typed text is
+        // drawn in the grid's light automatic colour.
+        _ if t.dark_grid => t.cell_bg,
         PatternType::Solid => st.fill.fg.resolve(&wb.theme).map(theme::color32).unwrap_or(Color32::WHITE),
         _ => Color32::WHITE,
     };

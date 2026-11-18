@@ -1224,3 +1224,22 @@ Every dialog was drawn at 360 x 800 (82 names) and checked by eye and by a new t
 - Checked: CI gate (all but the two `interaction` font tests, as before) and renders of the changed
   dialogs. Not run on a device.
 
+## Update 36: the shared phone shell, step 6 (theme and the dark grid)
+
+- Options › General on a phone starts with Theme: Light (the default), Dark (the whole app, the
+  grid included) and System (follows the phone), as radio rows with a line under each. It runs
+  the existing `view.theme` command, whose default was already Light; System already follows the
+  phone's night mode, which the Android host passes in.
+- Dark theme on a phone darkens the grid too (it stayed white): new tokens `cell_bg` (the grid's
+  own background), `grid_text` (typed text in the cell editor) and `dark_grid`, set by
+  `Tokens::get` when the theme is dark and the phone layout is on. Paper keeps `grid_bg` and
+  `cell_text` (white and black): the print preview, page view, charts and galleries.
+- Cell fills and chosen font colours are kept. Text with less than 4.5:1 contrast on its
+  background (the dark grid or its fill) is blended toward white on screen only, so automatic
+  black text turns light and a dark blue title stays readable; black text on a light fill is
+  kept. The cell editor edits on the dark grid colour.
+- The desktop is unchanged in both themes.
+- Tests: the contrast step (black turns light, a readable colour is kept, text on a light fill is
+  kept); the dark grid on a phone but not the desktop, with paper still white; the Options page
+  offers Light, Dark and System with Light chosen first.
+

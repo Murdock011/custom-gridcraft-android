@@ -1,7 +1,7 @@
 use super::active_row::paint_active_row;
 use super::cell_paint::{
-    Look, MergedArea, cell_text_y, center_across_end, col32, display_text, galley_baseline_bounds, look, merged_edges, paint_border, paint_cf_icon,
-    painted_halign, rotated_text_pos, shrink_font, wrapped_cell_text_y,
+    Look, MergedArea, cell_text_y, center_across_end, col32, display_text, galley_baseline_bounds, look, merged_edges, on_dark_grid, paint_border,
+    paint_cf_icon, painted_halign, rotated_text_pos, shrink_font, wrapped_cell_text_y,
 };
 use super::geo::Geo;
 use super::tables::{filter_button_rect, paint_filter_button};
@@ -195,10 +195,11 @@ fn paint_backgrounds(q: &mut QuadrantPaint<'_>, cells: &[CellRef], merges: &[Ran
             None => (geo.cell_rect(sh, c), c),
         };
         let (lk, cfl) = look(wb, si, sh, anchor, cf);
+        let lk = on_dark_grid(lk, q.tokens);
         if let Some(f) = lk.fill {
             p.rect_filled(rect.expand(0.0), 0.0, f);
         } else if in_merge(c).is_some() {
-            p.rect_filled(rect.shrink(0.5), 0.0, Color32::WHITE);
+            p.rect_filled(rect.shrink(0.5), 0.0, q.tokens.cell_bg);
         }
         looks.push((anchor, rect, lk, cfl));
     }
@@ -224,7 +225,7 @@ fn outside_text_cells(q: &mut QuadrantPaint<'_>, merges: &[RangeRef]) -> Vec<(Ce
         for n in [left, right].into_iter().flatten() {
             if geo.same_col_pane(n.col, c0) && sh.col_width(n.col) > 0.0 && in_merge(n).is_none() {
                 let (lk, cfl) = look(wb, si, sh, n, cf);
-                outside.push((n, geo.cell_rect(sh, n), lk, cfl));
+                outside.push((n, geo.cell_rect(sh, n), on_dark_grid(lk, q.tokens), cfl));
             }
         }
     }
@@ -484,11 +485,11 @@ fn paint_cell(q: &QuadrantPaint<'_>, painted: &(CellRef, Rect, Look, Option<CfLo
             let extra_l = Rect::from_min_max(inner.min, pos2(rect.left() + 1.0, inner.bottom()));
             let extra_r = Rect::from_min_max(pos2(rect.right() - 1.0, inner.top()), inner.max);
             if extra_l.width() > 0.0 {
-                p.rect_filled(extra_l, 0.0, t.grid_bg);
+                p.rect_filled(extra_l, 0.0, t.cell_bg);
                 paint_active_row(q, Some(extra_l));
             }
             if extra_r.width() > 0.0 {
-                p.rect_filled(extra_r, 0.0, t.grid_bg);
+                p.rect_filled(extra_r, 0.0, t.cell_bg);
                 paint_active_row(q, Some(extra_r));
             }
         }

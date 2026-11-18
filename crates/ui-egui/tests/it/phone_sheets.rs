@@ -156,3 +156,34 @@ fn every_tile_is_a_touch_target_on_a_narrow_phone() {
         assert!(r.width() >= 48.0 && r.height() >= 48.0, "{label} is {} x {} pt", r.width(), r.height());
     }
 }
+
+#[test]
+fn dark_theme_darkens_the_grid_on_a_phone_but_not_on_the_desktop() {
+    let mut h = harness();
+    h.state_mut().run_or_alert("view.theme", serde_json::json!({"mode": "dark"}));
+    h.run_steps(4);
+    let t = gridcraft_ui_egui::theme::Tokens::get(&h.ctx);
+    assert!(t.dark_grid && t.cell_bg != egui::Color32::WHITE, "a phone in dark theme has a dark grid");
+    assert_eq!(t.grid_bg, egui::Color32::WHITE, "paper (print preview, page view) stays white");
+    h.set_size(egui::vec2(1200.0, 800.0));
+    h.run_steps(4);
+    let t = gridcraft_ui_egui::theme::Tokens::get(&h.ctx);
+    assert!(!t.dark_grid && t.cell_bg == egui::Color32::WHITE, "the desktop keeps its white grid");
+}
+
+#[test]
+fn the_phone_options_page_offers_light_dark_and_system_with_light_first_chosen() {
+    let mut h = harness();
+    h.state_mut().open_dialog("backstage", json!({"page": "options"}));
+    h.run_steps(4);
+    h.get_by_label("General").click();
+    h.run_steps(4);
+    assert_eq!(h.state().ui.theme_mode(), "light", "Light is the default");
+    assert_eq!(h.get_by_label("Light").accesskit_node().toggled(), Some(egui::accesskit::Toggled::True));
+    h.get_by_label("System").click();
+    h.run_steps(4);
+    assert_eq!(h.state().ui.theme_mode(), "system", "System is chosen");
+    h.get_by_label("Dark").click();
+    h.run_steps(4);
+    assert_eq!(h.state().ui.theme_mode(), "dark", "Dark is chosen");
+}

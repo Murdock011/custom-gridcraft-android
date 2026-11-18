@@ -252,7 +252,7 @@ pub fn show(app: &mut SheetApp, ui: &mut egui::Ui) {
     let outline = selection_outline(app, ui, &geo, sh, &sel, place, now);
     app.grid.geo = Some(geo.clone());
     let painter = ui.painter_at(rect);
-    painter.rect_filled(rect, 0.0, t.grid_bg);
+    painter.rect_filled(rect, 0.0, t.cell_bg);
     // Everything up to the headers is painted in logical (left-to-right) coordinates.
     let mirror_from = painter.add(egui::Shape::Noop);
     // A rule over a whole column scans it for its statistics: done once per change of the sheet,

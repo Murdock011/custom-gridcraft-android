@@ -141,36 +141,71 @@ fn category_row(ui: &mut Ui, t: Tokens, label: &str, icon: Icon) -> egui::Respon
     resp
 }
 
+/// The phone's Theme setting (the shared shell): Light (the default), Dark (the whole app, the grid
+/// included) and System (follows the phone), as rows with a radio mark and a line under each.
+fn theme_rows(app: &mut SheetApp, ui: &mut Ui, lang: Language) {
+    let t = Tokens::get(ui.ctx());
+    ui.label(egui::RichText::new(lang.tr("Theme")).font(theme::ui_bold(13.0)).color(t.accent));
+    ui.add_space(4.0);
+    let mode = app.ui.theme_mode();
+    for (value, title, line) in [
+        ("light", "Light", "The default"),
+        ("dark", "Dark", "The whole app, the grid included"),
+        ("system", "System", "Follows the phone's dark theme setting"),
+    ] {
+        let on = mode == value;
+        let (r, resp) = ui.allocate_exact_size(vec2(ui.available_width(), 56.0), Sense::click());
+        if resp.is_pointer_button_down_on() {
+            ui.painter().rect_filled(r, 0.0, t.pressed);
+        }
+        let c = pos2(r.left() + 14.0, r.center().y);
+        let ring = if on { t.accent } else { t.text_dim };
+        ui.painter().circle_stroke(c, 10.0, Stroke::new(2.0, ring));
+        if on {
+            ui.painter().circle_filled(c, 5.5, t.accent);
+        }
+        ui.painter().text(pos2(r.left() + 40.0, r.center().y - 9.0), Align2::LEFT_CENTER, lang.tr(title), theme::ui_font(16.0), t.text);
+        ui.painter().text(pos2(r.left() + 40.0, r.center().y + 12.0), Align2::LEFT_CENTER, lang.tr(line), theme::ui_font(12.0), t.text_dim);
+        resp.widget_info(|| egui::WidgetInfo::selected(egui::Role::RadioButton, true, on, lang.tr(title)));
+        if resp.clicked() && !on {
+            app.run_or_alert("view.theme", json!({"mode": value}));
+        }
+    }
+    ui.add_space(12.0);
+}
+
 /// The display theme and interface language controls of the General section.
 fn general_options(app: &mut SheetApp, ui: &mut Ui, lang: Language) {
     // A phone stacks each label above its full-width combo box (one column), as before the merge.
     let phone = crate::phone::active(ui.ctx());
     let columns = if phone { 1 } else { 2 };
     let width = if phone { ui.available_width() } else { 160.0 };
+    if phone {
+        theme_rows(app, ui, lang);
+    }
     egui::Grid::new("backstage_options_general").num_columns(columns).spacing(vec2(18.0, 10.0)).show(ui, |ui| {
-        let label = ui.label(lang.tr("Display theme"));
-        if phone {
+        if !phone {
+            let label = ui.label(lang.tr("Display theme"));
+            let mode = app.ui.theme_mode();
+            let current = match mode {
+                "system" => "System",
+                "dark" => "Dark",
+                _ => "Light",
+            };
+            craft_ui::ComboBox::from_id_salt("backstage_theme")
+                .width(width)
+                .selected_text(lang.tr(current))
+                .show_ui(ui, |ui| {
+                    for (value, label) in [("system", "System"), ("light", "Light"), ("dark", "Dark")] {
+                        if ui.selectable_label(mode == value, lang.tr(label)).clicked() {
+                            app.run_or_alert("view.theme", json!({"mode": value}));
+                        }
+                    }
+                })
+                .response
+                .labelled_by(label.id);
             ui.end_row();
         }
-        let mode = app.ui.theme_mode();
-        let current = match mode {
-            "system" => "System",
-            "dark" => "Dark",
-            _ => "Light",
-        };
-        craft_ui::ComboBox::from_id_salt("backstage_theme")
-            .width(width)
-            .selected_text(lang.tr(current))
-            .show_ui(ui, |ui| {
-                for (value, label) in [("system", "System"), ("light", "Light"), ("dark", "Dark")] {
-                    if ui.selectable_label(mode == value, lang.tr(label)).clicked() {
-                        app.run_or_alert("view.theme", json!({"mode": value}));
-                    }
-                }
-            })
-            .response
-            .labelled_by(label.id);
-        ui.end_row();
         let label = ui.label(lang.tr("Interface language"));
         if phone {
             ui.end_row();
