@@ -22,6 +22,8 @@ use crate::tabs;
 use crate::theme::{self, Tokens};
 use crate::widgets::color_palette;
 
+mod tiles;
+
 /// Windows narrower than this (points) get the phone layout. A phone held upright is about 390 pt.
 pub const MAX_WIDTH: f32 = 600.0;
 
@@ -56,8 +58,15 @@ const SHEET_BTN_ICON_W: f32 = 56.0;
 
 /// The command tabs, with their icons. Each opens a bottom sheet of its rows. The first
 /// [`BAR_TABS`] have a slot in the tab bar; the rest are rows in the More sheet.
-const TABS: [(&str, Icon); 5] =
-    [("Home", Icon::Home), ("Insert", Icon::Insert), ("Formulas", Icon::Fx), ("Data", Icon::SortFilter), ("View", Icon::Gridlines)];
+const TABS: [(&str, Icon); 7] = [
+    ("Home", Icon::Home),
+    ("Insert", Icon::Insert),
+    ("Formulas", Icon::Fx),
+    ("Data", Icon::SortFilter),
+    ("View", Icon::Gridlines),
+    ("Page Layout", Icon::PageLayout),
+    ("Review", Icon::Spell),
+];
 const BAR_TABS: usize = 4;
 /// Menu states past the command tabs: the More list and the Sheets sheet.
 const MORE: usize = TABS.len();
@@ -81,11 +90,40 @@ pub fn bar_height(ctx: &Context, desktop: f32) -> f32 {
     if active(ctx) { desktop.max(BAR_MIN_H) } else { desktop }
 }
 
-/// Which colour palette a sheet row opens inline.
-#[derive(Clone, Copy, PartialEq, Eq)]
-enum Palette {
+/// A sub-page of a tab's sheet: it replaces the sheet's body, with a back arrow to return.
+#[derive(Clone, Copy, PartialEq, Eq, Debug)]
+enum SubPage {
+    /// The fill colour grid.
     Fill,
+    /// The font colour grid.
     Font,
+    /// The border presets.
+    Borders,
+    /// The number formats.
+    NumberFormat,
+    /// The font names.
+    FontName,
+    /// The font sizes.
+    FontSize,
+}
+
+impl SubPage {
+    /// Whether the page is a colour grid (it can show More Colors…).
+    fn is_colour(self) -> bool {
+        matches!(self, SubPage::Fill | SubPage::Font)
+    }
+
+    /// The page's title, before translation.
+    fn title(self) -> &'static str {
+        match self {
+            SubPage::Fill => "Fill Color",
+            SubPage::Font => "Font Color",
+            SubPage::Borders => "Borders",
+            SubPage::NumberFormat => "Number Format",
+            SubPage::FontName => "Font",
+            SubPage::FontSize => "Font Size",
+        }
+    }
 }
 
 /// What a sheet row does.
@@ -97,55 +135,12 @@ enum Act {
     Copy(&'static str),
     /// A dialog, with its page named by the optional tab.
     Dialog(&'static str, Option<&'static str>),
-    /// The colour palette, shown inline in the sheet until a colour is picked.
-    Colour(Palette),
+    /// A sub-page of the sheet (colours, borders, number formats, fonts, sizes).
+    Page(SubPage),
     /// Zoom in or out by this many percent.
     Zoom(i32),
     /// Insert > Comment: the comment dialog (with its text field), not the command with no text.
     Comment,
-}
-
-/// The rows of a tab: label, icon, action.
-fn rows(tab: usize) -> &'static [(&'static str, Icon, Act)] {
-    match tab {
-        0 => &[
-            ("Bold", Icon::Bold, Act::Run("home.bold")),
-            ("Italic", Icon::Italic, Act::Run("home.italic")),
-            ("Underline", Icon::Underline, Act::Run("home.underline")),
-            ("Fill Colour", Icon::Fill, Act::Colour(Palette::Fill)),
-            ("Font Colour", Icon::FontColor, Act::Colour(Palette::Font)),
-            ("Align Left", Icon::AlignLeft, Act::Run("home.alignLeft")),
-            ("Center", Icon::AlignCenter, Act::Run("home.alignCenter")),
-            ("Align Right", Icon::AlignRight, Act::Run("home.alignRight")),
-            ("Number Format", Icon::Currency, Act::Dialog("formatCells", Some("Number"))),
-            ("Cut", Icon::Cut, Act::Copy("edit.cut")),
-            ("Copy", Icon::Copy, Act::Copy("edit.copy")),
-            ("Paste", Icon::Paste, Act::Run("edit.paste")),
-            ("Insert Row", Icon::Insert, Act::Run("home.insertRows")),
-            ("Insert Column", Icon::Insert, Act::Run("home.insertColumns")),
-            ("Delete Row", Icon::Delete, Act::Run("home.deleteRows")),
-            ("Delete Column", Icon::Delete, Act::Run("home.deleteColumns")),
-        ],
-        1 => &[
-            ("Chart", Icon::Chart, Act::Run("insert.chart")),
-            ("Picture", Icon::Picture, Act::Run("insert.picture")),
-            ("Function", Icon::Fx, Act::Dialog("insertFunction", None)),
-            ("Comment", Icon::Comment, Act::Comment),
-        ],
-        2 => &[("AutoSum", Icon::Sum, Act::Run("formulas.autoSum")), ("Insert Function", Icon::Fx, Act::Dialog("insertFunction", None))],
-        3 => &[
-            ("Sort A to Z", Icon::SortAsc, Act::Run("data.sortAscending")),
-            ("Sort Z to A", Icon::SortDesc, Act::Run("data.sortDescending")),
-            ("Filter", Icon::Filter, Act::Run("data.filter")),
-        ],
-        4 => &[
-            ("Freeze Panes", Icon::Freeze, Act::Run("view.freezePanes")),
-            ("Gridlines", Icon::Gridlines, Act::Run("view.gridlines")),
-            ("Zoom In", Icon::Plus, Act::Zoom(10)),
-            ("Zoom Out", Icon::Minus, Act::Zoom(-10)),
-        ],
-        _ => &[],
-    }
 }
 
 /// The open sheet (a tab, More or Sheets), or `None` while no sheet is open. Kept in egui's memory,
@@ -162,36 +157,42 @@ fn set_menu(ctx: &Context, tab: Option<usize>) {
     ctx.data_mut(|d| d.insert_temp(sheet_id(), tab));
 }
 
-/// The colour palette open in the sheet, if any.
+/// The sub-page open in the sheet, if any.
 fn palette_id() -> egui::Id {
     egui::Id::unique("phone_sheet_palette")
 }
 
-fn open_palette(ctx: &Context) -> Option<Palette> {
-    ctx.data(|d| d.get_temp::<Option<Palette>>(palette_id())).flatten()
+fn open_palette(ctx: &Context) -> Option<SubPage> {
+    ctx.data(|d| d.get_temp::<Option<SubPage>>(palette_id())).flatten()
 }
 
 /// Sets the open palette. Any change of palette (or none) also closes its More Colors… picker.
-fn set_palette(ctx: &Context, p: Option<Palette>) {
+fn set_palette(ctx: &Context, p: Option<SubPage>) {
     crate::widgets::close_more_colors(ctx);
     ctx.data_mut(|d| d.insert_temp(palette_id(), p));
 }
 
-/// Whether the open palette shows More Colors…, whose picker is then the sheet's whole page.
+/// Whether the open colour page shows More Colors…, whose picker is then the sheet's whole page.
 fn picker_open(ctx: &Context) -> bool {
-    open_palette(ctx).is_some() && crate::widgets::more_colors_open(ctx)
+    open_palette(ctx).is_some_and(SubPage::is_colour) && crate::widgets::more_colors_open(ctx)
 }
 
 /// The room kept above the sheet for the formula bar and a little of the grid.
 const ABOVE_SHEET: f32 = 2.0 * TOUCH;
 
-/// The sheet's height on a phone screen: 55% of the screen height (260 to 520 pt, at most 85%), or
-/// 85% while the More Colors… picker is open, so the picker fits without scrolling. Never more than
-/// the room between the app bar and the tab bar, less [`ABOVE_SHEET`]: a phone held sideways keeps
-/// its formula bar and the sheet's header in view.
+/// The share of the window a sheet takes at most (the shared shell's `SHEET_MAX`), and in a window
+/// under [`SHORT_WINDOW`] tall.
+const SHEET_MAX: f32 = 0.50;
+const SHEET_MAX_SHORT: f32 = 0.60;
+
+/// The sheet's height on a phone screen: [`SHEET_MAX`] of the window, or 85% while the More Colors…
+/// picker is open, so the picker fits without scrolling. Never more than the room between the app
+/// bar and the tab bar, less [`ABOVE_SHEET`]: a phone held sideways keeps its formula bar and the
+/// sheet's header in view.
 pub(crate) fn sheet_height(ctx: &Context, picker: bool) -> f32 {
     let screen_h = ctx.content_rect().height();
-    let wanted = if picker { screen_h * 0.85 } else { (screen_h * 0.55).clamp(260.0, 520.0).min(screen_h * 0.85) };
+    let share = if screen_h < SHORT_WINDOW { SHEET_MAX_SHORT } else { SHEET_MAX };
+    let wanted = screen_h * if picker { 0.85 } else { share };
     let room = screen_h - app_bar_h(ctx) - TAB_BAR_H - ABOVE_SHEET;
     wanted.min(room).max(SHEET_HEADER_H + TOUCH)
 }
@@ -203,6 +204,11 @@ fn actions_id() -> egui::Id {
 
 fn row_actions(ctx: &Context) -> Option<usize> {
     ctx.data(|d| d.get_temp::<Option<usize>>(actions_id())).flatten()
+}
+
+/// Back from a sheet's row actions to the list of sheets.
+fn close_row_actions(ctx: &Context) {
+    set_row_actions(ctx, None);
 }
 
 fn set_row_actions(ctx: &Context, sheet: Option<usize>) {
@@ -815,18 +821,15 @@ fn paint_truncated(painter: &Painter, left: f32, y: f32, max_w: f32, text: &str,
     painter.galley(pos, galley, color);
 }
 
-/// The bottom sheet's frame: a handle, a title row with Close, then the body in a scroll area.
-fn sheet_panel(app: &mut SheetApp, ui: &mut Ui, title: &str, body: impl FnOnce(&mut SheetApp, &mut Ui)) {
+/// The bottom sheet's frame: the header (a back arrow when `back` is given, the title, Close), then
+/// the body in a scroll area.
+fn sheet_panel(app: &mut SheetApp, ui: &mut Ui, title: &str, back: Option<fn(&Context)>, body: impl FnOnce(&mut SheetApp, &mut Ui)) {
     let ctx = ui.ctx().clone();
     let t = Tokens::get(&ctx);
     let lang = app.ui.language;
     let picker = picker_open(&ctx);
-    // The open palette is part of the scroll state's id: opening or switching one starts the body at the top.
-    let palette = match open_palette(&ctx) {
-        None => 0u8,
-        Some(Palette::Fill) => 1,
-        Some(Palette::Font) => 2,
-    };
+    // The open sub-page is part of the scroll state's id: opening or switching one starts the body at the top.
+    let page = open_palette(&ctx).map(|p| p as u8 + 1).unwrap_or(0);
     let height = sheet_height(&ctx, picker);
     let panel = Panel::bottom("phone_sheet")
         .exact_size(height)
@@ -837,6 +840,12 @@ fn sheet_panel(app: &mut SheetApp, ui: &mut Ui, title: &str, body: impl FnOnce(&
             // The header: the title at the left, Close at the right (the shared shell's sheet header).
             ui.allocate_ui_with_layout(vec2(ui.available_width(), SHEET_HEADER_H), Layout::left_to_right(egui::Align::Center), |ui| {
                 ui.set_min_height(SHEET_HEADER_H);
+                if let Some(back) = back {
+                    ui.add_space(-12.0);
+                    if icon_button(ui, t, Icon::Back, lang.tr("Back"), true).clicked() {
+                        back(&ctx);
+                    }
+                }
                 let title_w = (ui.available_width() - ICON_BTN + 12.0).max(0.0);
                 ui.allocate_ui_with_layout(vec2(title_w, ICON_BTN), Layout::left_to_right(egui::Align::Center), |ui| {
                     ui.set_min_width(title_w);
@@ -846,8 +855,8 @@ fn sheet_panel(app: &mut SheetApp, ui: &mut Ui, title: &str, body: impl FnOnce(&
                     close_all(&ctx);
                 }
             });
-            // The picker and an opened palette are pages of their own: a fresh scroll state, so they open at the top.
-            egui::ScrollArea::vertical().id_salt(("phone_sheet_body", picker, palette)).show(ui, |ui| {
+            // The picker and an opened sub-page are pages of their own: a fresh scroll state, so they open at the top.
+            egui::ScrollArea::vertical().id_salt(("phone_sheet_body", picker, page)).show(ui, |ui| {
                 body(app, ui);
                 follow_focus(ui);
             });
@@ -855,49 +864,124 @@ fn sheet_panel(app: &mut SheetApp, ui: &mut Ui, title: &str, body: impl FnOnce(&
     ctx.data_mut(|d| d.insert_temp(sheet_rect_id(), panel.response.rect));
 }
 
-/// The sheet of a command tab: its colour palette when a colour row is open, then its rows.
+/// Back from a sub-page to its sheet.
+fn close_page(ctx: &Context) {
+    set_palette(ctx, None);
+}
+
+/// The sheet of a command tab: its tiles, or the open sub-page with a back arrow.
 fn tab_sheet(app: &mut SheetApp, ui: &mut Ui, tab: usize) {
+    let ctx = ui.ctx().clone();
+    if let Some(p) = open_palette(&ctx) {
+        let title = app.ui.language.tr(p.title());
+        return sheet_panel(app, ui, title, Some(close_page), |app, ui| sub_page(app, ui, p));
+    }
     let title = app.ui.language.tr(TABS.get(tab).map_or("", |tb| tb.0));
-    sheet_panel(app, ui, title, |app, ui| {
-        let ctx = ui.ctx().clone();
-        let t = Tokens::get(&ctx);
-        let lang = app.ui.language;
-        if let Some(p) = open_palette(&ctx) {
+    sheet_panel(app, ui, title, None, |app, ui| tiles::body(app, ui, tab));
+}
+
+/// The body of sub-page `p`. A choice applies at once and returns to the sheet, which stays open so
+/// another format can follow.
+fn sub_page(app: &mut SheetApp, ui: &mut Ui, p: SubPage) {
+    let ctx = ui.ctx().clone();
+    let t = Tokens::get(&ctx);
+    let lang = app.ui.language;
+    let st = tiles::active_style(app);
+    let pick = |app: &mut SheetApp, id: &str, params: serde_json::Value| {
+        app.run_or_alert(id, params);
+        close_page(&ctx);
+    };
+    match p {
+        SubPage::Fill | SubPage::Font => {
             let colors = ribbon::theme_colors(app);
-            let (none, cmd_id) = match p {
-                Palette::Fill => (lang.tr("No Fill"), "home.fillColor"),
-                Palette::Font => (lang.tr("Automatic"), "home.fontColor"),
-            };
+            let (none, cmd_id) = if p == SubPage::Fill { (lang.tr("No Fill"), "home.fillColor") } else { (lang.tr("Automatic"), "home.fontColor") };
             if let Some(c) = color_palette(ui, &colors, none) {
                 // The font colour's "no colour" is Automatic, as the ribbon's palette sends it.
-                let color = if p == Palette::Font && c == "none" { "auto".to_string() } else { c };
-                app.run_or_alert(cmd_id, json!({"color": color}));
-                close_all(&ctx);
+                let color = if p == SubPage::Font && c == "none" { "auto".to_string() } else { c };
+                pick(app, cmd_id, json!({"color": color}));
             }
-            ui.add_space(4.0);
         }
-        // With More Colors… open the sheet shows only the picker, not the command rows.
-        if picker_open(&ctx) {
-            return;
-        }
-        for (label, icon, act) in rows(tab) {
-            if list_row(ui, t, lang.tr(label), *icon, true).clicked() {
-                match *act {
-                    Act::Colour(p) => set_palette(&ctx, if open_palette(&ctx) == Some(p) { None } else { Some(p) }),
-                    other => {
-                        run_act(app, &ctx, other);
-                        close_all(&ctx);
-                    }
+        SubPage::Borders => {
+            for (label, preset, icon) in BORDER_PRESETS {
+                if list_row(ui, t, lang.tr(label), icon, true).clicked() {
+                    pick(app, "home.borders", json!({"preset": preset}));
                 }
             }
         }
-    });
+        SubPage::NumberFormat => {
+            let current = format!("{:?}", gridcraft_engine::display::number_format(st.num_fmt.as_str()).kind());
+            for name in NUMBER_FORMATS {
+                let on = current == name.replace(' ', "");
+                if choice_row(ui, t, lang.tr(name), on).clicked() {
+                    pick(app, "home.numberFormat", json!({"format": name}));
+                }
+            }
+            if list_row(ui, t, lang.tr("More Number Formats…"), Icon::Format, true).clicked() {
+                close_all(&ctx);
+                app.open_dialog("formatCells", json!({"tab": "Number"}));
+            }
+        }
+        SubPage::FontName => {
+            for name in ribbon::FONTS {
+                if choice_row(ui, t, name, st.font.name == *name).clicked() {
+                    pick(app, "home.fontName", json!({"name": name}));
+                }
+            }
+        }
+        SubPage::FontSize => {
+            for size in FONT_SIZES {
+                if choice_row(ui, t, &size.to_string(), (st.font.size - size as f32).abs() < 0.01).clicked() {
+                    pick(app, "home.fontSize", json!({"size": size}));
+                }
+            }
+        }
+    }
+    ui.add_space(GUTTER);
+}
+
+/// The Borders page: label, `home.borders` preset, icon.
+const BORDER_PRESETS: [(&str, &str, Icon); 8] = [
+    ("No Border", "none", Icon::BorderNone),
+    ("All Borders", "all", Icon::BorderAll),
+    ("Outside Borders", "outside", Icon::BorderOutside),
+    ("Thick Outside Borders", "thickOutside", Icon::BorderThick),
+    ("Bottom Border", "bottom", Icon::Borders),
+    ("Top Border", "top", Icon::Borders),
+    ("Left Border", "left", Icon::Borders),
+    ("Right Border", "right", Icon::Borders),
+];
+
+/// The Number Format page's formats, as the ribbon's list names them (`home.numberFormat` takes the name).
+const NUMBER_FORMATS: [&str; 11] =
+    ["General", "Number", "Currency", "Accounting", "Short Date", "Long Date", "Time", "Percentage", "Fraction", "Scientific", "Text"];
+
+/// The Font Size page's sizes, as the ribbon's size list has them.
+const FONT_SIZES: [u32; 16] = [8, 9, 10, 11, 12, 14, 16, 18, 20, 22, 24, 26, 28, 36, 48, 72];
+
+/// A choice in a sub-page's list: the label, and a check when it is the current one.
+fn choice_row(ui: &mut Ui, t: Tokens, label: &str, on: bool) -> Response {
+    let (r, resp) = ui.allocate_exact_size(vec2(ui.available_width(), ROW_H), Sense::click());
+    if on {
+        ui.painter().rect_filled(r, 0.0, t.accent_soft);
+    }
+    if resp.is_pointer_button_down_on() {
+        ui.painter().rect_filled(r, 0.0, t.pressed);
+    } else if resp.hovered() {
+        ui.painter().rect_filled(r, 0.0, t.hover);
+    }
+    let ink = if on { t.accent } else { t.text };
+    paint_truncated(ui.painter(), r.left() + 16.0, r.center().y, (r.width() - 64.0).max(0.0), label, theme::ui_font(15.0), ink);
+    if on {
+        icons::paint(ui.painter(), Rect::from_center_size(Pos2::new(r.right() - 24.0, r.center().y), vec2(20.0, 20.0)), Icon::Check, t.accent);
+    }
+    resp.widget_info(|| egui::WidgetInfo::selected(egui::Role::Button, true, on, label));
+    resp
 }
 
 /// The More sheet: the command tabs that do not fit on the bar.
 fn more_sheet(app: &mut SheetApp, ui: &mut Ui) {
     let title = app.ui.language.tr("More");
-    sheet_panel(app, ui, title, |app, ui| {
+    sheet_panel(app, ui, title, None, |app, ui| {
         let ctx = ui.ctx().clone();
         let t = Tokens::get(&ctx);
         let lang = app.ui.language;
@@ -915,10 +999,10 @@ fn sheets_sheet(app: &mut SheetApp, ui: &mut Ui) {
     let ctx = ui.ctx().clone();
     if let Some(i) = row_actions(&ctx) {
         let name = app.session.active().and_then(|d| d.wb.sheets.get(i).map(|s| s.name.clone())).unwrap_or_default();
-        return sheet_panel(app, ui, &name, |app, ui| actions_body(app, ui, i));
+        return sheet_panel(app, ui, &name, Some(close_row_actions), |app, ui| actions_body(app, ui, i));
     }
     let title = app.ui.language.tr("Sheets");
-    sheet_panel(app, ui, title, sheet_list);
+    sheet_panel(app, ui, title, None, sheet_list);
 }
 
 /// The Sheets sheet's rows.
@@ -1006,7 +1090,7 @@ fn run_act(app: &mut SheetApp, ctx: &Context, act: Act) {
             app.run_or_alert("view.zoom", json!({"percent": percent}));
         }
         Act::Comment => app.open_dialog("comment", json!({"threaded": true})),
-        Act::Colour(_) => {}
+        Act::Page(p) => set_palette(ctx, Some(p)),
     }
 }
 

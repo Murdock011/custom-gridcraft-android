@@ -40,10 +40,10 @@ fn phone_touch_targets_are_at_least_48_pt() {
     assert!(h.query_by_label("Cancel").is_none(), "no Cancel in the formula bar on the phone");
     assert!(h.query_by_label("Enter").is_none(), "no Enter in the formula bar on the phone");
 
-    // The Fill Colour palette: No Fill and More Colors… are full-width 48 pt buttons.
+    // The Fill Color palette: No Fill and More Colors… are full-width 48 pt buttons.
     gridcraft_ui_egui::open_phone_sheet(&h.ctx, "Home");
     h.run_steps(4);
-    h.get_by_label("Fill Colour").click();
+    h.get_by_label("Fill Color…").click();
     h.run_steps(4);
     let no_fill = h.get_by_label("No Fill").rect();
     assert!(no_fill.height() >= 48.0, "No Fill is {} pt tall", no_fill.height());
@@ -56,7 +56,7 @@ fn more_colors_is_a_focused_page_that_fits_at_48_pt() {
     let mut h = harness();
     gridcraft_ui_egui::open_phone_sheet(&h.ctx, "Home");
     h.run_steps(4);
-    h.get_by_label("Fill Colour").click();
+    h.get_by_label("Fill Color…").click();
     h.run_steps(4);
 
     // Scroll the sheet until More Colors… is in its body (below the title row), as a finger would.
@@ -121,7 +121,7 @@ fn more_colors_opens_alone_at_the_top_and_resets_on_close() {
     let mut h = harness();
     gridcraft_ui_egui::open_phone_sheet(&h.ctx, "Home");
     h.run_steps(4);
-    h.get_by_label("Fill Colour").click();
+    h.get_by_label("Fill Color…").click();
     h.run_steps(4);
 
     // Scroll the sheet until More Colors… is in its body (below the title row), as a finger would.
@@ -160,12 +160,12 @@ fn more_colors_opens_alone_at_the_top_and_resets_on_close() {
         assert!(r.height() >= 48.0, "{label} is {} pt tall", r.height());
     }
 
-    // Close the sheet; reopening Fill Colour starts at the swatches again, not the picker.
+    // Close the sheet; reopening Fill Color starts at the swatches again, not the picker.
     h.get_by_label("Close").click();
     h.run_steps(4);
     gridcraft_ui_egui::open_phone_sheet(&h.ctx, "Home");
     h.run_steps(4);
-    // The list keeps its scroll, so scroll it back to the top before tapping Fill Colour.
+    // The list keeps its scroll, so scroll it back to the top before tapping Fill Color.
     h.input_mut().events.push(Event::PointerMoved(pos2(206.0, 700.0)));
     h.run_steps(2);
     for _ in 0..25 {
@@ -178,9 +178,9 @@ fn more_colors_opens_alone_at_the_top_and_resets_on_close() {
         });
         h.run_steps(2);
     }
-    h.get_by_label("Fill Colour").click();
+    h.get_by_label("Fill Color…").click();
     h.run_steps(4);
-    assert!(h.query_by_label("No Fill").is_some(), "reopening Fill Colour shows the swatches, not the picker");
+    assert!(h.query_by_label("No Fill").is_some(), "reopening Fill Color shows the swatches, not the picker");
 }
 
 /// Scrolls the sheet's body by wheel at a point inside the sheet (a finger's scroll, for the harness).
@@ -223,12 +223,12 @@ fn an_opened_palette_starts_in_view_when_the_list_was_scrolled() {
     gridcraft_ui_egui::open_phone_sheet(&h.ctx, "Home");
     h.run_steps(4);
     scroll_sheet(&mut h, -15.0);
-    h.get_by_label("Fill Colour").click();
+    h.get_by_label("Fill Color…").click();
     h.run_steps(4);
     let screen = h.ctx.content_rect();
     let no_fill = h.get_by_label("No Fill").rect();
     assert!(
         no_fill.center().y > screen.bottom() - screen.height() * 0.55 && no_fill.bottom() <= screen.bottom(),
-        "No Fill is in the sheet after Fill Colour: {no_fill:?}"
+        "No Fill is in the sheet after Fill Color: {no_fill:?}"
     );
 }

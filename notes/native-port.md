@@ -1117,3 +1117,29 @@ The first step of the shared phone plan for WordCraft, GridCraft and DeckCraft.
   need `CRAFT_FONTS_DIR`), and snapshot renders at 412x915, 360x800, 915x412 and in dark theme.
   Not run on a device or emulator.
 
+## Update 32: the shared phone shell, step 2 (tile sheets)
+
+- `phone/tiles.rs`: each tab is a list of sections, each a grid of tiles (icon above a label of up
+  to two lines, broken only at spaces; a word too wide for a tile is drawn smaller, 9 to 11 pt).
+  The model is the only list of the sheets' commands, so the planned List style can draw it too.
+- Labels and the enabled state come from the engine (`cmd::find_command`): "Fill Color…",
+  "New Comment", "Insert Chart" and so on, as the ribbon says them. A tile is on (tinted, accent
+  ink, reported as toggled) for the active cell's bold, italic, underline, strikethrough,
+  alignments and wrap, and for the sheet's gridlines, headings, formulas and the formula bar.
+- Formatting tiles keep the sheet open; insert and dialog tiles close it.
+- Sub-pages replace the sheet's body, with a back arrow: Fill Color and Font Color (the colour
+  grids), Borders (eight presets), Number Format (the ribbon's eleven formats, then More Number
+  Formats…), Font (the ribbon's font list) and Font Size. A choice applies and returns to the sheet.
+- Home starts with a font row: the font name (opens Font), then − size + (the size opens Font Size).
+- Tabs: Home, Insert, Formulas and Data in the tab bar; View, Page Layout and Review in More. Every
+  command in the plan's GridCraft table is there except Define Name (not an engine command) and
+  Header & Footer (a dialog only): both stay reachable once All tools lands.
+- A sheet takes at most half the window (60% in a short one).
+- Tests: every tile names an engine command; labels in a section are distinct; a format tile
+  applies, shows on and keeps the sheet open; an insert tile closes it; a sub-page's back arrow and
+  a choice return to the sheet; the size page sets the size; tiles are 48 pt targets at 360 pt.
+- Checked: GridCraft's CI gate (all tests pass but the two `interaction` font tests, which need
+  `CRAFT_FONTS_DIR`; the asset check fails on five older README screenshots without
+  `ATTRIBUTION.md` rows, as before), and snapshot renders of every sheet at 412x915 and 360x800.
+  Not run on a device or emulator.
+

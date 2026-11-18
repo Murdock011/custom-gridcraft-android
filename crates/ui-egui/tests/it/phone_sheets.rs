@@ -1,7 +1,7 @@
 //! The phone's sheet button opens the Sheets sheet, and tapping a sheet's row switches to that sheet.
 //! The sheet tab row is not drawn on the phone (its sheets live in the bar's sheet button).
 
-use egui_kittest::kittest::Queryable;
+use egui_kittest::kittest::{NodeT, Queryable};
 use gridcraft_engine::Session;
 use gridcraft_ui_egui::SheetApp;
 use serde_json::json;
@@ -61,7 +61,7 @@ fn another_tab_switches_the_sheet_and_view_is_in_more() {
     h.run_steps(4);
     tab(&h, "Insert").click();
     h.run_steps(4);
-    assert!(h.query_by_label("Bold").is_none() && h.query_by_label("Chart").is_some(), "Insert's sheet replaced Home's");
+    assert!(h.query_by_label("Bold").is_none() && h.query_by_label("Insert Chart").is_some(), "Insert's sheet replaced Home's");
     assert!(h.query_by_role_and_label(egui::accesskit::Role::Button, "View").is_none(), "View has no slot in the tab bar");
     tab(&h, "More").click();
     h.run_steps(4);
@@ -81,4 +81,78 @@ fn every_tab_bar_slot_is_a_touch_target_on_a_narrow_phone() {
     }
     let sheets = h.get_by_label_contains("Sheets:").rect();
     assert!(sheets.width() >= 48.0 && sheets.height() >= 48.0, "the sheet button is {} x {} pt", sheets.width(), sheets.height());
+}
+
+/// The active cell's style in the harness's workbook.
+fn active_style(h: &egui_kittest::Harness<'static, SheetApp>) -> gridcraft_engine::model::Style {
+    let d = h.state().session.active().unwrap();
+    let sh = d.wb.active().unwrap();
+    d.wb.styles.get(sh.style_id(d.selection.active)).clone()
+}
+
+#[test]
+fn a_format_tile_applies_shows_on_and_keeps_the_sheet_open() {
+    let mut h = harness();
+    tab(&h, "Home").click();
+    h.run_steps(4);
+    assert_ne!(h.get_by_label("Bold").accesskit_node().toggled(), Some(egui::accesskit::Toggled::True), "Bold is off in a plain cell");
+    h.get_by_label("Bold").click();
+    h.run_steps(4);
+    assert!(active_style(&h).font.bold, "the Bold tile made the cell bold");
+    assert_eq!(h.get_by_label("Bold").accesskit_node().toggled(), Some(egui::accesskit::Toggled::True), "Bold shows on, and the sheet stayed open");
+}
+
+#[test]
+fn an_insert_tile_runs_and_closes_the_sheet() {
+    let mut h = harness();
+    tab(&h, "Insert").click();
+    h.run_steps(4);
+    h.get_by_label("Insert Chart").click();
+    h.run_steps(4);
+    assert!(h.query_by_label("Insert Chart").is_none(), "the sheet closed after inserting");
+}
+
+#[test]
+fn a_sub_page_has_a_back_arrow_and_returns_to_the_sheet_after_a_choice() {
+    let mut h = harness();
+    tab(&h, "Home").click();
+    h.run_steps(4);
+    h.get_by_label("Borders…").click();
+    h.run_steps(4);
+    assert!(h.query_by_label("Bold").is_none(), "the Borders page replaces the tiles");
+    h.get_by_label("Back").click();
+    h.run_steps(4);
+    assert!(h.query_by_label("Bold").is_some(), "Back returns to the Home tiles");
+    h.get_by_label("Borders…").click();
+    h.run_steps(4);
+    h.get_by_label("All Borders").click();
+    h.run_steps(4);
+    let st = active_style(&h);
+    assert!(st.borders != Default::default(), "All Borders set the cell's borders");
+    assert!(h.query_by_label("Bold").is_some(), "after a choice the Home tiles are back, and the sheet is open");
+}
+
+#[test]
+fn the_font_size_page_sets_the_size() {
+    let mut h = harness();
+    tab(&h, "Home").click();
+    h.run_steps(4);
+    h.get_by_label_contains("Font Size:").click();
+    h.run_steps(4);
+    h.get_by_label("14").click();
+    h.run_steps(4);
+    assert!((active_style(&h).font.size - 14.0).abs() < 0.01, "the size page set 14 pt");
+}
+
+#[test]
+fn every_tile_is_a_touch_target_on_a_narrow_phone() {
+    let mut h = harness();
+    h.set_size(egui::vec2(360.0, 800.0));
+    h.run_steps(6);
+    tab(&h, "Home").click();
+    h.run_steps(4);
+    for label in ["Bold", "Italic", "Underline", "Strikethrough", "Borders…"] {
+        let r = h.get_by_label(label).rect();
+        assert!(r.width() >= 48.0 && r.height() >= 48.0, "{label} is {} x {} pt", r.width(), r.height());
+    }
 }

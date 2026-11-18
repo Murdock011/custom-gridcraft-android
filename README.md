@@ -48,8 +48,9 @@ far. When a release is made it will be on the
   rename, duplicate, delete).
 - A phone layout instead of the desktop ribbon: an app bar with File, the workbook name, Undo, Redo
   and Save, and a fixed tab bar at the bottom (the sheet button, Home, Insert, Formulas, Data,
-  More) whose tabs open bottom sheets of large, touch-sized commands above it. Tapping the open
-  tab again closes its sheet; View is in More. Back closes an open sheet. The layout follows the
+  More) whose tabs open bottom sheets of touch-sized tiles above it, grouped in sections (Home has
+  font, size, alignment, number, clipboard, cells, styles and editing). Tapping the open tab again
+  closes its sheet; View, Page Layout and Review are in More. Back closes an open sheet. The layout follows the
   shared phone plan for the Craft apps; more of it is still to come.
 - Saving through the Android system save dialog (Save As), and saving back to a workbook opened
   from the file picker. The unsaved-changes dot clears after a successful save.
