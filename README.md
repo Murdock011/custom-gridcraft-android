@@ -44,11 +44,13 @@ far. When a release is made it will be on the
 ## What works
 
 - The full GridCraft grid on a phone: tapping cells, typing values and formulas, the formula bar
-  and a sheet button in the bottom pill that opens a list of sheets (switch, add, rename,
-  duplicate, delete).
+  and a sheet button, the first slot of the tab bar, that opens a list of sheets (switch, add,
+  rename, duplicate, delete).
 - A phone layout instead of the desktop ribbon: an app bar with File, the workbook name, Undo, Redo
-  and Save, and a floating tab bar (Home, Insert, Formulas, Data, View) whose tabs open bottom
-  sheets of large, touch-sized commands. Back closes an open sheet.
+  and Save, and a fixed tab bar at the bottom (the sheet button, Home, Insert, Formulas, Data,
+  More) whose tabs open bottom sheets of large, touch-sized commands above it. Tapping the open
+  tab again closes its sheet; View is in More. Back closes an open sheet. The layout follows the
+  shared phone plan for the Craft apps; more of it is still to come.
 - Saving through the Android system save dialog (Save As), and saving back to a workbook opened
   from the file picker. The unsaved-changes dot clears after a successful save.
 - Opening spreadsheets through the system file picker (.xlsx, .xlsm, .xls, .xlsb, .ods, .csv,

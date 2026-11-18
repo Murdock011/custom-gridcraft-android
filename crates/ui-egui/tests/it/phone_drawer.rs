@@ -1,4 +1,4 @@
-//! The phone's menu button opens the File drawer: its rows are the File actions in WordCraft's
+//! The phone's File button opens the File drawer: its rows are the File actions in WordCraft's
 //! order, and Close with unsaved changes asks about them (the Save changes dialog) first.
 
 use egui_kittest::kittest::Queryable;
@@ -25,9 +25,9 @@ fn harness(dirty: bool) -> egui_kittest::Harness<'static, SheetApp> {
 }
 
 #[test]
-fn the_menu_button_opens_the_file_drawer_with_its_rows() {
+fn the_file_button_opens_the_file_drawer_with_its_rows() {
     let mut h = harness(false);
-    h.get_by_label("Menu").click();
+    h.get_by_label("File").click();
     h.run_steps(4);
     // "Home" is also the bottom bar's tab, so the rows are looked up as a set.
     for row in ["Home", "New", "Open", "Info", "Save", "Save As", "Export", "Options", "Close"] {
@@ -38,7 +38,7 @@ fn the_menu_button_opens_the_file_drawer_with_its_rows() {
 #[test]
 fn close_with_unsaved_changes_asks_the_save_changes_question() {
     let mut h = harness(true);
-    h.get_by_label("Menu").click();
+    h.get_by_label("File").click();
     h.run_steps(4);
     h.get_by_label("Close").click();
     h.run_steps(4);

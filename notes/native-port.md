@@ -1093,3 +1093,27 @@ commit f90bbd27. Not yet device-checked or merged into `custom-android`.
 - `cargo fmt` reformatted `apps/gridcraft-android` to upstream's wider line width.
 - Checks run: clippy `-D warnings` (ui-egui, android, all targets), `cargo test -p gridcraft-engine -p gridcraft-ui-egui -p gridcraft-android` (2 failures, the known glyph tests `column_autocomplete_folds_case_beyond_ascii` and `language_switch_renders_the_ribbon_and_persists`), `xtask layers`, `assets`, `parity --check`, `keytips --check`.
 - Not run: `cargo xtask wasm` (no wasm target here), the Android APK build, any device check.
+
+## Update 31: the shared phone shell, step 1 (top bar and tab bar)
+
+The first step of the shared phone plan for WordCraft, GridCraft and DeckCraft.
+
+- `phone.rs` has one block of shell sizes with the names the three apps share (`TOUCH`,
+  `APP_BAR_H`, `TAB_BAR_H`, `TAB_MIN_W`, `SHEET_HEADER_H`, `ROW_H`, `GUTTER`), checked at compile
+  time to be at least 48 pt. The app bar is 48 pt in a window under 500 pt tall.
+- Top bar: a File button (document icon) in place of the three-bar menu button; it still opens the
+  File drawer until the File menu step replaces the drawer. The workbook name sits at the left.
+- The floating pill is gone. A fixed tab bar fills the bottom: the sheet button (its icon alone on
+  a phone too narrow for the name), Home, Insert, Formulas, Data, More. View moved into More. The
+  open tab is drawn on (a tinted pill behind its icon); tapping it again closes the sheet, and a
+  press on the tab bar never counts as outside the sheet.
+- Sheets open above the tab bar, which stays visible. Their header is the title at the left and
+  Close at the right, with no drag handle. A sheet is never taller than the room between the app
+  bar and the tab bar, less two touch rows, so a phone held sideways keeps the formula bar and the
+  sheet's header in view.
+- Tests: tab toggling and switching, View in More, every tab-bar slot at least 48 pt at 360 pt
+  wide, and the sheet button's narrow form. The tests that opened the drawer by "Menu" use "File".
+- Checked: GridCraft's UI tests (the two `interaction` font tests fail without the change too: they
+  need `CRAFT_FONTS_DIR`), and snapshot renders at 412x915, 360x800, 915x412 and in dark theme.
+  Not run on a device or emulator.
+

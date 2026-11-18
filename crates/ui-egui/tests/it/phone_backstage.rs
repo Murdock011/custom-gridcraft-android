@@ -19,9 +19,9 @@ fn harness() -> egui_kittest::Harness<'static, SheetApp> {
     h
 }
 
-/// Opens a File drawer row from the phone's menu button.
+/// Opens a File drawer row from the phone's File button.
 fn file_row(h: &mut egui_kittest::Harness<'static, SheetApp>, row: &str) {
-    h.get_by_label("Menu").click();
+    h.get_by_label("File").click();
     h.run_steps(4);
     h.get_by_label(row).click();
     h.run_steps(6);

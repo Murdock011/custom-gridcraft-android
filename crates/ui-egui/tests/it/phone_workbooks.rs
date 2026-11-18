@@ -27,7 +27,7 @@ fn harness(close_quits: bool) -> egui_kittest::Harness<'static, SheetApp> {
 }
 
 fn open_drawer(h: &mut egui_kittest::Harness<'static, SheetApp>) {
-    h.get_by_label("Menu").click();
+    h.get_by_label("File").click();
     h.run_steps(4);
 }
 

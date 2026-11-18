@@ -33,7 +33,7 @@ fn dialog(h: &egui_kittest::Harness<'static, SheetApp>) -> Option<String> {
 #[test]
 fn close_with_unsaved_changes_then_dont_save_ends_the_app() {
     let mut h = harness(true, true);
-    h.get_by_label("Menu").click();
+    h.get_by_label("File").click();
     h.run_steps(4);
     h.get_by_label("Close").click();
     h.run_steps(4);
@@ -70,7 +70,7 @@ fn back_without_unsaved_changes_does_not_intercept() {
 #[test]
 fn desktop_close_is_unchanged() {
     let mut h = harness(true, false);
-    h.get_by_label("Menu").click();
+    h.get_by_label("File").click();
     h.run_steps(4);
     h.get_by_label("Close").click();
     h.run_steps(4);

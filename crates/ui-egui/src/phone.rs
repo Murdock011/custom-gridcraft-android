@@ -1,12 +1,12 @@
-//! The phone layout, after WordCraft's (Material 3): a narrow window (a phone held upright) gets a
-//! top app bar, a floating bar at the bottom and bottom sheets in place of the ribbon, title bar and
-//! sheet tabs. The bar's first item is the active sheet: tapping it opens the Sheets sheet, to switch
-//! sheets, add one, or rename, duplicate or delete one. The grid keeps its canvas. Every control runs
-//! a command id, so the phone chrome adds no behaviour of its own.
+//! The phone layout, the shared shell of the Craft phone apps (WordCraft, GridCraft, DeckCraft): a
+//! narrow window (a phone) gets a top app bar, a fixed tab bar at the bottom and bottom sheets in
+//! place of the ribbon, title bar and sheet tabs. The tab bar's first slot is the active sheet:
+//! tapping it opens the Sheets sheet, to switch sheets, add one, or rename, duplicate or delete one.
+//! The grid keeps its canvas. Every control runs a command id, so the phone chrome adds no behaviour
+//! of its own.
 
 use egui::{
-    Align2, Color32, Context, CornerRadius, FontId, Frame, Layout, Margin, Order, Painter, Panel, Pos2, Rect, Response, Sense, Stroke, StrokeKind,
-    Ui, vec2,
+    Align2, Color32, Context, CornerRadius, FontId, Frame, Layout, Margin, Order, Painter, Panel, Pos2, Rect, Response, Sense, Stroke, Ui, vec2,
 };
 use gridcraft_engine::cmd;
 use gridcraft_engine::core::{CellRef, RangeRef};
@@ -24,33 +24,49 @@ use crate::widgets::color_palette;
 
 /// Windows narrower than this (points) get the phone layout. A phone held upright is about 390 pt.
 pub const MAX_WIDTH: f32 = 600.0;
-/// Height of the top app bar (Material's small app bar).
-const APP_BAR_H: f32 = 64.0;
-/// A Material icon button: 48 pt, the platform's touch target.
-const ICON_BTN: f32 = 48.0;
-/// A sheet row: the 48 pt touch target.
-const ROW_H: f32 = 48.0;
-/// The shortest bar under the grid (formula bar) on the phone: a 48 pt touch target.
-pub const BAR_MIN_H: f32 = 48.0;
-/// The floating bar: its height, the gap around it, and its inset from the screen's sides.
-const PILL_H: f32 = 56.0;
-const FLOAT_GAP: f32 = 8.0;
-const PILL_SIDE: f32 = 16.0;
-/// The sheet button at the bar's left (48 pt tall, this wide), and the room the bar takes beside the
-/// command tabs: the inset, the button, and the gaps either side of the divider.
-const SHEET_BTN_W: f32 = 96.0;
-const PILL_SPARE: f32 = 4.0 + SHEET_BTN_W + 4.0 + 4.0 + 8.0;
-/// The least width a command tab gets. When the five do not fit, the last one moves into More.
-const MIN_TAB_W: f32 = 52.0;
 
-/// The bar's command tabs, with their icons. Each opens a bottom sheet of its rows.
+// The shared phone shell (phone-ux-plan, part 1.2). WordCraft, GridCraft and DeckCraft use the same
+// names and values, so the three phone layouts can be compared and stay alike.
+/// The minimum height and width of every control: Android's touch target.
+const TOUCH: f32 = 48.0;
+/// The top app bar, and its height in a window under [`SHORT_WINDOW`] tall (a phone held sideways).
+const APP_BAR_H: f32 = 64.0;
+const APP_BAR_SHORT_H: f32 = 48.0;
+/// Windows shorter than this get the short app bar.
+const SHORT_WINDOW: f32 = 500.0;
+/// The bottom tab bar, and the narrowest a tab slot may be.
+const TAB_BAR_H: f32 = 64.0;
+const TAB_MIN_W: f32 = 52.0;
+/// The header of a sheet, a sub-page or a File page: the title at the left, Close at the right.
+const SHEET_HEADER_H: f32 = 56.0;
+/// A list row.
+const ROW_H: f32 = 52.0;
+/// The margin at the left and right of every sheet, page and dialog.
+const GUTTER: f32 = 16.0;
+const _: () = assert!(TOUCH >= 48.0 && TAB_BAR_H >= TOUCH && ROW_H >= TOUCH && SHEET_HEADER_H >= TOUCH && TAB_MIN_W >= TOUCH);
+
+/// A Material icon button: the touch target.
+const ICON_BTN: f32 = TOUCH;
+/// The shortest bar under the grid (formula bar) on the phone: a touch target.
+pub const BAR_MIN_H: f32 = TOUCH;
+/// The sheet button, the tab bar's first slot (the active sheet's name), and its width when the
+/// window is too narrow for the name: the icon alone.
+const SHEET_BTN_W: f32 = 96.0;
+const SHEET_BTN_ICON_W: f32 = 56.0;
+
+/// The command tabs, with their icons. Each opens a bottom sheet of its rows. The first
+/// [`BAR_TABS`] have a slot in the tab bar; the rest are rows in the More sheet.
 const TABS: [(&str, Icon); 5] =
     [("Home", Icon::Home), ("Insert", Icon::Insert), ("Formulas", Icon::Fx), ("Data", Icon::SortFilter), ("View", Icon::Gridlines)];
-/// On a bar too narrow for every tab, the tabs from this index on are listed in More.
-const NARROW_TABS: usize = TABS.len() - 1;
+const BAR_TABS: usize = 4;
 /// Menu states past the command tabs: the More list and the Sheets sheet.
 const MORE: usize = TABS.len();
 const SHEETS: usize = TABS.len() + 1;
+
+/// The app bar's height for this window: shorter in a short window, so the grid keeps its room.
+fn app_bar_h(ctx: &Context) -> f32 {
+    if ctx.content_rect().height() < SHORT_WINDOW { APP_BAR_SHORT_H } else { APP_BAR_H }
+}
 
 /// Whether the window is a phone: its shorter side is under the breakpoint, so a phone turned
 /// sideways keeps the phone layout.
@@ -166,11 +182,18 @@ fn picker_open(ctx: &Context) -> bool {
     open_palette(ctx).is_some() && crate::widgets::more_colors_open(ctx)
 }
 
+/// The room kept above the sheet for the formula bar and a little of the grid.
+const ABOVE_SHEET: f32 = 2.0 * TOUCH;
+
 /// The sheet's height on a phone screen: 55% of the screen height (260 to 520 pt, at most 85%), or
-/// 85% while the More Colors… picker is open, so the picker fits without scrolling.
+/// 85% while the More Colors… picker is open, so the picker fits without scrolling. Never more than
+/// the room between the app bar and the tab bar, less [`ABOVE_SHEET`]: a phone held sideways keeps
+/// its formula bar and the sheet's header in view.
 pub(crate) fn sheet_height(ctx: &Context, picker: bool) -> f32 {
     let screen_h = ctx.content_rect().height();
-    if picker { screen_h * 0.85 } else { (screen_h * 0.55).clamp(260.0, 520.0).min(screen_h * 0.85) }
+    let wanted = if picker { screen_h * 0.85 } else { (screen_h * 0.55).clamp(260.0, 520.0).min(screen_h * 0.85) };
+    let room = screen_h - app_bar_h(ctx) - TAB_BAR_H - ABOVE_SHEET;
+    wanted.min(room).max(SHEET_HEADER_H + TOUCH)
 }
 
 /// The sheet (by index) whose row actions are open in the Sheets sheet.
@@ -200,6 +223,11 @@ fn sheet_rect_id() -> egui::Id {
     egui::Id::unique("phone_sheet_rect")
 }
 
+/// Where the tab bar was drawn last frame. A press on it never counts as outside the sheet.
+fn tab_bar_rect_id() -> egui::Id {
+    egui::Id::unique("phone_tab_bar_rect")
+}
+
 /// The gesture the grid must ignore: a press that began outside the open sheet. Set while the
 /// button is held, so the press closes the sheet and reaches neither the grid nor the cells.
 fn gesture_id() -> egui::Id {
@@ -221,7 +249,12 @@ pub fn take_pointer(ctx: &Context) {
     if !pressed {
         return;
     }
-    let outside_sheet = menu_tab(ctx).is_some() && {
+    // A press on the tab bar is the tab bar's: its tabs switch or close the sheet themselves.
+    let on_tab_bar = {
+        let rect = ctx.data(|d| d.get_temp::<Rect>(tab_bar_rect_id()));
+        matches!((pos, rect), (Some(p), Some(r)) if r.contains(p))
+    };
+    let outside_sheet = menu_tab(ctx).is_some() && !on_tab_bar && {
         let rect = ctx.data(|d| d.get_temp::<Rect>(sheet_rect_id()));
         matches!((pos, rect), (Some(p), Some(r)) if !r.contains(p))
     };
@@ -329,23 +362,8 @@ const FILE_ROWS: [(&str, Icon, FileRow); 9] = [
 /// The drawer's width, as WordCraft's (296 pt).
 const DRAWER_W: f32 = 296.0;
 
-/// A menu button: three bars, the navigation drawer's icon, in the same 48 pt target as the others.
-fn menu_button(ui: &mut Ui, t: Tokens, tip: &str) -> Response {
-    let (r, resp) = ui.allocate_exact_size(vec2(ICON_BTN, ICON_BTN), Sense::click());
-    if resp.is_pointer_button_down_on() {
-        ui.painter().rect_filled(r, ICON_BTN / 2.0, t.pressed);
-    } else if resp.hovered() {
-        ui.painter().rect_filled(r, ICON_BTN / 2.0, t.hover);
-    }
-    let stroke = Stroke::new(2.0, t.text);
-    for dy in [-6.0, 0.0, 6.0] {
-        ui.painter().hline(r.x_range().shrink(13.0), r.center().y + dy, stroke);
-    }
-    resp.widget_info(|| egui::WidgetInfo::labeled(egui::Role::Button, true, tip));
-    resp.on_hover_text(tip)
-}
-
-/// The top app bar: the menu button (the File drawer), the workbook's name, and Undo, Redo and Save.
+/// The top app bar (the shared shell): File, the workbook's name with • while it has unsaved changes,
+/// then Undo, Redo and Save. Undo and Redo are greyed when there is nothing to undo or redo.
 pub fn top_bar(app: &mut SheetApp, ui: &mut Ui) {
     let ctx = ui.ctx().clone();
     let t = Tokens::get(&ctx);
@@ -353,17 +371,21 @@ pub fn top_bar(app: &mut SheetApp, ui: &mut Ui) {
     let (title, dirty) = app.session.active().map(|d| (d.display_title(), d.is_dirty())).unwrap_or_default();
     let can_undo = cmd::can_undo(&app.session).is_ok();
     let can_redo = cmd::can_redo(&app.session).is_ok();
-    Panel::top("phone_top_bar").exact_size(APP_BAR_H).frame(Frame::NONE.fill(t.window).inner_margin(Margin::symmetric(4, 0))).show(ui, |ui| {
+    let height = app_bar_h(&ctx);
+    Panel::top("phone_top_bar").exact_size(height).frame(Frame::NONE.fill(t.window).inner_margin(Margin::symmetric(4, 0))).show(ui, |ui| {
         ui.horizontal_centered(|ui| {
-            let menu = menu_button(ui, t, lang.tr("Menu"));
-            ctx.data_mut(|d| d.insert_temp(menu_rect_id(), menu.rect));
-            if menu.clicked() {
+            let file = icon_button(ui, t, Icon::NewFile, lang.tr("File"), true);
+            ctx.data_mut(|d| d.insert_temp(menu_rect_id(), file.rect));
+            if file.clicked() {
                 set_drawer(&ctx, !drawer_open(&ctx));
             }
             // The name gets the width the three icons on the right leave, and is cut short.
             let name = if dirty { format!("{title} •") } else { title };
             let name_w = (ui.available_width() - 3.0 * ICON_BTN - 8.0).max(0.0);
-            ui.add_sized(vec2(name_w, ICON_BTN), egui::Label::new(egui::RichText::new(name).font(theme::ui_bold(18.0)).color(t.text)).truncate());
+            ui.allocate_ui_with_layout(vec2(name_w, ICON_BTN), Layout::left_to_right(egui::Align::Center), |ui| {
+                ui.set_min_width(name_w);
+                ui.add(egui::Label::new(egui::RichText::new(name).font(theme::ui_bold(18.0)).color(t.text)).truncate());
+            });
             // Right to left: Save is added first so it sits at the far end.
             ui.with_layout(Layout::right_to_left(egui::Align::Center), |ui| {
                 if icon_button(ui, t, Icon::Save, lang.tr("Save"), true).clicked() && app.commit_edit(0, 0, false, false) {
@@ -420,12 +442,12 @@ fn file_drawer(app: &mut SheetApp, ctx: &Context) {
     let t = Tokens::get(ctx);
     let lang = app.ui.language;
     let current = app.backstage.as_ref().map(|b| b.page);
-    let height = ctx.content_rect().height() - APP_BAR_H;
+    let bar_h = app_bar_h(ctx);
+    let height = ctx.content_rect().height() - bar_h;
     let shadow = egui::Shadow { offset: [0, 6], blur: 18, spread: 0, color: Color32::from_black_alpha(80) };
-    let area = egui::Area::new(egui::Id::unique("phone_file_drawer"))
-        .anchor(egui::Align2::LEFT_TOP, vec2(0.0, APP_BAR_H))
-        .order(Order::Foreground)
-        .show(ctx, |ui| {
+    let area = egui::Area::new(egui::Id::unique("phone_file_drawer")).anchor(egui::Align2::LEFT_TOP, vec2(0.0, bar_h)).order(Order::Foreground).show(
+        ctx,
+        |ui| {
             Frame::NONE.fill(t.ribbon).shadow(shadow).inner_margin(Margin::symmetric(0, 16)).show(ui, |ui| {
                 ui.set_width(DRAWER_W);
                 ui.set_min_height(height - 32.0);
@@ -463,7 +485,8 @@ fn file_drawer(app: &mut SheetApp, ctx: &Context) {
                     }
                 }
             });
-        });
+        },
+    );
     ctx.data_mut(|d| d.insert_temp(drawer_rect_id(), area.response.rect));
 }
 
@@ -544,76 +567,104 @@ fn workbook_row(ui: &mut Ui, t: Tokens, name: &str, index: usize, active: bool) 
     (main, close)
 }
 
-/// Whether all the command tabs fit beside the sheet button. If not, the last one moves into More.
-fn all_tabs_fit(ctx: &Context) -> bool {
-    let pill_w = ctx.content_rect().width() - 2.0 * PILL_SIDE;
-    pill_w - PILL_SPARE >= TABS.len() as f32 * MIN_TAB_W
-}
-
-/// The bar's slots in order: a tab index, or [`MORE`].
-fn pill_slots(ctx: &Context) -> Vec<usize> {
-    if all_tabs_fit(ctx) { (0..TABS.len()).collect() } else { (0..NARROW_TABS).chain([MORE]).collect() }
-}
-
-/// The floating bar at the bottom, and the bottom sheet that opens in its place. The bar is a
-/// bottom panel, so the grid stops above it and nothing is drawn under it.
+/// The bottom of the phone screen, from the edge up: the tab bar, then the open sheet above it (the
+/// sheet sits in the layout, so the grid stays visible and live). While a cell is edited the edit bar
+/// takes the bottom instead, and while the keyboard is up for another field nothing is drawn.
 pub fn bottom_bar(app: &mut SheetApp, ui: &mut Ui) {
     let ctx = ui.ctx().clone();
-    let t = Tokens::get(&ctx);
-    let lang = app.ui.language;
     if ctx.input(|i| i.key_pressed(egui::Key::Escape)) {
         back_step(&ctx);
     }
     take_pointer(&ctx);
-    // Editing a cell: the edit bar replaces the floating bar and sits directly above the keyboard.
+    // Editing a cell: the edit bar replaces the tab bar and sits directly above the keyboard.
     track_edit(app, &ctx);
     if app.editor.is_some() {
         set_menu(&ctx, None);
         return edit_bar(app, ui);
     }
-    match menu_tab(&ctx) {
-        Some(SHEETS) => return sheets_sheet(app, ui),
-        Some(MORE) => return more_sheet(app, ui),
-        Some(tab) => return tab_sheet(app, ui, tab),
-        None => {}
-    }
-    // The keyboard is up for a field outside cell editing: the floating bar would sit on it, so it steps aside.
-    if keyboard_up(&ctx) {
+    // The keyboard is up for a field outside cell editing: the bars would sit on it, so they step
+    // aside. A sheet with its own focused field (a palette's hex box) stays open.
+    if keyboard_up(&ctx) && menu_tab(&ctx).is_none() {
         return;
     }
-    Panel::bottom("phone_tab_bar").exact_size(PILL_H + 2.0 * FLOAT_GAP).frame(Frame::NONE.fill(t.grid_bg)).show(ui, |ui| {
-        let outer = ui.max_rect();
-        let pill = Rect::from_min_max(
-            Pos2::new(outer.left() + PILL_SIDE, outer.top() + FLOAT_GAP),
-            Pos2::new(outer.right() - PILL_SIDE, outer.bottom() - FLOAT_GAP),
-        );
-        ui.painter().rect(pill, CornerRadius::same((PILL_H / 2.0) as u8), t.ribbon, Stroke::new(1.0, t.ribbon_border), StrokeKind::Inside);
-        sheet_button(app, ui, pill);
-        let div_x = pill.left() + 4.0 + SHEET_BTN_W + 4.0;
-        ui.painter().line_segment([Pos2::new(div_x, pill.top() + 14.0), Pos2::new(div_x, pill.bottom() - 14.0)], Stroke::new(1.0, t.ribbon_border));
-        let tabs_rect = Rect::from_min_max(Pos2::new(div_x + 4.0, pill.top()), Pos2::new(pill.right() - 8.0, pill.bottom()));
-        let slots = pill_slots(&ctx);
+    tab_bar(app, ui);
+    match menu_tab(&ctx) {
+        Some(SHEETS) => sheets_sheet(app, ui),
+        Some(MORE) => more_sheet(app, ui),
+        Some(tab) => tab_sheet(app, ui, tab),
+        None => {}
+    }
+}
+
+/// The tab bar's slot that is drawn "on": the open tab, More for a tab listed in More, or none.
+fn on_slot(open: Option<usize>) -> Option<usize> {
+    match open {
+        Some(t) if t < BAR_TABS => Some(t),
+        Some(t) if t <= MORE => Some(MORE),
+        _ => None,
+    }
+}
+
+/// The width of the sheet button for a window `width` pt wide: the name and icon when every other
+/// slot still gets [`TAB_MIN_W`], else the icon alone.
+fn sheet_button_w(width: f32) -> f32 {
+    let others = (BAR_TABS + 1) as f32;
+    if (width - SHEET_BTN_W - 16.0) / others >= TAB_MIN_W { SHEET_BTN_W } else { SHEET_BTN_ICON_W }
+}
+
+/// The tab bar (the shared shell): fixed at the bottom, full width. Its first slot is the sheet
+/// button; then Home, Insert, Formulas and Data; More is always last. A tab opens its sheet above
+/// the bar; tapping the open tab again closes it; another tab switches it.
+fn tab_bar(app: &mut SheetApp, ui: &mut Ui) {
+    let ctx = ui.ctx().clone();
+    let t = Tokens::get(&ctx);
+    let lang = app.ui.language;
+    let open = menu_tab(&ctx);
+    let on = on_slot(open);
+    let panel = Panel::bottom("phone_tab_bar").exact_size(TAB_BAR_H).frame(Frame::NONE.fill(t.window)).show(ui, |ui| {
+        let bar = ui.max_rect();
+        ui.painter().hline(bar.x_range(), bar.top(), Stroke::new(1.0, t.separator));
+        let btn_w = sheet_button_w(bar.width());
+        let btn = Rect::from_min_size(Pos2::new(bar.left() + 8.0, bar.center().y - TOUCH / 2.0), vec2(btn_w, TOUCH));
+        sheet_button(app, ui, btn);
+        let tabs_rect = Rect::from_min_max(Pos2::new(btn.right() + 4.0, bar.top()), Pos2::new(bar.right() - 4.0, bar.bottom()));
+        let slots: Vec<usize> = (0..BAR_TABS).chain([MORE]).collect();
         let w = tabs_rect.width() / slots.len() as f32;
         for (i, &slot) in slots.iter().enumerate() {
-            let cell = Rect::from_min_size(Pos2::new(tabs_rect.left() + i as f32 * w, pill.top()), vec2(w, pill.height()));
+            let cell = Rect::from_min_size(Pos2::new(tabs_rect.left() + i as f32 * w, bar.top()), vec2(w, bar.height()));
             let (label, icon) = if slot == MORE { ("More", Icon::More) } else { TABS[slot] };
+            let is_on = on == Some(slot);
             let resp = ui.interact(cell, ui.scope_id().with(("phone_tab", slot)), Sense::click());
-            // The indicator is the 48 x 28 pill behind the icon, as Material draws an active tab.
-            let indicator = Rect::from_center_size(Pos2::new(cell.center().x, pill.top() + 18.0), vec2(48.0, 28.0));
+            // The indicator is the 56 x 32 pill behind the icon, as Material draws an active tab.
+            let indicator = Rect::from_center_size(Pos2::new(cell.center().x, bar.top() + 22.0), vec2(56.0_f32.min(w - 4.0), 32.0));
             let painter = ui.painter();
-            if resp.is_pointer_button_down_on() {
-                painter.rect_filled(indicator, 14.0, t.pressed);
+            if is_on {
+                painter.rect_filled(indicator, 16.0, t.accent_soft);
+            } else if resp.is_pointer_button_down_on() {
+                painter.rect_filled(indicator, 16.0, t.pressed);
             } else if resp.hovered() {
-                painter.rect_filled(indicator, 14.0, t.hover);
+                painter.rect_filled(indicator, 16.0, t.hover);
             }
-            painter.text(Pos2::new(cell.center().x, pill.top() + 44.0), Align2::CENTER_CENTER, lang.tr(label), theme::ui_font(11.0), t.text_dim);
-            icons::paint(painter, Rect::from_center_size(indicator.center(), vec2(22.0, 22.0)), icon, t.text);
-            resp.widget_info(|| egui::WidgetInfo::labeled(egui::Role::Button, true, lang.tr(label)));
+            let ink = if is_on { t.accent } else { t.text };
+            icons::paint(painter, Rect::from_center_size(indicator.center(), vec2(24.0, 24.0)), icon, ink);
+            let font = if is_on { theme::ui_bold(12.0) } else { theme::ui_font(12.0) };
+            painter.text(
+                Pos2::new(cell.center().x, bar.top() + 50.0),
+                Align2::CENTER_CENTER,
+                lang.tr(label),
+                font,
+                if is_on { t.accent } else { t.text_dim },
+            );
+            resp.widget_info(|| egui::WidgetInfo::selected(egui::Role::Button, true, is_on, lang.tr(label)));
             if resp.clicked() {
-                set_menu(&ctx, Some(slot));
+                close_all(&ctx);
+                if !is_on {
+                    set_menu(&ctx, Some(slot));
+                }
             }
         }
     });
+    ctx.data_mut(|d| d.insert_temp(tab_bar_rect_id(), panel.response.rect));
 }
 
 /// Whether the on-screen keyboard is up: the window (egui's content rect, which the host shrinks by
@@ -716,15 +767,14 @@ fn edit_button(ui: &mut Ui, t: Tokens, r: Rect, icon: Icon, color: Color32, labe
     resp.clicked()
 }
 
-/// The sheet button at the bar's left: a sheet icon and the active sheet's name, cut short with an
-/// ellipsis. Tapping it opens the Sheets sheet.
-fn sheet_button(app: &mut SheetApp, ui: &mut Ui, pill: Rect) {
+/// The sheet button, the tab bar's first slot: a filled chip with a sheet icon and the active sheet's
+/// name, cut short with an ellipsis (the icon alone when the window is too narrow). Tapping it opens
+/// the Sheets sheet, or closes it when it is open.
+fn sheet_button(app: &mut SheetApp, ui: &mut Ui, btn: Rect) {
     let ctx = ui.ctx().clone();
     let t = Tokens::get(&ctx);
     let lang = app.ui.language;
     let name = app.session.active().and_then(|d| d.wb.active().map(|s| s.name.clone())).unwrap_or_default();
-    // At least 48 pt tall (a touch target), inside the pill with a 3 pt inset top and bottom.
-    let btn = Rect::from_min_size(pill.left_top() + vec2(4.0, 3.0), vec2(SHEET_BTN_W, (pill.height() - 6.0).max(48.0)));
     let resp = ui.interact(btn, ui.scope_id().with("phone_sheet_button"), Sense::click());
     let painter = ui.painter();
     let base = if resp.is_pointer_button_down_on() {
@@ -735,13 +785,21 @@ fn sheet_button(app: &mut SheetApp, ui: &mut Ui, pill: Rect) {
         t.accent_soft
     };
     painter.rect_filled(btn, CornerRadius::same((btn.height() / 2.0) as u8), base);
-    icons::paint(painter, Rect::from_center_size(Pos2::new(btn.left() + 22.0, btn.center().y), vec2(20.0, 20.0)), Icon::Sheet, t.accent);
-    let text_left = btn.left() + 38.0;
-    paint_truncated(painter, text_left, btn.center().y, (btn.right() - 8.0 - text_left).max(0.0), &name, theme::ui_bold(14.0), t.text);
+    if btn.width() < SHEET_BTN_W {
+        icons::paint(painter, Rect::from_center_size(btn.center(), vec2(20.0, 20.0)), Icon::Sheet, t.accent);
+    } else {
+        icons::paint(painter, Rect::from_center_size(Pos2::new(btn.left() + 22.0, btn.center().y), vec2(20.0, 20.0)), Icon::Sheet, t.accent);
+        let text_left = btn.left() + 38.0;
+        paint_truncated(painter, text_left, btn.center().y, (btn.right() - 10.0 - text_left).max(0.0), &name, theme::ui_bold(14.0), t.accent);
+    }
     let label = format!("{}: {name}", lang.tr("Sheets"));
     resp.widget_info(|| egui::WidgetInfo::labeled(egui::Role::Button, true, label.clone()));
     if resp.clicked() {
-        set_menu(&ctx, Some(SHEETS));
+        let was_open = menu_tab(&ctx) == Some(SHEETS);
+        close_all(&ctx);
+        if !was_open {
+            set_menu(&ctx, Some(SHEETS));
+        }
     }
 }
 
@@ -772,16 +830,18 @@ fn sheet_panel(app: &mut SheetApp, ui: &mut Ui, title: &str, body: impl FnOnce(&
     let height = sheet_height(&ctx, picker);
     let panel = Panel::bottom("phone_sheet")
         .exact_size(height)
-        .frame(Frame::NONE.fill(t.menu_bg).corner_radius(CornerRadius { nw: 16, ne: 16, sw: 0, se: 0 }).inner_margin(Margin::symmetric(16, 0)))
+        .frame(Frame::NONE.fill(t.window).inner_margin(Margin::symmetric(GUTTER as i8, 0)))
         .show(ui, |ui| {
-            ui.add_space(8.0);
-            let (handle, _) = ui.allocate_exact_size(vec2(32.0, 4.0), Sense::hover());
-            ui.painter().rect_filled(handle, CornerRadius::same(2), t.separator);
-            ui.horizontal(|ui| {
-                ui.add_sized(
-                    vec2((ui.available_width() - ICON_BTN).max(0.0), ICON_BTN),
-                    egui::Label::new(egui::RichText::new(title).font(theme::ui_bold(18.0)).color(t.text)).truncate(),
-                );
+            let full = ui.max_rect();
+            ui.painter().hline(full.x_range().expand(GUTTER), full.top(), Stroke::new(1.0, t.separator));
+            // The header: the title at the left, Close at the right (the shared shell's sheet header).
+            ui.allocate_ui_with_layout(vec2(ui.available_width(), SHEET_HEADER_H), Layout::left_to_right(egui::Align::Center), |ui| {
+                ui.set_min_height(SHEET_HEADER_H);
+                let title_w = (ui.available_width() - ICON_BTN + 12.0).max(0.0);
+                ui.allocate_ui_with_layout(vec2(title_w, ICON_BTN), Layout::left_to_right(egui::Align::Center), |ui| {
+                    ui.set_min_width(title_w);
+                    ui.add(egui::Label::new(egui::RichText::new(title).font(theme::ui_font(20.0)).color(t.text)).truncate());
+                });
                 if icon_button(ui, t, Icon::Close, lang.tr("Close"), true).clicked() {
                     close_all(&ctx);
                 }
@@ -841,7 +901,7 @@ fn more_sheet(app: &mut SheetApp, ui: &mut Ui) {
         let ctx = ui.ctx().clone();
         let t = Tokens::get(&ctx);
         let lang = app.ui.language;
-        for (i, (label, icon)) in TABS.iter().enumerate().skip(NARROW_TABS) {
+        for (i, (label, icon)) in TABS.iter().enumerate().skip(BAR_TABS) {
             if list_row(ui, t, lang.tr(label), *icon, true).clicked() {
                 set_menu(&ctx, Some(i));
             }
@@ -1427,7 +1487,7 @@ pub(crate) fn touch_gestures(app: &mut SheetApp, ui: &mut Ui, geo: &Geo, sh: &Sh
 fn action_bar(app: &mut SheetApp, ctx: &Context, cells: Rect, selection: Rect) {
     let t = Tokens::get(ctx);
     let lang = app.ui.language;
-    let width = (ctx.content_rect().width() - 2.0 * PILL_SIDE).max(0.0);
+    let width = (ctx.content_rect().width() - 2.0 * GUTTER).max(0.0);
     // With More open, the bar grows by the More rows: it stays above (or below) the selection as a whole.
     let more = ctx.data(|d| d.get_temp::<bool>(more_id())).unwrap_or(false);
     // The active cell's comment (threaded, or a note): More offers to edit or delete it.
@@ -1445,9 +1505,8 @@ fn action_bar(app: &mut SheetApp, ctx: &Context, cells: Rect, selection: Rect) {
     };
     let mut picked = None;
     let (mut edit, mut delete) = (None, false);
-    let area = egui::Area::new(egui::Id::unique("phone_action_bar_area")).order(egui::Order::Foreground).fixed_pos(Pos2::new(PILL_SIDE, y)).show(
-        ctx,
-        |ui| {
+    let area =
+        egui::Area::new(egui::Id::unique("phone_action_bar_area")).order(egui::Order::Foreground).fixed_pos(Pos2::new(GUTTER, y)).show(ctx, |ui| {
             Frame::NONE
                 .fill(t.menu_bg)
                 .stroke(Stroke::new(1.0, t.ribbon_border))
@@ -1481,8 +1540,7 @@ fn action_bar(app: &mut SheetApp, ctx: &Context, cells: Rect, selection: Rect) {
                         }
                     }
                 });
-        },
-    );
+        });
     ctx.data_mut(|d| d.insert_temp(bar_rect_id(), area.response.rect));
     let done = picked.is_some() || edit.is_some() || delete;
     if more && (done || ctx.input(|i| i.key_pressed(egui::Key::Escape))) {
@@ -1556,6 +1614,23 @@ mod tests {
         assert!(!frame(&ctx, 900.0, 400.0));
         // Same width, much shorter: the keyboard is up.
         assert!(frame(&ctx, 900.0, 200.0));
+    }
+
+    #[test]
+    fn the_sheet_button_narrows_to_its_icon_when_the_tabs_need_the_room() {
+        assert_eq!(sheet_button_w(412.0), SHEET_BTN_W, "a 412 pt phone shows the sheet's name");
+        assert_eq!(sheet_button_w(360.0), SHEET_BTN_ICON_W, "a 360 pt phone shows the icon alone");
+        let rest = 360.0 - SHEET_BTN_ICON_W - 16.0;
+        assert!(rest / (BAR_TABS + 1) as f32 >= TAB_MIN_W, "with the icon alone every tab keeps its minimum width");
+    }
+
+    #[test]
+    fn the_on_tab_is_the_open_tab_or_more_for_a_tab_listed_in_more() {
+        assert_eq!(on_slot(None), None);
+        assert_eq!(on_slot(Some(0)), Some(0));
+        assert_eq!(on_slot(Some(BAR_TABS)), Some(MORE), "View is listed in More, so More is on");
+        assert_eq!(on_slot(Some(MORE)), Some(MORE));
+        assert_eq!(on_slot(Some(SHEETS)), None, "the Sheets sheet belongs to the sheet button, not a tab");
     }
 
     #[test]
