@@ -165,6 +165,8 @@ const OPTION_CATEGORIES: [(&str, Icon); 4] = [("General", Icon::Settings), ("Edi
 #[derive(Default)]
 struct Outcome {
     close: bool,
+    /// The view closed by Back (its arrow or Escape): on a phone the File menu shows again.
+    back: bool,
     page: Option<Page>,
     /// Phone Options: Back from a category to the category list.
     leave_category: bool,
@@ -216,6 +218,7 @@ pub fn show(app: &mut SheetApp, ui: &mut Ui) {
         && ctx.input_mut(|i| i.consume_key(Modifiers::NONE, Key::Escape))
     {
         out.close = true;
+        out.back = true;
     }
     if let Some(page) = out.page {
         bs.page = page;
@@ -227,6 +230,10 @@ pub fn show(app: &mut SheetApp, ui: &mut Ui) {
     // A command run from a page may itself have opened (or replaced) the view; keep that.
     if out.close {
         app.backstage = None;
+        // Phone: Back from a page returns to the File menu (page → menu → workbook).
+        if out.back && crate::phone::active(&ctx) {
+            crate::phone::open_file_menu(&ctx);
+        }
     } else if app.backstage.is_none() {
         app.backstage = Some(bs);
     }
@@ -264,12 +271,15 @@ fn phone_bar(ui: &mut Ui, bs: &Backstage, lang: Language, t: &Tokens, out: &mut 
                         out.leave_category = true;
                     } else {
                         out.close = true;
+                        out.back = true;
                     }
                 }
-                ui.add_sized(
-                    vec2(ui.available_width(), BACK_H),
-                    egui::Label::new(RichText::new(title).font(theme::ui_bold(18.0)).color(t.text)).truncate(),
-                );
+                // The page's name at the left, as every phone header has it (the shared shell).
+                let w = ui.available_width();
+                ui.allocate_ui_with_layout(vec2(w, BACK_H), egui::Layout::left_to_right(egui::Align::Center), |ui| {
+                    ui.set_min_width(w);
+                    ui.add(egui::Label::new(RichText::new(title).font(theme::ui_font(20.0)).color(t.text)).truncate());
+                });
             });
         },
     );
@@ -612,6 +622,18 @@ fn age(lang: Language, seconds: f64) -> String {
 }
 
 /// A large clickable row (icon, title, one-line description).
+/// A phone page's one primary action (the shared shell): a full-width 48 pt button in the accent
+/// colour, named by what it does.
+pub(super) fn primary_button(ui: &mut Ui, label: &str) -> egui::Response {
+    let t = Tokens::get(ui.ctx());
+    let (r, resp) = ui.allocate_exact_size(vec2(ui.available_width(), crate::phone::TOUCH_H), Sense::click());
+    let fill = if resp.is_pointer_button_down_on() { t.accent_dark } else { t.accent };
+    ui.painter().rect_filled(r, crate::phone::TOUCH_H / 2.0, fill);
+    ui.painter().text(r.center(), Align2::CENTER_CENTER, label, theme::ui_bold(15.0), t.on_accent);
+    resp.widget_info(|| egui::WidgetInfo::labeled(egui::Role::Button, true, label));
+    resp
+}
+
 fn action_row(ui: &mut Ui, icon: Icon, title: &str, detail: &str) -> egui::Response {
     let t = Tokens::get(ui.ctx());
     let phone = crate::phone::active(ui.ctx());
@@ -776,13 +798,14 @@ fn info(app: &mut SheetApp, ui: &mut Ui, bs: &mut Backstage) {
         }
         for (i, (key, label)) in PROPERTIES.iter().enumerate() {
             let (Some(draft), Some(saved)) = (bs.props.get_mut(i), current.get(i)) else { continue };
-            ui.label(RichText::new(lang.tr(label)).color(t.text_dim));
+            // The label names its field for screen readers, as on the desktop.
+            let label = ui.label(RichText::new(lang.tr(label)).color(t.text_dim));
             let id = ui.make_persistent_id(("backstage_prop", *key));
             if !ui.ctx().memory(|m| m.has_focus(id)) {
                 draft.clone_from(saved);
             }
             let field = egui::TextEdit::singleline(draft).id(id).desired_width(ui.available_width());
-            let resp = ui.add(crate::phone::touch_edit(ui, field));
+            let resp = ui.add(crate::phone::touch_edit(ui, field)).labelled_by(label.id);
             if resp.lost_focus() && draft != saved {
                 let mut params = serde_json::Map::new();
                 params.insert((*key).to_string(), json!(draft.clone()));
@@ -825,29 +848,64 @@ fn save_as(app: &mut SheetApp, ui: &mut Ui, bs: &mut Backstage, out: &mut Outcom
     ui.add_space(14.0);
     let fmt = bs.save_format;
     let current = SAVE_TYPES.iter().find(|(ext, _)| *ext == fmt).map_or("Excel Workbook (*.xlsx)", |(_, label)| *label);
-    ui.horizontal(|ui| {
-        let label = ui.label(lang.tr("Save as type"));
-        let width = if crate::phone::active(ui.ctx()) { ui.available_width() } else { 280.0 };
-        craft_ui::ComboBox::from_id_salt("backstage_save_type")
-            .width(width)
-            .selected_text(lang.tr(current))
-            .show_ui(ui, |ui| {
-                for (ext, label) in SAVE_TYPES {
-                    if ui.selectable_label(fmt == ext, lang.tr(label)).clicked() {
-                        bs.save_format = ext;
+    // Phone: the label above, one 48 pt row per type with a check on the chosen one, and one
+    // full-width Save button (the shared shell's page rules).
+    let phone = crate::phone::active(ui.ctx());
+    let save;
+    if phone {
+        let t = Tokens::get(ui.ctx());
+        ui.label(RichText::new(lang.tr("Save as type")).color(t.text_dim));
+        ui.add_space(4.0);
+        for (ext, label) in SAVE_TYPES {
+            let on = fmt == ext;
+            let (r, resp) = ui.allocate_exact_size(vec2(ui.available_width(), crate::phone::TOUCH_H), Sense::click());
+            if on {
+                ui.painter().rect_filled(r, 8.0, t.accent_soft);
+            } else if resp.is_pointer_button_down_on() {
+                ui.painter().rect_filled(r, 8.0, t.pressed);
+            }
+            ui.painter().text(
+                pos2(r.left() + 12.0, r.center().y),
+                Align2::LEFT_CENTER,
+                lang.tr(label),
+                theme::ui_font(15.0),
+                if on { t.accent } else { t.text },
+            );
+            if on {
+                icons::paint(ui.painter(), Rect::from_center_size(pos2(r.right() - 22.0, r.center().y), vec2(20.0, 20.0)), Icon::Check, t.accent);
+            }
+            resp.widget_info(|| egui::WidgetInfo::selected(egui::Role::RadioButton, true, on, lang.tr(label)));
+            if resp.clicked() {
+                bs.save_format = ext;
+            }
+        }
+        ui.add_space(16.0);
+        save = primary_button(ui, lang.tr("Save")).clicked();
+    } else {
+        ui.horizontal(|ui| {
+            let label = ui.label(lang.tr("Save as type"));
+            let width = if crate::phone::active(ui.ctx()) { ui.available_width() } else { 280.0 };
+            craft_ui::ComboBox::from_id_salt("backstage_save_type")
+                .width(width)
+                .selected_text(lang.tr(current))
+                .show_ui(ui, |ui| {
+                    for (ext, label) in SAVE_TYPES {
+                        if ui.selectable_label(fmt == ext, lang.tr(label)).clicked() {
+                            bs.save_format = ext;
+                        }
                     }
-                }
-            })
-            .response
-            .labelled_by(label.id);
-    });
-    ui.add_space(14.0);
-    // Desktop: the system Save dialog. Web: the file downloads.
-    let web = app.services.pick_save.is_none() && app.services.download.is_some();
-    let label = if web { format!("{} (.{fmt})", lang.tr("Download")) } else { lang.tr("Browse…").to_string() };
-    let browse =
-        if crate::phone::active(ui.ctx()) { action_row(ui, Icon::OpenFolder, &label, "") } else { square_button(ui, Icon::OpenFolder, &label) };
-    if browse.clicked() && app.commit_edit(0, 0, false, false) {
+                })
+                .response
+                .labelled_by(label.id);
+        });
+        ui.add_space(14.0);
+        // Desktop: the system Save dialog. Web: the file downloads.
+        let web = app.services.pick_save.is_none() && app.services.download.is_some();
+        let label = if web { format!("{} (.{fmt})", lang.tr("Download")) } else { lang.tr("Browse…").to_string() };
+        save = square_button(ui, Icon::OpenFolder, &label).clicked();
+    }
+    let fmt = bs.save_format;
+    if save && app.commit_edit(0, 0, false, false) {
         if fmt == "xlsx" {
             let before = app.session.active().map(|d| (d.path.clone(), d.is_dirty()));
             app.open_dialog("saveAs", json!({}));

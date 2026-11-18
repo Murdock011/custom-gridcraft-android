@@ -65,10 +65,11 @@ far. When a release is made it will be on the
 - Selection handles to drag a range, and a long-press action bar (Cut, Copy, Paste, Clear, and
   More for Fill Down, Insert and Delete).
 - Dialogs and messages as bottom sheets with large buttons pinned at the bottom.
-- A File side drawer (Home, New, Open, Info, Save, Save As, Export, Options, Close); Close and
-  Back ask before discarding unsaved changes. The File pages and Options open as full-screen
-  phone pages (Options: a category list, on/off settings as switches). With several workbooks
-  open, the drawer lists them to switch between or close.
+- A full-screen File menu (Home, New, Open, Info, Save, Save As, Export, Print, Options, About,
+  Close); Close and Back ask before discarding unsaved changes. The File pages and Options open as
+  full-screen phone pages in one column (Options: a category list, on/off settings as switches);
+  Back from a page returns to the File menu. Print saves a PDF to print from a PDF viewer. With
+  several workbooks open, the File menu lists them first, to switch between or close.
 
 ## Known gaps
 

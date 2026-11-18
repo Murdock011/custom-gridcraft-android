@@ -1171,3 +1171,26 @@ The first step of the shared phone plan for WordCraft, GridCraft and DeckCraft.
 - Checked: CI gate (all but the two `interaction` font tests, as before), layers, wasm, doctests,
   and renders of More, All tools, a tab, Search and the dot. Not run on a device or emulator.
 
+## Update 34: the shared phone shell, step 4 (File menu and pages)
+
+- The File drawer is now a full-screen File menu: a back arrow and "File" at the top, the open
+  workbooks first (with two or more), then Home, New, Open, Info, Save, Save As, Export, Print,
+  Options, About and Close as 52 pt rows (a chevron on rows that open a page). About opens the
+  About dialog. Print is listed again: on a phone it saves a PDF.
+- Back walks page → File menu → workbook: Back from a page (its arrow or Escape, which is
+  Android Back) shows the File menu again; Back there returns to the workbook. A page closed by
+  its own action (Open, Save) does not reopen the menu.
+- Page headers put the page name at the left (20 pt), as every phone header does.
+- Save As on a phone: "Save as type" above a 48 pt row per type with a check on the chosen one,
+  then one full-width Save button.
+- Print on a phone: one column. A sentence that printing goes through a PDF, Print What with its
+  label above, Fit Sheet on One Page as a switch, Page Setup…, one full-width Save as PDF button
+  (`file.exportPdf` with the page's options, through the save picker), then the preview as wide as
+  the screen. Before, the page kept the desktop's two columns and its preview ran off the screen.
+- Info: the property fields are labelled by their names (six fields had no accessible name; the
+  snapshot tool's accessibility check stopped on the page).
+- Tests: the File menu lists the eleven rows and fills the screen; About opens its dialog; Back
+  from Info shows the File menu and Back again returns to the workbook.
+- Checked: CI gate (all but the two `interaction` font tests, as before) and renders of the File
+  menu (one and two workbooks, light and dark) and every File page. Not run on a device.
+

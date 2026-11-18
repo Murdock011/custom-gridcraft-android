@@ -315,6 +315,8 @@ pub fn open_by_name(ctx: &Context, which: &str) {
         set_menu(ctx, Some(SHEETS));
     } else if which == "more" {
         set_menu(ctx, Some(MORE));
+    } else if which == "file" {
+        set_drawer(ctx, true);
     } else if which == "tools" {
         tools::open(ctx, tools::Tool::Tabs);
     } else if let Some(q) = which.strip_prefix("search:") {
@@ -353,18 +355,19 @@ fn drawer_rect_id() -> egui::Id {
     egui::Id::unique("phone_file_drawer_rect")
 }
 
-/// The File drawer's rows, in WordCraft's order: label, icon and what the row does. Recover and
-/// Print are left out: GridCraft has no recovery page on the phone, and printing is off on Android.
+/// The File menu's rows, in the shared shell's order: label, icon and what the row does. Recover is
+/// left out: GridCraft has no recovery page on the phone.
 #[derive(Clone, Copy)]
 enum FileRow {
     /// Opens a Backstage page.
     Page(Page),
     Save,
     SaveAs,
+    About,
     Close,
 }
 
-const FILE_ROWS: [(&str, Icon, FileRow); 9] = [
+const FILE_ROWS: [(&str, Icon, FileRow); 11] = [
     ("Home", Icon::Home, FileRow::Page(Page::Home)),
     ("New", Icon::NewFile, FileRow::Page(Page::New)),
     ("Open", Icon::OpenFolder, FileRow::Page(Page::Open)),
@@ -372,12 +375,16 @@ const FILE_ROWS: [(&str, Icon, FileRow); 9] = [
     ("Save", Icon::Save, FileRow::Save),
     ("Save As", Icon::SaveAs, FileRow::SaveAs),
     ("Export", Icon::Share, FileRow::Page(Page::Export)),
+    ("Print", Icon::Print, FileRow::Page(Page::Print)),
     ("Options", Icon::Settings, FileRow::Page(Page::Options)),
+    ("About", Icon::Info, FileRow::About),
     ("Close", Icon::Close, FileRow::Close),
 ];
 
-/// The drawer's width, as WordCraft's (296 pt).
-const DRAWER_W: f32 = 296.0;
+/// Opens the File menu (Back from a File page returns here).
+pub(crate) fn open_file_menu(ctx: &Context) {
+    set_drawer(ctx, true);
+}
 
 /// The top app bar (the shared shell): File, the workbook's name with • while it has unsaved changes,
 /// then Undo, Redo and Save. Undo and Redo are greyed when there is nothing to undo or redo.
@@ -439,15 +446,16 @@ fn run_file_row(app: &mut SheetApp, ctx: &Context, row: FileRow) {
                 app.run_or_alert("file.saveAs", json!({}));
             }
         }
+        FileRow::About => app.open_dialog("about", json!({})),
         FileRow::Close => {
             app.close_file(ctx);
         }
     }
 }
 
-/// The File drawer: the File actions as 48 pt rows in a panel under the app bar, from its left edge
-/// (WordCraft's navigation drawer). It floats over the page, so the page keeps its width. A row
-/// closes it, as does Escape, Back, or a press outside it (see `take_pointer`).
+/// The File menu (the shared shell): a full-screen list with a back arrow and "File" at the top, the
+/// open workbooks first when there are several, then the File rows. A row opens its page full
+/// screen; Back from the page returns here, and Back here (or Escape) returns to the workbook.
 fn file_drawer(app: &mut SheetApp, ctx: &Context) {
     if !drawer_open(ctx) {
         return;
@@ -458,52 +466,65 @@ fn file_drawer(app: &mut SheetApp, ctx: &Context) {
     }
     let t = Tokens::get(ctx);
     let lang = app.ui.language;
-    let current = app.backstage.as_ref().map(|b| b.page);
-    let bar_h = app_bar_h(ctx);
-    let height = ctx.content_rect().height() - bar_h;
-    let shadow = egui::Shadow { offset: [0, 6], blur: 18, spread: 0, color: Color32::from_black_alpha(80) };
-    let area = egui::Area::new(egui::Id::unique("phone_file_drawer")).anchor(egui::Align2::LEFT_TOP, vec2(0.0, bar_h)).order(Order::Foreground).show(
-        ctx,
-        |ui| {
-            Frame::NONE.fill(t.ribbon).shadow(shadow).inner_margin(Margin::symmetric(0, 16)).show(ui, |ui| {
-                ui.set_width(DRAWER_W);
-                ui.set_min_height(height - 32.0);
-                ui.spacing_mut().item_spacing.y = 0.0;
+    let screen = ctx.content_rect();
+    let area = egui::Area::new(egui::Id::unique("phone_file_drawer")).fixed_pos(screen.min).order(Order::Foreground).show(ctx, |ui| {
+        Frame::NONE.fill(t.window).show(ui, |ui| {
+            ui.set_width(screen.width());
+            ui.set_min_height(screen.height());
+            ui.spacing_mut().item_spacing.y = 0.0;
+            let bar_h = app_bar_h(ctx);
+            ui.allocate_ui_with_layout(vec2(screen.width(), bar_h), Layout::left_to_right(egui::Align::Center), |ui| {
+                ui.set_min_height(bar_h);
+                ui.add_space(4.0);
+                if icon_button(ui, t, Icon::Back, lang.tr("Back"), true).clicked() {
+                    set_drawer(ctx, false);
+                }
+                ui.add(egui::Label::new(egui::RichText::new(lang.tr("File")).font(theme::ui_font(20.0)).color(t.text)));
+            });
+            let (r, _) = ui.allocate_exact_size(vec2(screen.width(), 1.0), Sense::hover());
+            ui.painter().hline(r.x_range(), r.center().y, Stroke::new(1.0, t.separator));
+            egui::ScrollArea::vertical().id_salt("phone_file_menu").show(ui, |ui| {
                 if app.session.documents().len() > 1 {
                     open_workbooks(app, ui, ctx, lang.tr("Open workbooks"));
                 }
                 for (label, icon, row) in FILE_ROWS {
-                    let on_page = matches!(row, FileRow::Page(p) if current == Some(p));
                     let (r, resp) = ui.allocate_exact_size(vec2(ui.available_width(), ROW_H), Sense::click());
                     resp.widget_info(|| egui::WidgetInfo::labeled(egui::Role::Button, true, label));
-                    // The open Backstage page is a tinted pill, as Material's drawer marks its current item.
-                    let fill = if on_page {
-                        t.accent_soft
-                    } else if resp.is_pointer_button_down_on() {
-                        t.pressed
+                    if resp.is_pointer_button_down_on() {
+                        ui.painter().rect_filled(r, 0.0, t.pressed);
                     } else if resp.hovered() {
-                        t.hover
-                    } else {
-                        Color32::TRANSPARENT
-                    };
-                    let pill = r.shrink2(vec2(12.0, 0.0));
-                    ui.painter().rect_filled(pill, CornerRadius::same(24), fill);
+                        ui.painter().rect_filled(r, 0.0, t.hover);
+                    }
                     icons::paint(
                         ui.painter(),
-                        Rect::from_center_size(Pos2::new(pill.left() + 24.0, pill.center().y), vec2(20.0, 20.0)),
+                        Rect::from_center_size(Pos2::new(r.left() + GUTTER + 12.0, r.center().y), vec2(24.0, 24.0)),
                         icon,
                         t.text,
                     );
-                    let font = if on_page { theme::ui_bold(15.0) } else { theme::ui_font(15.0) };
-                    ui.painter().text(Pos2::new(pill.left() + 56.0, pill.center().y), Align2::LEFT_CENTER, lang.tr(label), font, t.text);
+                    ui.painter().text(
+                        Pos2::new(r.left() + GUTTER + 40.0, r.center().y),
+                        Align2::LEFT_CENTER,
+                        lang.tr(label),
+                        theme::ui_font(16.0),
+                        t.text,
+                    );
+                    // Rows that open a page have a chevron; Save, Save As, About and Close act at once.
+                    if matches!(row, FileRow::Page(_)) {
+                        icons::paint(
+                            ui.painter(),
+                            Rect::from_center_size(Pos2::new(r.right() - GUTTER - 10.0, r.center().y), vec2(20.0, 20.0)),
+                            Icon::Right,
+                            t.text_dim,
+                        );
+                    }
                     if resp.clicked() {
                         set_drawer(ctx, false);
                         run_file_row(app, ctx, row);
                     }
                 }
             });
-        },
-    );
+        });
+    });
     ctx.data_mut(|d| d.insert_temp(drawer_rect_id(), area.response.rect));
 }
 

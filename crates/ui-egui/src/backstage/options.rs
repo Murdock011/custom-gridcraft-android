@@ -140,7 +140,7 @@ fn category_row(ui: &mut Ui, t: Tokens, label: &str, icon: Icon) -> egui::Respon
 /// A switch row (the phone's on/off settings): the label wraps before the switch, the whole row is
 /// the touch target, and the thumb slides across as the switch turns on. Copied in look from
 /// WordCraft's `phone::toggle_row` (52 x 32 pt track, 16 pt off and 24 pt on thumb).
-fn toggle_row(ui: &mut Ui, t: Tokens, value: &mut bool, text: &str) -> egui::Response {
+pub(super) fn toggle_row(ui: &mut Ui, t: Tokens, value: &mut bool, text: &str) -> egui::Response {
     const SWITCH_W: f32 = 52.0;
     const SWITCH_H: f32 = 32.0;
     // The label wraps before the switch, so a long label never runs under it.
