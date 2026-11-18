@@ -197,7 +197,7 @@ fn phone_print(app: &mut SheetApp, ui: &mut Ui, bs: &mut Backstage, params: Json
         .response
         .labelled_by(label.id);
     ui.add_space(4.0);
-    if super::options::toggle_row(ui, t, &mut bs.fit_to_page, lang.tr("Fit Sheet on One Page")).changed() {
+    if crate::phone::toggle_row(ui, t, &mut bs.fit_to_page, lang.tr("Fit Sheet on One Page")).changed() {
         bs.preview_page = 0;
     }
     if super::action_row(ui, Icon::Margins, lang.tr("Page Setup…"), "").clicked() {

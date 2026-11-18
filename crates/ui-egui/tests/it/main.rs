@@ -87,6 +87,7 @@ mod paste_names;
 mod paste_special_dialog;
 mod phone_backstage;
 mod phone_bold;
+mod phone_dialogs;
 mod phone_drawer;
 mod phone_edit;
 mod phone_filter_comment;

@@ -132,3 +132,12 @@ fn a_table_adds_its_tab_under_selection_in_more() {
     tap(&mut h, "Table Design");
     assert!(h.query_by_label("Back").is_some() && h.query_by_label("Search all commands").is_none(), "Table Design opens its tab in the tools");
 }
+
+#[test]
+fn search_commands_opens_all_tools_search_on_a_phone() {
+    let mut h = harness(blank());
+    h.state_mut().open_dialog("commandSearch", json!({}));
+    h.run_steps(4);
+    assert!(h.state().dialog.is_none(), "the desktop Search Commands dialog does not open on a phone");
+    assert!(h.query_by_label("Search commands").is_some(), "All tools opens on its Search screen");
+}

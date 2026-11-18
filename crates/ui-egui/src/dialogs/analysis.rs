@@ -454,12 +454,12 @@ pub(super) fn solver(app: &mut SheetApp, ui: &mut egui::Ui, d: &mut Dialog, conf
         solver_options(ui, d, edit);
         return;
     }
-    ui.horizontal(|ui| {
+    crate::phone::field_row(ui, |ui| {
         let l = ui.label("Set Objective:");
         ref_edit(app, ui, d, "objective", RefLabel::By(l.id), 230.0);
     });
     let goal = text(d, "goal");
-    ui.horizontal(|ui| {
+    crate::phone::wrap_row(ui, |ui| {
         ui.label("To:");
         for (g, label) in [("max", "Max"), ("min", "Min"), ("value", "Value Of:")] {
             if ui.radio(goal == g, label).clicked() {
@@ -469,7 +469,9 @@ pub(super) fn solver(app: &mut SheetApp, ui: &mut egui::Ui, d: &mut Dialog, conf
         edit(ui, d, "value", 80.0, "Value Of:");
     });
     let l = ui.label("By Changing Variable Cells:");
-    ref_edit(app, ui, d, "variables", RefLabel::By(l.id), 420.0);
+    // The field's width leaves room for its collapse button beside it.
+    let w = (ui.available_width() - 40.0).min(420.0);
+    ref_edit(app, ui, d, "variables", RefLabel::By(l.id), w);
     ui.label("Subject to the Constraints:");
     let list: Vec<String> = d
         .values
@@ -478,7 +480,7 @@ pub(super) fn solver(app: &mut SheetApp, ui: &mut egui::Ui, d: &mut Dialog, conf
         .map(|a| a.iter().map(|c| c.as_str().map(str::to_string).unwrap_or_else(|| c.to_string())).collect())
         .unwrap_or_default();
     egui::Frame::group(ui.style()).show(ui, |ui| {
-        ui.set_min_size(vec2(420.0, 90.0));
+        ui.set_min_size(vec2(ui.available_width().min(420.0), 90.0));
         egui::ScrollArea::vertical().max_height(110.0).show(ui, |ui| {
             for (i, c) in list.iter().enumerate() {
                 if ui.selectable_label(d.list_index == i, c).clicked() {
@@ -487,7 +489,8 @@ pub(super) fn solver(app: &mut SheetApp, ui: &mut egui::Ui, d: &mut Dialog, conf
             }
         });
     });
-    ui.horizontal(|ui| {
+    // On a phone the new constraint's parts stack: the reference, the sign, the value, then Add.
+    crate::phone::field_row(ui, |ui| {
         ref_edit(app, ui, d, "newLhs", RefLabel::Named("Constraint Cell Reference"), 130.0);
         let op = text(d, "newOp");
         craft_ui::ComboBox::from_id_salt("solverOp")
@@ -525,11 +528,11 @@ pub(super) fn solver(app: &mut SheetApp, ui: &mut egui::Ui, d: &mut Dialog, conf
         }
     });
     let mut nonneg = d.values.get("nonNegative").and_then(Json::as_bool).unwrap_or(true);
-    if ui.checkbox(&mut nonneg, "Make Unconstrained Variables Non-Negative").changed() {
+    if crate::phone::check(ui, &mut nonneg, "Make Unconstrained Variables Non-Negative").changed() {
         d.values.insert("nonNegative".into(), json!(nonneg));
     }
     let method = text(d, "method");
-    ui.horizontal(|ui| {
+    crate::phone::field_row(ui, |ui| {
         ui.label("Select a Solving Method:");
         let label = |m: &str| match m {
             "simplex" => "Simplex LP",
@@ -557,7 +560,7 @@ pub(super) fn solver(app: &mut SheetApp, ui: &mut egui::Ui, d: &mut Dialog, conf
         .small(),
     );
     ui.add_space(4.0);
-    ui.horizontal(|ui| {
+    crate::phone::wrap_row(ui, |ui| {
         if ui.button("Reset All").clicked() && at_home(app, d) {
             match app.run("data.solverReset", json!({})) {
                 Ok(_) => {
@@ -594,7 +597,7 @@ pub(super) fn solver(app: &mut SheetApp, ui: &mut egui::Ui, d: &mut Dialog, conf
         }
     });
     if d.values.get("modelArea").and_then(Json::as_bool) == Some(true) {
-        ui.horizontal(|ui| {
+        crate::phone::wrap_row(ui, |ui| {
             let l = ui.label("Model Range:");
             ref_edit(app, ui, d, "modelRange", RefLabel::By(l.id), 170.0);
             let range = text(d, "modelRange");
@@ -648,7 +651,7 @@ pub(super) fn solver(app: &mut SheetApp, ui: &mut egui::Ui, d: &mut Dialog, conf
     // A row as tall as the buttons (see `ok_cancel`): the Load/Save area and the notes can make
     // the form shorter, and a right-to-left layout straight in the window would fill what is
     // left.
-    ui.horizontal(|ui| {
+    crate::phone::wrap_row(ui, |ui| {
         ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
             let t = crate::theme::Tokens::get(ui.ctx());
             let solve = ui.add(egui::Button::new(egui::RichText::new("  Solve  ").color(t.on_accent)).fill(t.accent));

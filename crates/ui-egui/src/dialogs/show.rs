@@ -206,9 +206,9 @@ fn draw_body(app: &mut SheetApp, ui: &mut egui::Ui, d: &mut Dialog, collapsed: &
                 let name = d.values.get("alt").and_then(Json::as_str).unwrap_or("No picture selected");
                 ui.label(name);
             } else {
-                ui.label("Picture file path (PNG or JPEG):");
+                let label = ui.label("Picture file path (PNG or JPEG):");
                 let mut path = d.values.get("path").and_then(Json::as_str).unwrap_or("").to_string();
-                if ui.add(crate::phone::touch_edit(ui, egui::TextEdit::singleline(&mut path))).changed() {
+                if ui.add(crate::phone::touch_edit(ui, egui::TextEdit::singleline(&mut path))).labelled_by(label.id).changed() {
                     d.values.remove("base64");
                     d.values.insert("path".into(), json!(path));
                 }
@@ -227,9 +227,9 @@ fn draw_body(app: &mut SheetApp, ui: &mut egui::Ui, d: &mut Dialog, collapsed: &
                     d.values.insert("path".into(), json!(path));
                 }
             }
-            ui.label("Description (optional):");
+            let label = ui.label("Description (optional):");
             let mut alt = d.values.get("alt").and_then(Json::as_str).unwrap_or("").to_string();
-            if ui.add(crate::phone::touch_edit(ui, egui::TextEdit::singleline(&mut alt))).changed() {
+            if ui.add(crate::phone::touch_edit(ui, egui::TextEdit::singleline(&mut alt))).labelled_by(label.id).changed() {
                 d.values.insert("alt".into(), json!(alt));
             }
             if d.values.get("placement").and_then(Json::as_str) == Some("cell") {
@@ -262,9 +262,9 @@ fn draw_body(app: &mut SheetApp, ui: &mut egui::Ui, d: &mut Dialog, collapsed: &
         }
         "saveCopy" => {
             let fmt = d.values.get("format").and_then(Json::as_str).unwrap_or("xlsx").to_string();
-            ui.label(format!("Save a copy as .{fmt}"));
+            let label = ui.label(format!("Save a copy as .{fmt}"));
             let mut path = d.values.get("path").and_then(Json::as_str).unwrap_or("").to_string();
-            ui.add(crate::phone::touch_edit(ui, egui::TextEdit::singleline(&mut path)));
+            ui.add(crate::phone::touch_edit(ui, egui::TextEdit::singleline(&mut path))).labelled_by(label.id);
             d.values.insert("path".into(), json!(path.clone()));
             ok_cancel(ui, confirm, open);
             if *confirm {

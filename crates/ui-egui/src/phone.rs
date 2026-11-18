@@ -6,7 +6,8 @@
 //! of its own.
 
 use egui::{
-    Align2, Color32, Context, CornerRadius, FontId, Frame, Layout, Margin, Order, Painter, Panel, Pos2, Rect, Response, Sense, Stroke, Ui, vec2,
+    Align2, Color32, Context, CornerRadius, FontId, Frame, Layout, Margin, Order, Painter, Panel, Pos2, Rect, Response, Sense, Stroke, StrokeKind,
+    Ui, pos2, vec2,
 };
 use gridcraft_engine::cmd;
 use gridcraft_engine::core::{CellRef, RangeRef};
@@ -614,6 +615,11 @@ pub fn bottom_bar(app: &mut SheetApp, ui: &mut Ui) {
         back_step(&ctx);
     }
     take_pointer(&ctx);
+    // Search Commands (its shortcut, a keytip) is All tools' Search on a phone: one way to find a command.
+    if app.dialog.as_ref().is_some_and(|d| d.name == "commandSearch") {
+        app.dialog = None;
+        tools::open(&ctx, tools::Tool::Search(String::new()));
+    }
     // Editing a cell: the edit bar replaces the tab bar and sits directly above the keyboard.
     track_edit(app, &ctx);
     if app.editor.is_some() {
@@ -1231,6 +1237,62 @@ fn sheet_row(ui: &mut Ui, t: Tokens, name: &str, index: usize, active: bool) -> 
     main.widget_info(|| egui::WidgetInfo::labeled(egui::Role::Button, true, name));
     more.widget_info(|| egui::WidgetInfo::labeled(egui::Role::Button, true, format!("More actions: {name}")));
     (main, more)
+}
+
+/// A switch row (the phone's on/off settings): the label wraps before the switch, the whole row is
+/// the touch target, and the thumb slides across as the switch turns on. Copied in look from
+/// WordCraft's `phone::toggle_row` (52 x 32 pt track, 16 pt off and 24 pt on thumb).
+pub(crate) fn toggle_row(ui: &mut Ui, t: Tokens, value: &mut bool, text: &str) -> egui::Response {
+    const SWITCH_W: f32 = 52.0;
+    const SWITCH_H: f32 = 32.0;
+    // The label wraps before the switch, so a long label never runs under it.
+    let text_w = (ui.available_width() - SWITCH_W - 16.0).max(40.0);
+    let galley = ui.painter().layout(text.to_string(), theme::ui_font(16.0), t.text, text_w);
+    let height = (galley.size().y + 24.0).max(48.0);
+    let (r, mut resp) = ui.allocate_exact_size(vec2(ui.available_width(), height), Sense::click());
+    if resp.clicked() {
+        *value = !*value;
+        resp.mark_changed();
+    }
+    let on = *value;
+    resp.widget_info(|| egui::WidgetInfo::selected(egui::Role::CheckBox, true, on, text));
+    if resp.is_pointer_button_down_on() {
+        ui.painter().rect_filled(r, 0.0, t.pressed);
+    } else if resp.hovered() {
+        ui.painter().rect_filled(r, 0.0, t.hover);
+    }
+    ui.painter().galley(pos2(r.left(), r.center().y - galley.size().y / 2.0), galley, t.text);
+    let anim = ui.ctx().animate_bool_responsive(resp.id, on);
+    let track = Rect::from_center_size(pos2(r.right() - SWITCH_W / 2.0, r.center().y), vec2(SWITCH_W, SWITCH_H));
+    let (fill, edge, thumb) = if on { (t.accent, t.accent, t.on_accent) } else { (t.input_bg, t.text_dim, t.text_dim) };
+    let edge_stroke = if on { Stroke::NONE } else { Stroke::new(2.0, edge) };
+    let p = ui.painter();
+    p.rect(track, egui::CornerRadius::same((SWITCH_H / 2.0) as u8), fill, edge_stroke, StrokeKind::Inside);
+    let x = track.left() + 16.0 + (SWITCH_W - 32.0) * anim;
+    p.circle_filled(pos2(x, track.center().y), 8.0 + 4.0 * anim, thumb);
+    resp
+}
+
+/// A dialog's label and field: one row on the desktop; on a phone the label above a field as wide
+/// as the dialog (the shared shell's dialog rules).
+pub(crate) fn field_row<R>(ui: &mut Ui, add: impl FnOnce(&mut Ui) -> R) -> egui::InnerResponse<R> {
+    if active(ui.ctx()) { ui.vertical(add) } else { ui.horizontal(add) }
+}
+
+/// A row of controls: one row on the desktop; on a phone it wraps onto the next line rather than
+/// run off the dialog's edge.
+pub(crate) fn wrap_row<R>(ui: &mut Ui, add: impl FnOnce(&mut Ui) -> R) -> egui::InnerResponse<R> {
+    if active(ui.ctx()) { ui.horizontal_wrapped(add) } else { ui.horizontal(add) }
+}
+
+/// A field's width: `desktop` on the desktop, the whole row on a phone.
+pub(crate) fn field_width(ui: &Ui, desktop: f32) -> f32 {
+    if active(ui.ctx()) { f32::INFINITY } else { desktop }
+}
+
+/// An on/off option: a checkbox on the desktop, a switch row on a phone.
+pub(crate) fn check(ui: &mut Ui, value: &mut bool, text: &str) -> Response {
+    if active(ui.ctx()) { toggle_row(ui, Tokens::get(ui.ctx()), value, text) } else { ui.checkbox(value, text) }
 }
 
 /// A touch target (Android's 48 pt minimum): dialog buttons, rows and text fields.

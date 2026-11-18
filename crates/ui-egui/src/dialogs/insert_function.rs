@@ -7,12 +7,15 @@ use super::{Dialog, Json, SheetApp, json, vec2};
 pub(super) fn insert_function(app: &mut SheetApp, ui: &mut egui::Ui, d: &mut Dialog, confirm: &mut bool) {
     use crate::function_library::{self as lib, ALL, MOST_RECENTLY_USED};
     let language = app.ui.language;
-    ui.horizontal(|ui| {
-        ui.label(language.tr("Search:"));
-        let r = ui.add(crate::phone::touch_edit(
-            ui,
-            egui::TextEdit::singleline(&mut d.search).desired_width(300.0).hint_text(language.tr("e.g. lookup, average, date")),
-        ));
+    crate::phone::field_row(ui, |ui| {
+        let label = ui.label(language.tr("Search:"));
+        let w = crate::phone::field_width(ui, 300.0);
+        let r = ui
+            .add(crate::phone::touch_edit(
+                ui,
+                egui::TextEdit::singleline(&mut d.search).desired_width(w).hint_text(language.tr("e.g. lookup, average, date")),
+            ))
+            .labelled_by(label.id);
         // Once only, so Tab can move on to the category list.
         take_first_focus(d, &r);
     });
@@ -35,10 +38,11 @@ pub(super) fn insert_function(app: &mut SheetApp, ui: &mut egui::Ui, d: &mut Dia
     // The category list is the dialog's only menu, so a menu open as the frame starts is its own
     // (Enter on a row picks it and closes the menu in this frame).
     let menu_was_open = egui::Popup::is_any_open(ui.ctx());
-    let picker = ui.horizontal(|ui| {
+    let picker = crate::phone::field_row(ui, |ui| {
         let label = ui.label(language.tr("Or select a category:"));
+        let w = if crate::phone::active(ui.ctx()) { ui.available_width() } else { 220.0 };
         craft_ui::ComboBox::from_id_salt("insertFunctionCategory")
-            .width(220.0)
+            .width(w)
             .selected_text(language.tr(&category))
             .show_ui(ui, |ui| {
                 for c in [MOST_RECENTLY_USED, ALL].into_iter().chain(lib::CATEGORIES.iter().map(|(_, l)| *l)) {

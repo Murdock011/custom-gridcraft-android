@@ -1194,3 +1194,33 @@ The first step of the shared phone plan for WordCraft, GridCraft and DeckCraft.
 - Checked: CI gate (all but the two `interaction` font tests, as before) and renders of the File
   menu (one and two workbooks, light and dark) and every File page. Not run on a device.
 
+## Update 35: the shared phone shell, step 5 (dialogs)
+
+Every dialog was drawn at 360 x 800 (82 names) and checked by eye and by a new test.
+
+- New helpers in `phone.rs`: `field_row` (label above a full-width field on a phone, one row on the
+  desktop), `wrap_row` (a row that wraps on a phone), `field_width`, `check` (a switch row on a
+  phone, a checkbox on the desktop) and `toggle_row`, moved from the Options page so every dialog
+  can use it.
+- Format Cells: on a phone the Number page is one column (Category as a full-width list, then the
+  sample, the code and the preset codes). Its tab strip already scrolled sideways.
+- Find and Replace: labels above full-width fields; Match case, Match entire cell contents and
+  Within workbook as switch rows (they ran off the right edge).
+- Insert Function: Search and the category above full-width fields (the category box was cut).
+- Paste Special: one column of options on a phone (two 200 pt columns ran off the edge).
+- Sort: each level's row wraps on a phone.
+- Solver: the objective, the new constraint and the method stack on a phone; the variables field
+  and constraint list fit the width; the non-negative option is a switch row.
+- Macros: the buttons go under the list when list and buttons do not fit side by side.
+- Insert Picture, Save a Copy and Zoom: their fields are labelled (they failed the accessibility
+  check).
+- Search Commands on a phone opens All tools' Search instead of the desktop dialog.
+- Tests: `phone_dialogs` opens every dialog at 360 x 800, runs it to the accessibility check, and
+  fails if any control ends past the right edge (the Format Cells tabs scroll by design);
+  Search Commands opens All tools' Search.
+- Not done: the small desktop checkboxes and radio buttons inside most dialogs are still the
+  desktop's (48 pt rows by `touch_style`, but not switch rows); the analysis panes that print raw
+  data (Error Checking, Evaluate Formula, Workbook Statistics, Action Journal) are unchanged.
+- Checked: CI gate (all but the two `interaction` font tests, as before) and renders of the changed
+  dialogs. Not run on a device.
+

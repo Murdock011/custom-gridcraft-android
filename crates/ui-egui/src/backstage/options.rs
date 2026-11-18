@@ -1,4 +1,4 @@
-use egui::{Align2, Key, Modifiers, Rect, Sense, Stroke, StrokeKind, pos2, vec2};
+use egui::{Align2, Key, Modifiers, Rect, Sense, Stroke, pos2, vec2};
 use serde_json::json;
 
 use super::{Backstage, Icon, Language, SheetApp, Tokens, Ui, dim, i18n, icons, section, theme};
@@ -115,7 +115,11 @@ fn formulas_options(app: &mut SheetApp, ui: &mut Ui, lang: Language) {
 
 /// A checkbox on the desktop, a 48 pt switch row on a phone. True when the value changed.
 fn option_check(ui: &mut Ui, value: &mut bool, text: &str) -> bool {
-    if crate::phone::active(ui.ctx()) { toggle_row(ui, Tokens::get(ui.ctx()), value, text).changed() } else { ui.checkbox(value, text).changed() }
+    if crate::phone::active(ui.ctx()) {
+        crate::phone::toggle_row(ui, Tokens::get(ui.ctx()), value, text).changed()
+    } else {
+        ui.checkbox(value, text).changed()
+    }
 }
 
 /// A 48 pt category row with its icon and a chevron (the phone's Options list).
@@ -134,40 +138,6 @@ fn category_row(ui: &mut Ui, t: Tokens, label: &str, icon: Icon) -> egui::Respon
     let stroke = Stroke::new(2.0, t.text_dim);
     p.line_segment([c + vec2(-3.0, -6.0), c + vec2(3.0, 0.0)], stroke);
     p.line_segment([c + vec2(3.0, 0.0), c + vec2(-3.0, 6.0)], stroke);
-    resp
-}
-
-/// A switch row (the phone's on/off settings): the label wraps before the switch, the whole row is
-/// the touch target, and the thumb slides across as the switch turns on. Copied in look from
-/// WordCraft's `phone::toggle_row` (52 x 32 pt track, 16 pt off and 24 pt on thumb).
-pub(super) fn toggle_row(ui: &mut Ui, t: Tokens, value: &mut bool, text: &str) -> egui::Response {
-    const SWITCH_W: f32 = 52.0;
-    const SWITCH_H: f32 = 32.0;
-    // The label wraps before the switch, so a long label never runs under it.
-    let text_w = (ui.available_width() - SWITCH_W - 16.0).max(40.0);
-    let galley = ui.painter().layout(text.to_string(), theme::ui_font(16.0), t.text, text_w);
-    let height = (galley.size().y + 24.0).max(48.0);
-    let (r, mut resp) = ui.allocate_exact_size(vec2(ui.available_width(), height), Sense::click());
-    if resp.clicked() {
-        *value = !*value;
-        resp.mark_changed();
-    }
-    let on = *value;
-    resp.widget_info(|| egui::WidgetInfo::selected(egui::Role::CheckBox, true, on, text));
-    if resp.is_pointer_button_down_on() {
-        ui.painter().rect_filled(r, 0.0, t.pressed);
-    } else if resp.hovered() {
-        ui.painter().rect_filled(r, 0.0, t.hover);
-    }
-    ui.painter().galley(pos2(r.left(), r.center().y - galley.size().y / 2.0), galley, t.text);
-    let anim = ui.ctx().animate_bool_responsive(resp.id, on);
-    let track = Rect::from_center_size(pos2(r.right() - SWITCH_W / 2.0, r.center().y), vec2(SWITCH_W, SWITCH_H));
-    let (fill, edge, thumb) = if on { (t.accent, t.accent, t.on_accent) } else { (t.input_bg, t.text_dim, t.text_dim) };
-    let edge_stroke = if on { Stroke::NONE } else { Stroke::new(2.0, edge) };
-    let p = ui.painter();
-    p.rect(track, egui::CornerRadius::same((SWITCH_H / 2.0) as u8), fill, edge_stroke, StrokeKind::Inside);
-    let x = track.left() + 16.0 + (SWITCH_W - 32.0) * anim;
-    p.circle_filled(pos2(x, track.center().y), 8.0 + 4.0 * anim, thumb);
     resp
 }
 
