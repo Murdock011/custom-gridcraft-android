@@ -271,6 +271,7 @@ pub fn handle(app: &mut SheetApp, ctx: &egui::Context, method: &str, p: &Json) -
                 ("ui.pythonMode", "Python Mode", "{on?: bool} (toggles without it) → {on}; a refused start is an error"),
                 ("view.darkMode", "Dark Mode", ""),
                 ("view.theme", "Display Theme", ""),
+                ("ui.phoneSheetStyle", "Phone Toolbar Sheets", "{style: tiles|list} → {style}"),
                 ("view.animations", "Animations", "{on?: bool} (toggles without it) → {on}"),
                 ("options.autoComplete", "Enable AutoComplete for cell values", "{on?: bool} (toggles without it) → {on}"),
                 ("options.highlightActiveRow", "Highlight the active cell's row", "{on?: bool} (toggles without it) → {on}"),

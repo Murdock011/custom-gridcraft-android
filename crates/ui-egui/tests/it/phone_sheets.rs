@@ -187,3 +187,20 @@ fn the_phone_options_page_offers_light_dark_and_system_with_light_first_chosen()
     h.run_steps(4);
     assert_eq!(h.state().ui.theme_mode(), "dark", "Dark is chosen");
 }
+
+#[test]
+fn back_closes_one_thing_at_a_time_page_then_sheet() {
+    let mut h = harness();
+    tab(&h, "Home").click();
+    h.run_steps(4);
+    h.get_by_label("Borders…").click();
+    h.run_steps(4);
+    assert!(h.query_by_label("All Borders").is_some(), "the Borders page is open");
+    h.key_press(egui::Key::Escape);
+    h.run_steps(4);
+    assert!(h.query_by_label("All Borders").is_none() && h.query_by_label("Bold").is_some(), "Back leaves the page for the sheet");
+    assert!(h.state().can_go_back(&h.ctx), "the open sheet keeps Back for the app");
+    h.key_press(egui::Key::Escape);
+    h.run_steps(4);
+    assert!(h.query_by_label("Bold").is_none(), "Back closes the sheet");
+}

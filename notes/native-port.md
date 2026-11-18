@@ -1243,3 +1243,21 @@ Every dialog was drawn at 360 x 800 (82 names) and checked by eye and by a new t
   kept); the dark grid on a phone but not the desktop, with paper still white; the Options page
   offers Light, Dark and System with Light chosen first.
 
+## Update 37: the shared phone shell, step 7 (List style, selection bar, Back)
+
+- List style (`phone/list.rs`), chosen in Options › General › Phone layout (`UiState::
+  phone_list_style`, default Tiles; UI command `ui.phoneSheetStyle {style: tiles|list}`). No tab
+  bar: a floating quick bar with the sheet button, Bold (on for the active cell), Fill Color (opens
+  Home's colour page), AutoSum, Sort A to Z and More, which opens the sheet at the tab used last.
+  Buttons drop from the right when they do not fit (a 360 pt phone keeps Bold and Fill Color).
+- In the List style the sheet's header is a tab menu: every tab, the contextual tabs under
+  Selection, then Search and All tools pinned under them. The body draws the tiles' model: one-tap
+  formats as a row of 48 pt icon buttons (scrolling sideways), every other command as a row with a
+  chevron where it opens a page or asks for values.
+- A press inside an open pop-up (the tab menu, a list box) no longer counts as outside the sheet.
+- The selection bar's More list adds Format Cells… and New Comment.
+- The snapshot tool takes `--list-style`.
+- Tests: no tab bar and a working quick bar; the tab menu switches tabs and More reopens the last;
+  the menu opens All tools; both styles list the same Home commands; the setting persists and
+  defaults to Tiles; the quick bar's fit at 412 and 360 pt; Back closes a page, then the sheet.
+

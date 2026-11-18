@@ -1,7 +1,7 @@
 //! Renders the whole GridCraft window offscreen (wgpu, no window) to a PNG.
 //!
 //! `cargo run --release -p gridcraft-ui-egui --example snapshot -- [--sample sales] [--in file.xlsx]
-//!  [--size 1440x900] [--scale 2] [--cmd 'id={json}']... [--tab Insert] [--dark] [--language en|es|zh|ja|ko|ru|pt|de|cs|fr|tr]
+//!  [--size 1440x900] [--scale 2] [--cmd 'id={json}']... [--tab Insert] [--dark] [--list-style] [--language en|es|zh|ja|ko|ru|pt|de|cs|fr|tr]
 //!  [--pane name] [--object id] [--dialog 'name={json}'] [--refedit key=A1:B2] [--category 0-3] [--hf-edit header|footer] [--phone-sheet sheets|more|Home|actions:N|actionbar] out.png`
 //!
 //! `--refedit key=range` collapses the open dialog to its reference box `key`, then selects
@@ -26,6 +26,7 @@ fn main() {
     let mut cmds: Vec<String> = vec![];
     let mut tab = None;
     let mut dark = false;
+    let mut list_style = false;
     let mut pane: Option<String> = None;
     let mut chart: Option<u32> = None;
     let mut dialog: Option<String> = None;
@@ -66,6 +67,7 @@ fn main() {
                 tab = args.get(i).cloned();
             }
             "--dark" => dark = true,
+            "--list-style" => list_style = true,
             "--pane" => {
                 i += 1;
                 pane = args.get(i).cloned();
@@ -134,6 +136,7 @@ fn main() {
             {
                 let mut app = SheetApp::new(session, Default::default());
                 app.ui.dark = dark;
+                app.ui.phone_list_style = list_style;
                 if let Some(code) = &language
                     && let Some(l) = gridcraft_ui_egui::i18n::Language::parse(code)
                 {

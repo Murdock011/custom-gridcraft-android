@@ -347,7 +347,7 @@ pub(super) fn heading(ui: &mut Ui, t: Tokens, text: &str) {
 }
 
 /// Home's font row: the font name (opens the Font list), then − size + (the size opens the Size list).
-fn font_row(app: &mut SheetApp, ui: &mut Ui, st: &Style) {
+pub(super) fn font_row(app: &mut SheetApp, ui: &mut Ui, st: &Style) {
     let ctx = ui.ctx().clone();
     let t = Tokens::get(&ctx);
     let lang = app.ui.language;

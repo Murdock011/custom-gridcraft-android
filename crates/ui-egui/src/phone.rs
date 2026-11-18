@@ -23,6 +23,7 @@ use crate::tabs;
 use crate::theme::{self, Tokens};
 use crate::widgets::color_palette;
 
+mod list;
 mod tiles;
 mod tools;
 
@@ -264,7 +265,10 @@ pub fn take_pointer(ctx: &Context) {
         let rect = ctx.data(|d| d.get_temp::<Rect>(tab_bar_rect_id()));
         matches!((pos, rect), (Some(p), Some(r)) if r.contains(p))
     };
-    let outside_sheet = menu_tab(ctx).is_some() && !on_tab_bar && {
+    // A pop-up menu over the sheet (List style's tab menu, a list box) owns its presses: they may
+    // land outside the sheet's area.
+    let in_popup = egui::Popup::is_any_open(ctx);
+    let outside_sheet = menu_tab(ctx).is_some() && !on_tab_bar && !in_popup && {
         let rect = ctx.data(|d| d.get_temp::<Rect>(sheet_rect_id()));
         matches!((pos, rect), (Some(p), Some(r)) if !r.contains(p))
     };
@@ -631,7 +635,13 @@ pub fn bottom_bar(app: &mut SheetApp, ui: &mut Ui) {
     if keyboard_up(&ctx) && menu_tab(&ctx).is_none() {
         return;
     }
-    tab_bar(app, ui);
+    // The List style has no tab bar: its quick bar shows while no sheet is open.
+    let list_style = list::on(app);
+    if !list_style {
+        tab_bar(app, ui);
+    } else if menu_tab(&ctx).is_none() {
+        return list::quick_bar(app, ui);
+    }
     match menu_tab(&ctx) {
         Some(SHEETS) => sheets_sheet(app, ui),
         Some(MORE) => more_sheet(app, ui),
@@ -868,6 +878,18 @@ fn paint_truncated(painter: &Painter, left: f32, y: f32, max_w: f32, text: &str,
 /// The bottom sheet's frame: the header (a back arrow when `back` is given, the title, Close), then
 /// the body in a scroll area.
 fn sheet_panel(app: &mut SheetApp, ui: &mut Ui, title: &str, back: Option<fn(&Context)>, body: impl FnOnce(&mut SheetApp, &mut Ui)) {
+    sheet_frame(app, ui, title, None, back, body);
+}
+
+/// The sheet's frame, with the title or (List style) the tab menu of tab `tab_menu` in the header.
+fn sheet_frame(
+    app: &mut SheetApp,
+    ui: &mut Ui,
+    title: &str,
+    tab_menu: Option<usize>,
+    back: Option<fn(&Context)>,
+    body: impl FnOnce(&mut SheetApp, &mut Ui),
+) {
     let ctx = ui.ctx().clone();
     let t = Tokens::get(&ctx);
     let lang = app.ui.language;
@@ -896,7 +918,12 @@ fn sheet_panel(app: &mut SheetApp, ui: &mut Ui, title: &str, back: Option<fn(&Co
                 let title_w = (ui.available_width() - ICON_BTN + 12.0).max(0.0);
                 ui.allocate_ui_with_layout(vec2(title_w, ICON_BTN), Layout::left_to_right(egui::Align::Center), |ui| {
                     ui.set_min_width(title_w);
-                    ui.add(egui::Label::new(egui::RichText::new(title).font(theme::ui_font(20.0)).color(t.text)).truncate());
+                    match tab_menu {
+                        Some(tab) => list::tab_menu(app, ui, tab),
+                        None => {
+                            ui.add(egui::Label::new(egui::RichText::new(title).font(theme::ui_font(20.0)).color(t.text)).truncate());
+                        }
+                    }
                 });
                 if icon_button(ui, t, Icon::Close, lang.tr("Close"), true).clicked() {
                     close_all(&ctx);
@@ -924,6 +951,10 @@ fn tab_sheet(app: &mut SheetApp, ui: &mut Ui, tab: usize) {
         return sheet_panel(app, ui, title, Some(close_page), |app, ui| sub_page(app, ui, p));
     }
     let title = app.ui.language.tr(TABS.get(tab).map_or("", |tb| tb.0));
+    if list::on(app) {
+        list::remember(&ctx, tab);
+        return sheet_frame(app, ui, title, Some(tab), None, |app, ui| list::body(app, ui, tab));
+    }
     sheet_panel(app, ui, title, None, |app, ui| tiles::body(app, ui, tab));
 }
 
@@ -1487,7 +1518,7 @@ const EDGE: f32 = 24.0;
 
 /// The action bar's buttons: the clipboard, Clear and Fill Down run their commands, the two insert and
 /// delete entries open their dialogs (as the ribbon's ellipsis entries do).
-const BAR_ITEMS: [(&str, Icon, Act); 7] = [
+const BAR_ITEMS: [(&str, Icon, Act); 9] = [
     ("Cut", Icon::Cut, Act::Copy("edit.cut")),
     ("Copy", Icon::Copy, Act::Copy("edit.copy")),
     ("Paste", Icon::Paste, Act::Run("edit.paste")),
@@ -1495,6 +1526,8 @@ const BAR_ITEMS: [(&str, Icon, Act); 7] = [
     ("Fill Down", Icon::FillDown, Act::Run("edit.fillDown")),
     ("Insert…", Icon::Insert, Act::Dialog("insertCells", None)),
     ("Delete…", Icon::Delete, Act::Dialog("deleteCells", None)),
+    ("Format Cells…", Icon::Format, Act::Dialog("formatCells", None)),
+    ("New Comment", Icon::Comment, Act::Comment),
 ];
 
 /// The action bar shows this many actions and an "More" slot; the rest open the More sheet, so the bar never

@@ -91,6 +91,7 @@ mod phone_dialogs;
 mod phone_drawer;
 mod phone_edit;
 mod phone_filter_comment;
+mod phone_list;
 mod phone_object_drag;
 mod phone_pinch;
 mod phone_sheets;

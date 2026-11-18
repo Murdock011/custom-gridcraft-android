@@ -141,34 +141,54 @@ fn category_row(ui: &mut Ui, t: Tokens, label: &str, icon: Icon) -> egui::Respon
     resp
 }
 
+/// One choice of a phone setting: a 56 pt row with a radio mark, the title and a line under it.
+/// True when tapped.
+fn choice_row(ui: &mut Ui, t: Tokens, title: &str, line: &str, on: bool) -> bool {
+    let (r, resp) = ui.allocate_exact_size(vec2(ui.available_width(), 56.0), Sense::click());
+    if resp.is_pointer_button_down_on() {
+        ui.painter().rect_filled(r, 0.0, t.pressed);
+    }
+    let c = pos2(r.left() + 14.0, r.center().y);
+    ui.painter().circle_stroke(c, 10.0, Stroke::new(2.0, if on { t.accent } else { t.text_dim }));
+    if on {
+        ui.painter().circle_filled(c, 5.5, t.accent);
+    }
+    ui.painter().text(pos2(r.left() + 40.0, r.center().y - 9.0), Align2::LEFT_CENTER, title, theme::ui_font(16.0), t.text);
+    ui.painter().text(pos2(r.left() + 40.0, r.center().y + 12.0), Align2::LEFT_CENTER, line, theme::ui_font(12.0), t.text_dim);
+    resp.widget_info(|| egui::WidgetInfo::selected(egui::Role::RadioButton, true, on, title));
+    resp.clicked()
+}
+
+/// A phone setting's heading, in the accent colour.
+fn setting_heading(ui: &mut Ui, t: Tokens, text: &str) {
+    ui.label(egui::RichText::new(text).font(theme::ui_bold(13.0)).color(t.accent));
+    ui.add_space(4.0);
+}
+
 /// The phone's Theme setting (the shared shell): Light (the default), Dark (the whole app, the grid
-/// included) and System (follows the phone), as rows with a radio mark and a line under each.
+/// included) and System (follows the phone); then Phone layout: Tiles (the default) or List.
 fn theme_rows(app: &mut SheetApp, ui: &mut Ui, lang: Language) {
     let t = Tokens::get(ui.ctx());
-    ui.label(egui::RichText::new(lang.tr("Theme")).font(theme::ui_bold(13.0)).color(t.accent));
-    ui.add_space(4.0);
+    setting_heading(ui, t, lang.tr("Theme"));
     let mode = app.ui.theme_mode();
     for (value, title, line) in [
         ("light", "Light", "The default"),
         ("dark", "Dark", "The whole app, the grid included"),
         ("system", "System", "Follows the phone's dark theme setting"),
     ] {
-        let on = mode == value;
-        let (r, resp) = ui.allocate_exact_size(vec2(ui.available_width(), 56.0), Sense::click());
-        if resp.is_pointer_button_down_on() {
-            ui.painter().rect_filled(r, 0.0, t.pressed);
-        }
-        let c = pos2(r.left() + 14.0, r.center().y);
-        let ring = if on { t.accent } else { t.text_dim };
-        ui.painter().circle_stroke(c, 10.0, Stroke::new(2.0, ring));
-        if on {
-            ui.painter().circle_filled(c, 5.5, t.accent);
-        }
-        ui.painter().text(pos2(r.left() + 40.0, r.center().y - 9.0), Align2::LEFT_CENTER, lang.tr(title), theme::ui_font(16.0), t.text);
-        ui.painter().text(pos2(r.left() + 40.0, r.center().y + 12.0), Align2::LEFT_CENTER, lang.tr(line), theme::ui_font(12.0), t.text_dim);
-        resp.widget_info(|| egui::WidgetInfo::selected(egui::Role::RadioButton, true, on, lang.tr(title)));
-        if resp.clicked() && !on {
+        if choice_row(ui, t, lang.tr(title), lang.tr(line), mode == value) && mode != value {
             app.run_or_alert("view.theme", json!({"mode": value}));
+        }
+    }
+    ui.add_space(12.0);
+    setting_heading(ui, t, lang.tr("Phone layout"));
+    ui.label(egui::RichText::new(lang.tr("Toolbar sheets")).color(t.text_dim));
+    let list = app.ui.phone_list_style;
+    for (style, title, line, on) in
+        [("tiles", "Tiles", "Icons in a grid, grouped by section", !list), ("list", "List", "One command per row, with a tab menu at the top", list)]
+    {
+        if choice_row(ui, t, lang.tr(title), lang.tr(line), on) && !on {
+            app.run_or_alert("ui.phoneSheetStyle", json!({"style": style}));
         }
     }
     ui.add_space(12.0);
