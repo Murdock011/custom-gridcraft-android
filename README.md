@@ -16,7 +16,7 @@
 
 ## Screenshots
 
-<p><img src="docs/screenshots/grid.png" width="180" alt="A budget workbook on the grid, with the Total cell selected and its SUM formula in the formula bar"> <img src="docs/screenshots/sheets.png" width="180" alt="The Sheets list opened from the bottom pill"> <img src="docs/screenshots/home-tab.png" width="180" alt="Home tab sheet with formatting controls"> <img src="docs/screenshots/drawer.png" width="180" alt="File side drawer with open workbooks and File commands"> <img src="docs/screenshots/typing.png" width="180" alt="Editing a cell with the on-screen keyboard and the cancel and confirm bar"></p>
+<p><img src="docs/screenshots/grid.png" width="180" alt="The sales sample on the grid, with the tab bar at the bottom"> <img src="docs/screenshots/home-tab.png" width="180" alt="The Home sheet: font row and tiles in sections"> <img src="docs/screenshots/sheets.png" width="180" alt="The Sheets list opened from the sheet button"> <img src="docs/screenshots/all-tools.png" width="180" alt="All tools: every command by ribbon tab"> <img src="docs/screenshots/file-menu.png" width="180" alt="The full-screen File menu"> <img src="docs/screenshots/list-style.png" width="180" alt="The List style: a tab menu and one command per row"> <img src="docs/screenshots/dark.png" width="180" alt="Dark theme with the dark grid"></p>
 
 ## What this is
 
