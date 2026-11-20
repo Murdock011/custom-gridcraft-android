@@ -36,10 +36,11 @@ engine **0.19.1**.
 
 ## Download
 
-There is no release yet. The app is in early development and is only built for the emulator so
-far. When a release is made it will be on the
-[Releases page](https://github.com/Murdock011/custom-gridcraft-android/releases). It installs as
-`ai.storyteller.gridcraft.native`, next to any other GridCraft or WordCraft build.
+Builds are on the [Releases page](https://github.com/Murdock011/custom-gridcraft-android/releases).
+The latest is **0.2.0** (GridCraft engine 0.19.1): `custom-gridcraft-android-arm64.apk`, for 64-bit
+ARM phones (arm64-v8a). It is signed with a debug key, so Android asks you to allow installs from
+your browser or file manager. It installs as `ai.storyteller.gridcraft.native`, next to any other
+GridCraft or WordCraft build.
 
 ## What works
 
