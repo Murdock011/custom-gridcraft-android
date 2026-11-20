@@ -37,6 +37,7 @@ pub mod formula_bar;
 mod formula_locale;
 pub mod function_library;
 pub mod grid;
+pub mod host_settings;
 pub mod i18n;
 pub mod icons;
 pub mod keymap;

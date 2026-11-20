@@ -83,6 +83,17 @@ pub struct Shell {
     /// The dirty documents as (uid, revision) at the last frame, and when that changed (`recovery::write_due`).
     seen: Vec<(u64, u64)>,
     changed_at: Instant,
+    /// The settings as last written to disk, and frames since they were compared.
+    saved_settings: Vec<u8>,
+    settings_frames: u32,
+}
+
+/// How often (in frames) the settings are compared with what is on disk.
+const SETTINGS_FRAMES: u32 = 60;
+
+/// Where the settings (`ui.json`, `prefs.json`) live: `settings` in the app's data folder.
+fn settings_dir() -> Option<std::path::PathBuf> {
+    files::DIR.get().map(|d| d.join("settings"))
 }
 
 impl Shell {
@@ -118,6 +129,11 @@ impl Shell {
             ..Default::default()
         };
         let mut app = SheetApp::new(session, services);
+        // The saved settings: the theme (Light by default), the phone layout, the preferences.
+        if let Some(dir) = settings_dir() {
+            gridcraft_ui_egui::host_settings::load(&mut app, &dir);
+        }
+        let saved_settings = gridcraft_ui_egui::host_settings::snapshot(&app);
         *PENDING.lock().unwrap_or_else(|e| e.into_inner()) = pending_docs(&app.session);
         SheetApp::setup_context_for_language(ctx, app.ui.dark, app.ui.language);
         app.after_engine();
@@ -133,6 +149,8 @@ impl Shell {
             opening: Vec::new(),
             written: state.clone(),
             seen: state,
+            saved_settings,
+            settings_frames: 0,
             changed_at: {
                 #[allow(clippy::disallowed_methods)] // Android only: the clock is there
                 Instant::now()
@@ -307,6 +325,17 @@ impl eframe::App for Shell {
         // Inbox documents open inside `logic`: the one that became active keeps its location.
         let before = self.app.session.active().map(|d| d.uid);
         self.app.logic(ctx);
+        self.settings_frames += 1;
+        if self.settings_frames >= SETTINGS_FRAMES {
+            self.settings_frames = 0;
+            let now = gridcraft_ui_egui::host_settings::snapshot(&self.app);
+            if now != self.saved_settings
+                && let Some(dir) = settings_dir()
+            {
+                gridcraft_ui_egui::host_settings::save(&self.app, &dir);
+                self.saved_settings = now;
+            }
+        }
         let after = self.app.session.active().map(|d| d.uid);
         let opened = std::mem::take(&mut self.opening);
         if before != after
