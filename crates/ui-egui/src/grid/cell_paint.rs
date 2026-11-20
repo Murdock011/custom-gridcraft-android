@@ -11,6 +11,50 @@ pub(super) struct Look {
     pub(super) text_color: Color32,
 }
 
+/// Relative luminance of a colour (WCAG 2), 0 for black to 1 for white.
+fn luminance(c: Color32) -> f32 {
+    let ch = |v: u8| {
+        let v = f32::from(v) / 255.0;
+        if v <= 0.039_28 { v / 12.92 } else { ((v + 0.055) / 1.055).powf(2.4) }
+    };
+    0.2126 * ch(c.r()) + 0.7152 * ch(c.g()) + 0.0722 * ch(c.b())
+}
+
+/// The contrast ratio of two colours (WCAG 2), 1 to 21.
+pub(super) fn contrast(a: Color32, b: Color32) -> f32 {
+    let (la, lb) = (luminance(a), luminance(b));
+    (la.max(lb) + 0.05) / (la.min(lb) + 0.05)
+}
+
+/// The contrast a cell's text keeps on the dark grid.
+const TEXT_CONTRAST: f32 = 4.5;
+
+/// A text colour readable on `bg`: the colour itself when it has at least 4.5:1 contrast (the usual
+/// level for text), else the colour blended toward white (on a dark background) until it does. Used on the dark grid only,
+/// on screen only: the file keeps its colours.
+pub(super) fn readable_on(text: Color32, bg: Color32) -> Color32 {
+    if contrast(text, bg) >= TEXT_CONTRAST || luminance(bg) > 0.5 {
+        return text;
+    }
+    let mut c = text;
+    for step in 1..=10 {
+        c = text.lerp_to_gamma(Color32::WHITE, step as f32 / 10.0);
+        if contrast(c, bg) >= TEXT_CONTRAST {
+            break;
+        }
+    }
+    c
+}
+
+/// A cell's look on the dark grid: its text, on its fill or the dark grid, made readable.
+pub(super) fn on_dark_grid(mut lk: Look, t: &theme::Tokens) -> Look {
+    if t.dark_grid {
+        let bg = lk.fill.unwrap_or(t.cell_bg);
+        lk.text_color = readable_on(lk.text_color, bg);
+    }
+    lk
+}
+
 pub(super) fn col32(c: Color, wb: &Workbook, default: Color32) -> Color32 {
     c.resolve(&wb.theme).map(theme::color32).unwrap_or(default)
 }
@@ -324,5 +368,31 @@ pub(super) fn painted_halign(h: HAlign, rtl: bool) -> HAlign {
         HAlign::Left if rtl => HAlign::Right,
         HAlign::Right if rtl => HAlign::Left,
         h => h,
+    }
+}
+
+#[cfg(test)]
+mod dark_grid_tests {
+    use super::*;
+
+    #[test]
+    fn automatic_black_text_turns_light_on_the_dark_grid() {
+        let bg = Color32::from_rgb(0x1E, 0x1E, 0x1E);
+        let c = readable_on(Color32::BLACK, bg);
+        assert!(contrast(c, bg) >= TEXT_CONTRAST, "black became {c:?}");
+    }
+
+    #[test]
+    fn a_dark_chosen_colour_is_lightened_and_a_light_one_kept() {
+        let bg = Color32::from_rgb(0x1E, 0x1E, 0x1E);
+        let navy = Color32::from_rgb(0x1F, 0x4E, 0x79);
+        assert!(contrast(readable_on(navy, bg), bg) >= TEXT_CONTRAST);
+        let yellow = Color32::from_rgb(0xFF, 0xD7, 0x00);
+        assert_eq!(readable_on(yellow, bg), yellow, "a readable colour is kept");
+    }
+
+    #[test]
+    fn text_on_a_light_fill_keeps_its_colour() {
+        assert_eq!(readable_on(Color32::BLACK, Color32::from_rgb(0xCF, 0xE7, 0xF5)), Color32::BLACK);
     }
 }

@@ -276,7 +276,7 @@ fn theme_choices(app: &mut SheetApp, ui: &mut Ui) {
 
 const CONTEXTUAL_TABS: [&str; 3] = ["Table Design", "Chart Design", crate::paper_view::TAB];
 
-fn contextual_tabs(app: &SheetApp) -> Vec<&'static str> {
+pub(crate) fn contextual_tabs(app: &SheetApp) -> Vec<&'static str> {
     let mut v = Vec::new();
     if let Some(d) = app.session.active()
         && let Some(sh) = d.wb.active()

@@ -1093,3 +1093,171 @@ commit f90bbd27. Not yet device-checked or merged into `custom-android`.
 - `cargo fmt` reformatted `apps/gridcraft-android` to upstream's wider line width.
 - Checks run: clippy `-D warnings` (ui-egui, android, all targets), `cargo test -p gridcraft-engine -p gridcraft-ui-egui -p gridcraft-android` (2 failures, the known glyph tests `column_autocomplete_folds_case_beyond_ascii` and `language_switch_renders_the_ribbon_and_persists`), `xtask layers`, `assets`, `parity --check`, `keytips --check`.
 - Not run: `cargo xtask wasm` (no wasm target here), the Android APK build, any device check.
+
+## Update 31: the shared phone shell, step 1 (top bar and tab bar)
+
+The first step of the shared phone plan for WordCraft, GridCraft and DeckCraft.
+
+- `phone.rs` has one block of shell sizes with the names the three apps share (`TOUCH`,
+  `APP_BAR_H`, `TAB_BAR_H`, `TAB_MIN_W`, `SHEET_HEADER_H`, `ROW_H`, `GUTTER`), checked at compile
+  time to be at least 48 pt. The app bar is 48 pt in a window under 500 pt tall.
+- Top bar: a File button (document icon) in place of the three-bar menu button; it still opens the
+  File drawer until the File menu step replaces the drawer. The workbook name sits at the left.
+- The floating pill is gone. A fixed tab bar fills the bottom: the sheet button (its icon alone on
+  a phone too narrow for the name), Home, Insert, Formulas, Data, More. View moved into More. The
+  open tab is drawn on (a tinted pill behind its icon); tapping it again closes the sheet, and a
+  press on the tab bar never counts as outside the sheet.
+- Sheets open above the tab bar, which stays visible. Their header is the title at the left and
+  Close at the right, with no drag handle. A sheet is never taller than the room between the app
+  bar and the tab bar, less two touch rows, so a phone held sideways keeps the formula bar and the
+  sheet's header in view.
+- Tests: tab toggling and switching, View in More, every tab-bar slot at least 48 pt at 360 pt
+  wide, and the sheet button's narrow form. The tests that opened the drawer by "Menu" use "File".
+- Checked: GridCraft's UI tests (the two `interaction` font tests fail without the change too: they
+  need `CRAFT_FONTS_DIR`), and snapshot renders at 412x915, 360x800, 915x412 and in dark theme.
+  Not run on a device or emulator.
+
+## Update 32: the shared phone shell, step 2 (tile sheets)
+
+- `phone/tiles.rs`: each tab is a list of sections, each a grid of tiles (icon above a label of up
+  to two lines, broken only at spaces; a word too wide for a tile is drawn smaller, 9 to 11 pt).
+  The model is the only list of the sheets' commands, so the planned List style can draw it too.
+- Labels and the enabled state come from the engine (`cmd::find_command`): "Fill Color…",
+  "New Comment", "Insert Chart" and so on, as the ribbon says them. A tile is on (tinted, accent
+  ink, reported as toggled) for the active cell's bold, italic, underline, strikethrough,
+  alignments and wrap, and for the sheet's gridlines, headings, formulas and the formula bar.
+- Formatting tiles keep the sheet open; insert and dialog tiles close it.
+- Sub-pages replace the sheet's body, with a back arrow: Fill Color and Font Color (the colour
+  grids), Borders (eight presets), Number Format (the ribbon's eleven formats, then More Number
+  Formats…), Font (the ribbon's font list) and Font Size. A choice applies and returns to the sheet.
+- Home starts with a font row: the font name (opens Font), then − size + (the size opens Font Size).
+- Tabs: Home, Insert, Formulas and Data in the tab bar; View, Page Layout and Review in More. Every
+  command in the plan's GridCraft table is there except Define Name (not an engine command) and
+  Header & Footer (a dialog only): both stay reachable once All tools lands.
+- A sheet takes at most half the window (60% in a short one).
+- Tests: every tile names an engine command; labels in a section are distinct; a format tile
+  applies, shows on and keeps the sheet open; an insert tile closes it; a sub-page's back arrow and
+  a choice return to the sheet; the size page sets the size; tiles are 48 pt targets at 360 pt.
+- Checked: GridCraft's CI gate (all tests pass but the two `interaction` font tests, which need
+  `CRAFT_FONTS_DIR`; the asset check fails on five older README screenshots without
+  `ATTRIBUTION.md` rows, as before), and snapshot renders of every sheet at 412x915 and 360x800.
+  Not run on a device or emulator.
+
+## Update 33: the shared phone shell, step 3 (All tools and More)
+
+- `phone/tools.rs`, ported from DeckCraft's `phone_tools`: every action command of the engine
+  (`command_specs`, queries left out) by ribbon tab, grouped by ribbon group, with the count on
+  each tab. A command with no tab is listed under Other Commands. Search matches the label (also
+  translated) or the id. A disabled command shows the engine's reason under its label.
+- A command runs as the ribbon runs it. One that needs values opens, in order: its dialog (by its
+  own name, or the ribbon's: `insertLink`, `dataValidation`, `find` for Replace, `cfQuick` for
+  Conditional Formatting, `sparkline`); a picker when it needs one value from a list (spelled out
+  in its params doc, or the sheets' font, size, number format and zoom lists); else it runs; and
+  only if that fails, a form with a label above each field and one button named after the
+  command. The params docs are read by a small parser in the UI crate (the engine has none).
+- The tile sheets use the same path: a tile whose command needs values (Orientation, Row Height,
+  Sort…) opens its dialog or a picker, and Back returns to the sheet. Before, such a tile ran the
+  command with no values.
+- More: Search, the contextual tabs that apply now under Selection (Table Design and Chart Design
+  from the ribbon's own check; the PivotTable tabs while the sheet has a PivotTable), the tabs
+  without a slot (View, Page Layout, Review), then All tools. A dot on More shows while a
+  contextual tab applies. All tools uses the sheet frame at the colour picker's height; Back steps
+  out one screen at a time and from the list of tabs returns to More.
+- Tests: every action command is in exactly one tab; the params parser, picker lists, value
+  parsing and readable words; every tile that needs values opens a dialog or the tools without an
+  error; All tools lists a tab's commands from the engine; Search runs Bold and Freeze Panes; a
+  picker's Back returns to its sheet; Back walks tab → tabs → More → closed; a table adds Table
+  Design under Selection.
+- Checked: CI gate (all but the two `interaction` font tests, as before), layers, wasm, doctests,
+  and renders of More, All tools, a tab, Search and the dot. Not run on a device or emulator.
+
+## Update 34: the shared phone shell, step 4 (File menu and pages)
+
+- The File drawer is now a full-screen File menu: a back arrow and "File" at the top, the open
+  workbooks first (with two or more), then Home, New, Open, Info, Save, Save As, Export, Print,
+  Options, About and Close as 52 pt rows (a chevron on rows that open a page). About opens the
+  About dialog. Print is listed again: on a phone it saves a PDF.
+- Back walks page → File menu → workbook: Back from a page (its arrow or Escape, which is
+  Android Back) shows the File menu again; Back there returns to the workbook. A page closed by
+  its own action (Open, Save) does not reopen the menu.
+- Page headers put the page name at the left (20 pt), as every phone header does.
+- Save As on a phone: "Save as type" above a 48 pt row per type with a check on the chosen one,
+  then one full-width Save button.
+- Print on a phone: one column. A sentence that printing goes through a PDF, Print What with its
+  label above, Fit Sheet on One Page as a switch, Page Setup…, one full-width Save as PDF button
+  (`file.exportPdf` with the page's options, through the save picker), then the preview as wide as
+  the screen. Before, the page kept the desktop's two columns and its preview ran off the screen.
+- Info: the property fields are labelled by their names (six fields had no accessible name; the
+  snapshot tool's accessibility check stopped on the page).
+- Tests: the File menu lists the eleven rows and fills the screen; About opens its dialog; Back
+  from Info shows the File menu and Back again returns to the workbook.
+- Checked: CI gate (all but the two `interaction` font tests, as before) and renders of the File
+  menu (one and two workbooks, light and dark) and every File page. Not run on a device.
+
+## Update 35: the shared phone shell, step 5 (dialogs)
+
+Every dialog was drawn at 360 x 800 (82 names) and checked by eye and by a new test.
+
+- New helpers in `phone.rs`: `field_row` (label above a full-width field on a phone, one row on the
+  desktop), `wrap_row` (a row that wraps on a phone), `field_width`, `check` (a switch row on a
+  phone, a checkbox on the desktop) and `toggle_row`, moved from the Options page so every dialog
+  can use it.
+- Format Cells: on a phone the Number page is one column (Category as a full-width list, then the
+  sample, the code and the preset codes). Its tab strip already scrolled sideways.
+- Find and Replace: labels above full-width fields; Match case, Match entire cell contents and
+  Within workbook as switch rows (they ran off the right edge).
+- Insert Function: Search and the category above full-width fields (the category box was cut).
+- Paste Special: one column of options on a phone (two 200 pt columns ran off the edge).
+- Sort: each level's row wraps on a phone.
+- Solver: the objective, the new constraint and the method stack on a phone; the variables field
+  and constraint list fit the width; the non-negative option is a switch row.
+- Macros: the buttons go under the list when list and buttons do not fit side by side.
+- Insert Picture, Save a Copy and Zoom: their fields are labelled (they failed the accessibility
+  check).
+- Search Commands on a phone opens All tools' Search instead of the desktop dialog.
+- Tests: `phone_dialogs` opens every dialog at 360 x 800, runs it to the accessibility check, and
+  fails if any control ends past the right edge (the Format Cells tabs scroll by design);
+  Search Commands opens All tools' Search.
+- Not done: the small desktop checkboxes and radio buttons inside most dialogs are still the
+  desktop's (48 pt rows by `touch_style`, but not switch rows); the analysis panes that print raw
+  data (Error Checking, Evaluate Formula, Workbook Statistics, Action Journal) are unchanged.
+- Checked: CI gate (all but the two `interaction` font tests, as before) and renders of the changed
+  dialogs. Not run on a device.
+
+## Update 36: the shared phone shell, step 6 (theme and the dark grid)
+
+- Options › General on a phone starts with Theme: Light (the default), Dark (the whole app, the
+  grid included) and System (follows the phone), as radio rows with a line under each. It runs
+  the existing `view.theme` command, whose default was already Light; System already follows the
+  phone's night mode, which the Android host passes in.
+- Dark theme on a phone darkens the grid too (it stayed white): new tokens `cell_bg` (the grid's
+  own background), `grid_text` (typed text in the cell editor) and `dark_grid`, set by
+  `Tokens::get` when the theme is dark and the phone layout is on. Paper keeps `grid_bg` and
+  `cell_text` (white and black): the print preview, page view, charts and galleries.
+- Cell fills and chosen font colours are kept. Text with less than 4.5:1 contrast on its
+  background (the dark grid or its fill) is blended toward white on screen only, so automatic
+  black text turns light and a dark blue title stays readable; black text on a light fill is
+  kept. The cell editor edits on the dark grid colour.
+- The desktop is unchanged in both themes.
+- Tests: the contrast step (black turns light, a readable colour is kept, text on a light fill is
+  kept); the dark grid on a phone but not the desktop, with paper still white; the Options page
+  offers Light, Dark and System with Light chosen first.
+
+## Update 37: the shared phone shell, step 7 (List style, selection bar, Back)
+
+- List style (`phone/list.rs`), chosen in Options › General › Phone layout (`UiState::
+  phone_list_style`, default Tiles; UI command `ui.phoneSheetStyle {style: tiles|list}`). No tab
+  bar: a floating quick bar with the sheet button, Bold (on for the active cell), Fill Color (opens
+  Home's colour page), AutoSum, Sort A to Z and More, which opens the sheet at the tab used last.
+  Buttons drop from the right when they do not fit (a 360 pt phone keeps Bold and Fill Color).
+- In the List style the sheet's header is a tab menu: every tab, the contextual tabs under
+  Selection, then Search and All tools pinned under them. The body draws the tiles' model: one-tap
+  formats as a row of 48 pt icon buttons (scrolling sideways), every other command as a row with a
+  chevron where it opens a page or asks for values.
+- A press inside an open pop-up (the tab menu, a list box) no longer counts as outside the sheet.
+- The selection bar's More list adds Format Cells… and New Comment.
+- The snapshot tool takes `--list-style`.
+- Tests: no tab bar and a working quick bar; the tab menu switches tabs and More reopens the last;
+  the menu opens All tools; both styles list the same Home commands; the setting persists and
+  defaults to Tiles; the quick bar's fit at 412 and 360 pt; Back closes a page, then the sheet.
+

@@ -205,6 +205,14 @@ impl SheetApp {
                 }
                 Ok(json!({"mode": self.ui.theme_mode()}))
             }
+            "ui.phoneSheetStyle" => {
+                match p.get("style").and_then(Json::as_str) {
+                    Some("list") => self.ui.phone_list_style = true,
+                    Some("tiles") => self.ui.phone_list_style = false,
+                    _ => return Some(Err("style must be tiles or list".into())),
+                }
+                Ok(json!({"style": if self.ui.phone_list_style { "list" } else { "tiles" }}))
+            }
             "view.animations" => {
                 self.ui.animations = p.get("on").and_then(Json::as_bool).unwrap_or(!self.ui.animations);
                 Ok(json!({"on": self.ui.animations}))

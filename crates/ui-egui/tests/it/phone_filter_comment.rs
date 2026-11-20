@@ -57,7 +57,7 @@ fn insert_comment_opens_a_typing_dialog_and_creates_a_comment_on_ok() {
     let mut h = harness(Session::new());
     open_phone_sheet(&h.ctx, "Insert");
     h.run_steps(4);
-    h.get_by_label("Comment").click();
+    h.get_by_label("New Comment").click();
     h.run_steps(6);
 
     assert_eq!(h.state().dialog.as_ref().map(|d| d.name.as_str()), Some("comment"), "Insert > Comment opens the comment dialog");

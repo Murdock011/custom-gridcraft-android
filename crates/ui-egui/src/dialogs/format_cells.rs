@@ -31,56 +31,127 @@ pub(super) fn format_cells(app: &mut SheetApp, ui: &mut egui::Ui, d: &mut Dialog
     match d.tab.as_str() {
         "Number" => {
             let mut code = st.num_fmt.as_str().to_string();
-            ui.columns(2, |cols| {
-                cols[0].with_layout(egui::Layout::top_down(egui::Align::Min), |ui| ui.label(egui::RichText::new(lang.tr("Category:")).strong()));
-                for name in
-                    ["General", "Number", "Currency", "Accounting", "Short Date", "Long Date", "Time", "Percentage", "Fraction", "Scientific", "Text"]
-                {
-                    let c = gridcraft_engine::cmd::format::format_code_for(name).to_string();
-                    let row = egui::Button::new(lang.tr(name)).selected(code == c).min_size(egui::vec2(cols[0].available_width(), row_h));
-                    if cols[0].add(row).clicked() {
-                        code = c;
-                    }
-                }
-                cols[1].with_layout(egui::Layout::top_down(egui::Align::Min), |ui| ui.label(egui::RichText::new(lang.tr("Sample")).strong()));
+            const NAMES: [&str; 11] =
+                ["General", "Number", "Currency", "Accounting", "Short Date", "Long Date", "Time", "Percentage", "Fraction", "Scientific", "Text"];
+            const CODES: [&str; 16] = [
+                "0",
+                "0.00",
+                "#,##0",
+                "#,##0.00",
+                "#,##0;[Red]-#,##0",
+                "0%",
+                "0.00%",
+                "0.00E+00",
+                "# ?/?",
+                "m/d/yyyy",
+                "d-mmm-yy",
+                "mmmm d, yyyy",
+                "h:mm AM/PM",
+                "h:mm:ss",
+                "[h]:mm:ss",
+                "@",
+            ];
+            if row_h > 0.0 {
+                // Phone: one column. The category is a full-width list, then the sample, the code
+                // and the preset codes (the shared shell's dialog rules).
+                let current = NAMES.iter().find(|n| gridcraft_engine::cmd::format::format_code_for(n) == code).copied().unwrap_or("Custom");
+                let label = ui.label(egui::RichText::new(lang.tr("Category:")).strong());
+                craft_ui::ComboBox::from_id_salt("format_cells_category")
+                    .width(ui.available_width())
+                    .height(row_h * 6.0)
+                    .selected_text(lang.tr(current))
+                    .show_ui(ui, |ui| {
+                        for name in NAMES {
+                            let c = gridcraft_engine::cmd::format::format_code_for(name);
+                            if ui
+                                .add(egui::Button::new(lang.tr(name)).selected(code == c).min_size(egui::vec2(ui.available_width(), row_h)))
+                                .clicked()
+                            {
+                                code = c.to_string();
+                            }
+                        }
+                    })
+                    .response
+                    .labelled_by(label.id);
+                ui.add_space(8.0);
+                ui.label(egui::RichText::new(lang.tr("Sample")).strong());
                 let preview = app.session.active().map(|doc| gridcraft_engine::display::format(&sample, &code, &doc.wb).text).unwrap_or_default();
-                cols[1].label(egui::RichText::new(preview).font(theme::ui_font(15.0)));
-                cols[1].add_space(8.0);
-                // ui.columns lays its cells out justified, which stretches a wrapped label's letter
-                // spacing; a top-down layout keeps the text left-aligned as written.
-                let label = cols[1].with_layout(egui::Layout::top_down(egui::Align::Min), |ui| ui.label(lang.tr("Type (custom format code):"))).inner;
-                let edit = crate::phone::touch_edit(&cols[1], egui::TextEdit::singleline(&mut code));
-                cols[1].add(edit).labelled_by(label.id);
-                cols[1].horizontal_wrapped(|ui| {
-                    for c in [
-                        "0",
-                        "0.00",
-                        "#,##0",
-                        "#,##0.00",
-                        "#,##0;[Red]-#,##0",
-                        "0%",
-                        "0.00%",
-                        "0.00E+00",
-                        "# ?/?",
-                        "m/d/yyyy",
-                        "d-mmm-yy",
-                        "mmmm d, yyyy",
-                        "h:mm AM/PM",
-                        "h:mm:ss",
-                        "[h]:mm:ss",
-                        "@",
-                    ] {
-                        let clicked = if row_h > 0.0 {
-                            ui.add(egui::Button::new(c).min_size(egui::vec2(0.0, row_h))).clicked()
-                        } else {
-                            ui.small_button(c).clicked()
-                        };
-                        if clicked {
+                ui.label(egui::RichText::new(preview).font(theme::ui_font(15.0)));
+                ui.add_space(8.0);
+                let label = ui.label(lang.tr("Type (custom format code):"));
+                let edit = crate::phone::touch_edit(ui, egui::TextEdit::singleline(&mut code).desired_width(f32::INFINITY));
+                ui.add(edit).labelled_by(label.id);
+                ui.add_space(4.0);
+                ui.horizontal_wrapped(|ui| {
+                    for c in CODES {
+                        if ui.add(egui::Button::new(c).min_size(egui::vec2(0.0, row_h))).clicked() {
                             code = c.to_string();
                         }
                     }
                 });
-            });
+            } else {
+                ui.columns(2, |cols| {
+                    cols[0].with_layout(egui::Layout::top_down(egui::Align::Min), |ui| ui.label(egui::RichText::new(lang.tr("Category:")).strong()));
+                    for name in [
+                        "General",
+                        "Number",
+                        "Currency",
+                        "Accounting",
+                        "Short Date",
+                        "Long Date",
+                        "Time",
+                        "Percentage",
+                        "Fraction",
+                        "Scientific",
+                        "Text",
+                    ] {
+                        let c = gridcraft_engine::cmd::format::format_code_for(name).to_string();
+                        let row = egui::Button::new(lang.tr(name)).selected(code == c).min_size(egui::vec2(cols[0].available_width(), row_h));
+                        if cols[0].add(row).clicked() {
+                            code = c;
+                        }
+                    }
+                    cols[1].with_layout(egui::Layout::top_down(egui::Align::Min), |ui| ui.label(egui::RichText::new(lang.tr("Sample")).strong()));
+                    let preview = app.session.active().map(|doc| gridcraft_engine::display::format(&sample, &code, &doc.wb).text).unwrap_or_default();
+                    cols[1].label(egui::RichText::new(preview).font(theme::ui_font(15.0)));
+                    cols[1].add_space(8.0);
+                    // ui.columns lays its cells out justified, which stretches a wrapped label's letter
+                    // spacing; a top-down layout keeps the text left-aligned as written.
+                    let label =
+                        cols[1].with_layout(egui::Layout::top_down(egui::Align::Min), |ui| ui.label(lang.tr("Type (custom format code):"))).inner;
+                    let edit = crate::phone::touch_edit(&cols[1], egui::TextEdit::singleline(&mut code));
+                    cols[1].add(edit).labelled_by(label.id);
+                    cols[1].horizontal_wrapped(|ui| {
+                        for c in [
+                            "0",
+                            "0.00",
+                            "#,##0",
+                            "#,##0.00",
+                            "#,##0;[Red]-#,##0",
+                            "0%",
+                            "0.00%",
+                            "0.00E+00",
+                            "# ?/?",
+                            "m/d/yyyy",
+                            "d-mmm-yy",
+                            "mmmm d, yyyy",
+                            "h:mm AM/PM",
+                            "h:mm:ss",
+                            "[h]:mm:ss",
+                            "@",
+                        ] {
+                            let clicked = if row_h > 0.0 {
+                                ui.add(egui::Button::new(c).min_size(egui::vec2(0.0, row_h))).clicked()
+                            } else {
+                                ui.small_button(c).clicked()
+                            };
+                            if clicked {
+                                code = c.to_string();
+                            }
+                        }
+                    });
+                });
+            }
             st.num_fmt = gridcraft_engine::model::NumFmt::new(&code);
         }
         "Alignment" => {

@@ -20,6 +20,9 @@ pub(super) fn print(app: &mut SheetApp, ui: &mut Ui, bs: &mut Backstage, out: &m
         bs.preview = Some((key, preview));
     }
     let pages: Vec<Json> = bs.preview.as_ref().and_then(|(_, p)| p.get("pageList")).and_then(Json::as_array).cloned().unwrap_or_default();
+    if crate::phone::active(ui.ctx()) {
+        return phone_print(app, ui, bs, params, &pages);
+    }
     ui.horizontal_top(|ui| {
         ui.vertical(|ui| {
             ui.set_width(250.0);
@@ -166,5 +169,57 @@ fn paint_page(p: &egui::Painter, rect: Rect, paper_w: f32, page: &Json, wb: &gri
             x += w;
         }
         y += h;
+    }
+}
+
+/// The phone's Print page (the shared shell): one column. Printing goes through a PDF, so the page
+/// says so, offers what to print and Fit Sheet on One Page (a switch), Page Setup, and one Save as
+/// PDF button; the preview follows, as wide as the screen.
+fn phone_print(app: &mut SheetApp, ui: &mut Ui, bs: &mut Backstage, params: Json, pages: &[Json]) {
+    let t = Tokens::get(ui.ctx());
+    let lang = app.ui.language;
+    dim(ui, lang.tr("Printing goes through a PDF. Save the PDF, then print it from a PDF viewer."));
+    ui.add_space(12.0);
+    let label = ui.label(egui::RichText::new(lang.tr("Print What")).color(t.text_dim));
+    let scope = if bs.print_all { "Print Entire Workbook" } else { "Print Active Sheets" };
+    craft_ui::ComboBox::from_id_salt("backstage_print_scope")
+        .width(ui.available_width())
+        .height(crate::phone::TOUCH_H * 3.0)
+        .selected_text(lang.tr(scope))
+        .show_ui(ui, |ui| {
+            for (all, label) in [(false, "Print Active Sheets"), (true, "Print Entire Workbook")] {
+                if ui.selectable_label(bs.print_all == all, lang.tr(label)).clicked() {
+                    bs.print_all = all;
+                    bs.preview_page = 0;
+                }
+            }
+        })
+        .response
+        .labelled_by(label.id);
+    ui.add_space(4.0);
+    if crate::phone::toggle_row(ui, t, &mut bs.fit_to_page, lang.tr("Fit Sheet on One Page")).changed() {
+        bs.preview_page = 0;
+    }
+    if super::action_row(ui, Icon::Margins, lang.tr("Page Setup…"), "").clicked() {
+        app.open_dialog("pageSetup", json!({}));
+    }
+    ui.add_space(12.0);
+    if super::primary_button(ui, lang.tr("Save as PDF")).clicked() && app.commit_edit(0, 0, false, false) {
+        app.run_or_alert("file.exportPdf", params);
+    }
+    ui.add_space(16.0);
+    let Some(page) = pages.get(bs.preview_page.min(pages.len().saturating_sub(1))) else {
+        dim(ui, lang.tr("Nothing to print."));
+        return;
+    };
+    let w = page.get("width").and_then(Json::as_f64).filter(|w| w.is_finite() && *w > 1.0).unwrap_or(612.0) as f32;
+    let h = page.get("height").and_then(Json::as_f64).filter(|h| h.is_finite() && *h > 1.0).unwrap_or(792.0) as f32;
+    let scale = (ui.available_width() / w).min(1.0);
+    let (rect, _) = ui.allocate_exact_size(vec2(w * scale, h * scale), Sense::hover());
+    let p = ui.painter();
+    p.rect_filled(rect, 2.0, t.grid_bg);
+    p.rect_stroke(rect, 2.0, Stroke::new(1.0, t.ribbon_border), StrokeKind::Inside);
+    if let Some(d) = app.session.active() {
+        paint_page(p, rect, w, page, &d.wb, &t);
     }
 }

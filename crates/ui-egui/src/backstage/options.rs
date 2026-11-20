@@ -1,4 +1,4 @@
-use egui::{Align2, Key, Modifiers, Rect, Sense, Stroke, StrokeKind, pos2, vec2};
+use egui::{Align2, Key, Modifiers, Rect, Sense, Stroke, pos2, vec2};
 use serde_json::json;
 
 use super::{Backstage, Icon, Language, SheetApp, Tokens, Ui, dim, i18n, icons, section, theme};
@@ -115,7 +115,11 @@ fn formulas_options(app: &mut SheetApp, ui: &mut Ui, lang: Language) {
 
 /// A checkbox on the desktop, a 48 pt switch row on a phone. True when the value changed.
 fn option_check(ui: &mut Ui, value: &mut bool, text: &str) -> bool {
-    if crate::phone::active(ui.ctx()) { toggle_row(ui, Tokens::get(ui.ctx()), value, text).changed() } else { ui.checkbox(value, text).changed() }
+    if crate::phone::active(ui.ctx()) {
+        crate::phone::toggle_row(ui, Tokens::get(ui.ctx()), value, text).changed()
+    } else {
+        ui.checkbox(value, text).changed()
+    }
 }
 
 /// A 48 pt category row with its icon and a chevron (the phone's Options list).
@@ -137,38 +141,57 @@ fn category_row(ui: &mut Ui, t: Tokens, label: &str, icon: Icon) -> egui::Respon
     resp
 }
 
-/// A switch row (the phone's on/off settings): the label wraps before the switch, the whole row is
-/// the touch target, and the thumb slides across as the switch turns on. Copied in look from
-/// WordCraft's `phone::toggle_row` (52 x 32 pt track, 16 pt off and 24 pt on thumb).
-fn toggle_row(ui: &mut Ui, t: Tokens, value: &mut bool, text: &str) -> egui::Response {
-    const SWITCH_W: f32 = 52.0;
-    const SWITCH_H: f32 = 32.0;
-    // The label wraps before the switch, so a long label never runs under it.
-    let text_w = (ui.available_width() - SWITCH_W - 16.0).max(40.0);
-    let galley = ui.painter().layout(text.to_string(), theme::ui_font(16.0), t.text, text_w);
-    let height = (galley.size().y + 24.0).max(48.0);
-    let (r, mut resp) = ui.allocate_exact_size(vec2(ui.available_width(), height), Sense::click());
-    if resp.clicked() {
-        *value = !*value;
-        resp.mark_changed();
-    }
-    let on = *value;
-    resp.widget_info(|| egui::WidgetInfo::selected(egui::Role::CheckBox, true, on, text));
+/// One choice of a phone setting: a 56 pt row with a radio mark, the title and a line under it.
+/// True when tapped.
+fn choice_row(ui: &mut Ui, t: Tokens, title: &str, line: &str, on: bool) -> bool {
+    let (r, resp) = ui.allocate_exact_size(vec2(ui.available_width(), 56.0), Sense::click());
     if resp.is_pointer_button_down_on() {
         ui.painter().rect_filled(r, 0.0, t.pressed);
-    } else if resp.hovered() {
-        ui.painter().rect_filled(r, 0.0, t.hover);
     }
-    ui.painter().galley(pos2(r.left(), r.center().y - galley.size().y / 2.0), galley, t.text);
-    let anim = ui.ctx().animate_bool_responsive(resp.id, on);
-    let track = Rect::from_center_size(pos2(r.right() - SWITCH_W / 2.0, r.center().y), vec2(SWITCH_W, SWITCH_H));
-    let (fill, edge, thumb) = if on { (t.accent, t.accent, t.on_accent) } else { (t.input_bg, t.text_dim, t.text_dim) };
-    let edge_stroke = if on { Stroke::NONE } else { Stroke::new(2.0, edge) };
-    let p = ui.painter();
-    p.rect(track, egui::CornerRadius::same((SWITCH_H / 2.0) as u8), fill, edge_stroke, StrokeKind::Inside);
-    let x = track.left() + 16.0 + (SWITCH_W - 32.0) * anim;
-    p.circle_filled(pos2(x, track.center().y), 8.0 + 4.0 * anim, thumb);
-    resp
+    let c = pos2(r.left() + 14.0, r.center().y);
+    ui.painter().circle_stroke(c, 10.0, Stroke::new(2.0, if on { t.accent } else { t.text_dim }));
+    if on {
+        ui.painter().circle_filled(c, 5.5, t.accent);
+    }
+    ui.painter().text(pos2(r.left() + 40.0, r.center().y - 9.0), Align2::LEFT_CENTER, title, theme::ui_font(16.0), t.text);
+    ui.painter().text(pos2(r.left() + 40.0, r.center().y + 12.0), Align2::LEFT_CENTER, line, theme::ui_font(12.0), t.text_dim);
+    resp.widget_info(|| egui::WidgetInfo::selected(egui::Role::RadioButton, true, on, title));
+    resp.clicked()
+}
+
+/// A phone setting's heading, in the accent colour.
+fn setting_heading(ui: &mut Ui, t: Tokens, text: &str) {
+    ui.label(egui::RichText::new(text).font(theme::ui_bold(13.0)).color(t.accent));
+    ui.add_space(4.0);
+}
+
+/// The phone's Theme setting (the shared shell): Light (the default), Dark (the whole app, the grid
+/// included) and System (follows the phone); then Phone layout: Tiles (the default) or List.
+fn theme_rows(app: &mut SheetApp, ui: &mut Ui, lang: Language) {
+    let t = Tokens::get(ui.ctx());
+    setting_heading(ui, t, lang.tr("Theme"));
+    let mode = app.ui.theme_mode();
+    for (value, title, line) in [
+        ("light", "Light", "The default"),
+        ("dark", "Dark", "The whole app, the grid included"),
+        ("system", "System", "Follows the phone's dark theme setting"),
+    ] {
+        if choice_row(ui, t, lang.tr(title), lang.tr(line), mode == value) && mode != value {
+            app.run_or_alert("view.theme", json!({"mode": value}));
+        }
+    }
+    ui.add_space(12.0);
+    setting_heading(ui, t, lang.tr("Phone layout"));
+    ui.label(egui::RichText::new(lang.tr("Toolbar sheets")).color(t.text_dim));
+    let list = app.ui.phone_list_style;
+    for (style, title, line, on) in
+        [("tiles", "Tiles", "Icons in a grid, grouped by section", !list), ("list", "List", "One command per row, with a tab menu at the top", list)]
+    {
+        if choice_row(ui, t, lang.tr(title), lang.tr(line), on) && !on {
+            app.run_or_alert("ui.phoneSheetStyle", json!({"style": style}));
+        }
+    }
+    ui.add_space(12.0);
 }
 
 /// The display theme and interface language controls of the General section.
@@ -177,30 +200,32 @@ fn general_options(app: &mut SheetApp, ui: &mut Ui, lang: Language) {
     let phone = crate::phone::active(ui.ctx());
     let columns = if phone { 1 } else { 2 };
     let width = if phone { ui.available_width() } else { 160.0 };
+    if phone {
+        theme_rows(app, ui, lang);
+    }
     egui::Grid::new("backstage_options_general").num_columns(columns).spacing(vec2(18.0, 10.0)).show(ui, |ui| {
-        let label = ui.label(lang.tr("Display theme"));
-        if phone {
+        if !phone {
+            let label = ui.label(lang.tr("Display theme"));
+            let mode = app.ui.theme_mode();
+            let current = match mode {
+                "system" => "System",
+                "dark" => "Dark",
+                _ => "Light",
+            };
+            craft_ui::ComboBox::from_id_salt("backstage_theme")
+                .width(width)
+                .selected_text(lang.tr(current))
+                .show_ui(ui, |ui| {
+                    for (value, label) in [("system", "System"), ("light", "Light"), ("dark", "Dark")] {
+                        if ui.selectable_label(mode == value, lang.tr(label)).clicked() {
+                            app.run_or_alert("view.theme", json!({"mode": value}));
+                        }
+                    }
+                })
+                .response
+                .labelled_by(label.id);
             ui.end_row();
         }
-        let mode = app.ui.theme_mode();
-        let current = match mode {
-            "system" => "System",
-            "dark" => "Dark",
-            _ => "Light",
-        };
-        craft_ui::ComboBox::from_id_salt("backstage_theme")
-            .width(width)
-            .selected_text(lang.tr(current))
-            .show_ui(ui, |ui| {
-                for (value, label) in [("system", "System"), ("light", "Light"), ("dark", "Dark")] {
-                    if ui.selectable_label(mode == value, lang.tr(label)).clicked() {
-                        app.run_or_alert("view.theme", json!({"mode": value}));
-                    }
-                }
-            })
-            .response
-            .labelled_by(label.id);
-        ui.end_row();
         let label = ui.label(lang.tr("Interface language"));
         if phone {
             ui.end_row();

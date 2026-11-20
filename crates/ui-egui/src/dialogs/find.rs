@@ -12,9 +12,10 @@ pub(super) fn find(app: &mut SheetApp, ui: &mut egui::Ui, d: &mut Dialog) {
     });
     let mut what = d.values.get("what").and_then(Json::as_str).unwrap_or("").to_string();
     let mut with = d.values.get("with").and_then(Json::as_str).unwrap_or("").to_string();
-    ui.horizontal(|ui| {
+    crate::phone::field_row(ui, |ui| {
         let label = ui.label("Find what:");
-        let r = ui.add(crate::phone::touch_edit(ui, egui::TextEdit::singleline(&mut what).desired_width(260.0))).labelled_by(label.id);
+        let w = crate::phone::field_width(ui, 260.0);
+        let r = ui.add(crate::phone::touch_edit(ui, egui::TextEdit::singleline(&mut what).desired_width(w))).labelled_by(label.id);
         // Like Excel, the cursor starts in "Find what" - asked for once, so clicking another field still works.
         if !d.values.contains_key("focused") {
             r.request_focus();
@@ -22,19 +23,26 @@ pub(super) fn find(app: &mut SheetApp, ui: &mut egui::Ui, d: &mut Dialog) {
         }
     });
     if d.tab == "Replace" {
-        ui.horizontal(|ui| {
+        crate::phone::field_row(ui, |ui| {
             let label = ui.label("Replace with:");
-            ui.add(crate::phone::touch_edit(ui, egui::TextEdit::singleline(&mut with).desired_width(244.0))).labelled_by(label.id);
+            let w = crate::phone::field_width(ui, 244.0);
+            ui.add(crate::phone::touch_edit(ui, egui::TextEdit::singleline(&mut with).desired_width(w))).labelled_by(label.id);
         });
     }
     let mut case = d.values.get("matchCase").and_then(Json::as_bool).unwrap_or(false);
     let mut whole = d.values.get("wholeCell").and_then(Json::as_bool).unwrap_or(false);
     let mut wb = d.values.get("within").and_then(Json::as_str) == Some("workbook");
-    ui.horizontal(|ui| {
-        ui.checkbox(&mut case, "Match case");
-        ui.checkbox(&mut whole, "Match entire cell contents");
-        ui.checkbox(&mut wb, "Within workbook");
-    });
+    // The options: in a row on the desktop, switch rows one under another on a phone.
+    let options = |ui: &mut egui::Ui| {
+        crate::phone::check(ui, &mut case, "Match case");
+        crate::phone::check(ui, &mut whole, "Match entire cell contents");
+        crate::phone::check(ui, &mut wb, "Within workbook");
+    };
+    if crate::phone::active(ui.ctx()) {
+        ui.vertical(options);
+    } else {
+        ui.horizontal(options);
+    }
     d.values.insert("what".into(), json!(what));
     d.values.insert("with".into(), json!(with));
     d.values.insert("matchCase".into(), json!(case));

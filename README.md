@@ -16,7 +16,7 @@
 
 ## Screenshots
 
-<p><img src="docs/screenshots/grid.png" width="180" alt="A budget workbook on the grid, with the Total cell selected and its SUM formula in the formula bar"> <img src="docs/screenshots/sheets.png" width="180" alt="The Sheets list opened from the bottom pill"> <img src="docs/screenshots/home-tab.png" width="180" alt="Home tab sheet with formatting controls"> <img src="docs/screenshots/drawer.png" width="180" alt="File side drawer with open workbooks and File commands"> <img src="docs/screenshots/typing.png" width="180" alt="Editing a cell with the on-screen keyboard and the cancel and confirm bar"></p>
+<p><img src="docs/screenshots/grid.png" width="180" alt="The sales sample on the grid, with the tab bar at the bottom"> <img src="docs/screenshots/home-tab.png" width="180" alt="The Home sheet: font row and tiles in sections"> <img src="docs/screenshots/sheets.png" width="180" alt="The Sheets list opened from the sheet button"> <img src="docs/screenshots/all-tools.png" width="180" alt="All tools: every command by ribbon tab"> <img src="docs/screenshots/file-menu.png" width="180" alt="The full-screen File menu"> <img src="docs/screenshots/list-style.png" width="180" alt="The List style: a tab menu and one command per row"> <img src="docs/screenshots/dark.png" width="180" alt="Dark theme with the dark grid"></p>
 
 ## What this is
 
@@ -36,19 +36,28 @@ engine **0.19.1**.
 
 ## Download
 
-There is no release yet. The app is in early development and is only built for the emulator so
-far. When a release is made it will be on the
-[Releases page](https://github.com/Murdock011/custom-gridcraft-android/releases). It installs as
-`ai.storyteller.gridcraft.native`, next to any other GridCraft or WordCraft build.
+Builds are on the [Releases page](https://github.com/Murdock011/custom-gridcraft-android/releases).
+The latest is **0.2.0** (GridCraft engine 0.19.1): `custom-gridcraft-android-arm64.apk`, for 64-bit
+ARM phones (arm64-v8a). It is signed with a debug key, so Android asks you to allow installs from
+your browser or file manager. It installs as `ai.storyteller.gridcraft.native`, next to any other
+GridCraft or WordCraft build.
 
 ## What works
 
 - The full GridCraft grid on a phone: tapping cells, typing values and formulas, the formula bar
-  and a sheet button in the bottom pill that opens a list of sheets (switch, add, rename,
-  duplicate, delete).
+  and a sheet button, the first slot of the tab bar, that opens a list of sheets (switch, add,
+  rename, duplicate, delete).
 - A phone layout instead of the desktop ribbon: an app bar with File, the workbook name, Undo, Redo
-  and Save, and a floating tab bar (Home, Insert, Formulas, Data, View) whose tabs open bottom
-  sheets of large, touch-sized commands. Back closes an open sheet.
+  and Save, and a fixed tab bar at the bottom (the sheet button, Home, Insert, Formulas, Data,
+  More) whose tabs open bottom sheets of touch-sized tiles above it, grouped in sections (Home has
+  font, size, alignment, number, clipboard, cells, styles and editing). Tapping the open tab again
+  closes its sheet; View, Page Layout and Review are in More. More also has Search and All tools:
+  every command of the engine by ribbon tab, so nothing on the desktop ribbon is out of reach.
+- File › Options › General › Phone layout switches the sheets to a List style: no tab bar, a
+  floating quick bar (sheet button, Bold, Fill Color, AutoSum, Sort A to Z, More), a tab menu at
+  the top of the sheet, and one command per row. Theme there is Light (the default), Dark (the
+  grid too) or System. Back closes an open sheet. The layout follows the
+  shared phone plan for the Craft apps; more of it is still to come.
 - Saving through the Android system save dialog (Save As), and saving back to a workbook opened
   from the file picker. The unsaved-changes dot clears after a successful save.
 - Opening spreadsheets through the system file picker (.xlsx, .xlsm, .xls, .xlsb, .ods, .csv,
@@ -61,10 +70,11 @@ far. When a release is made it will be on the
 - Selection handles to drag a range, and a long-press action bar (Cut, Copy, Paste, Clear, and
   More for Fill Down, Insert and Delete).
 - Dialogs and messages as bottom sheets with large buttons pinned at the bottom.
-- A File side drawer (Home, New, Open, Info, Save, Save As, Export, Options, Close); Close and
-  Back ask before discarding unsaved changes. The File pages and Options open as full-screen
-  phone pages (Options: a category list, on/off settings as switches). With several workbooks
-  open, the drawer lists them to switch between or close.
+- A full-screen File menu (Home, New, Open, Info, Save, Save As, Export, Print, Options, About,
+  Close); Close and Back ask before discarding unsaved changes. The File pages and Options open as
+  full-screen phone pages in one column (Options: a category list, on/off settings as switches);
+  Back from a page returns to the File menu. Print saves a PDF to print from a PDF viewer. With
+  several workbooks open, the File menu lists them first, to switch between or close.
 
 ## Known gaps
 

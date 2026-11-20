@@ -77,6 +77,15 @@ pub struct Tokens {
     pub tab_active: Color32,
     pub status_bar: Color32,
     pub cell_text: Color32,
+    /// The grid's own background (cells with no fill). The page's white in both themes on the
+    /// desktop; dark on a phone in dark theme (the shared phone shell: dark theme is app wide).
+    pub cell_bg: Color32,
+    /// Automatic text typed on the grid (the in-cell editor): `cell_text`, or light on the dark grid.
+    /// Paper (the print preview, page view, galleries) keeps `cell_text`, black.
+    pub grid_text: Color32,
+    /// Whether the grid is drawn dark (a phone in dark theme): text too dark to read on its
+    /// background is drawn lighter, on screen only.
+    pub dark_grid: bool,
     pub menu_bg: Color32,
     pub shadow: Color32,
     pub danger: Color32,
@@ -246,6 +255,9 @@ impl Tokens {
             tab_active: pick(dark, Color32::WHITE, Color32::from_rgb(0x3A, 0x3A, 0x3A)),
             status_bar: pick(dark, Color32::from_rgb(0xF3, 0xF3, 0xF3), Color32::from_rgb(0x29, 0x29, 0x29)),
             cell_text: Color32::BLACK,
+            cell_bg: Color32::WHITE,
+            grid_text: Color32::BLACK,
+            dark_grid: false,
             menu_bg: pick(dark, Color32::WHITE, Color32::from_rgb(0x30, 0x30, 0x30)),
             shadow: pick(dark, Color32::from_black_alpha(40), Color32::from_black_alpha(90)),
             danger: pick(dark, Color32::from_rgb(0xC4, 0x2B, 0x1C), Color32::from_rgb(0xFF, 0x95, 0x85)),
@@ -297,7 +309,23 @@ impl Tokens {
     }
 
     pub fn get(ctx: &egui::Context) -> Tokens {
-        if ctx.global_style().visuals.dark_mode { Tokens::dark() } else { Tokens::light() }
+        if !ctx.global_style().visuals.dark_mode {
+            Tokens::light()
+        } else if crate::phone::active(ctx) {
+            Tokens::dark().with_dark_grid()
+        } else {
+            Tokens::dark()
+        }
+    }
+
+    /// The dark grid of a phone in dark theme: dark cells, gridlines and automatic text. Paper (the
+    /// print preview, page view, charts) keeps `grid_bg`, the page's white.
+    pub fn with_dark_grid(mut self) -> Tokens {
+        self.cell_bg = Color32::from_rgb(0x1E, 0x1E, 0x1E);
+        self.gridline = Color32::from_rgb(0x3A, 0x3A, 0x3A);
+        self.grid_text = Color32::from_rgb(0xE8, 0xE8, 0xE8);
+        self.dark_grid = true;
+        self
     }
 
     /// One colour of the category palette.

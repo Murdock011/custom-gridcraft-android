@@ -409,15 +409,20 @@ pub fn macros_dialog(app: &mut SheetApp, ui: &mut Ui, d: &mut Dialog, open: &mut
     let mut kind = if d.values.get("kind").and_then(Json::as_str) == Some("script") { Kind::Script } else { Kind::Macro };
     let t = Tokens::get(ui.ctx());
     let on_sheet = crate::phone::footer(ui.ctx()).is_some();
-    ui.horizontal_top(|ui| {
+    // The buttons sit beside the list when both fit (330 pt and the 100 pt button column), else
+    // under it, as on a phone held upright; the list is as wide as the screen allows.
+    let stack = ui.available_width() < 330.0 + 100.0 + 8.0;
+    let col_w = ui.available_width().min(330.0);
+    let layout = if stack { egui::Layout::top_down(egui::Align::Min) } else { egui::Layout::left_to_right(egui::Align::Min) };
+    ui.with_layout(layout, |ui| {
         ui.vertical(|ui| {
-            ui.set_width(330.0);
+            ui.set_width(col_w);
             let label = ui.label("Macro name:");
-            if ui.add(egui::TextEdit::singleline(&mut name).desired_width(330.0).id_salt("macro_name")).labelled_by(label.id).changed() {
+            if ui.add(egui::TextEdit::singleline(&mut name).desired_width(col_w).id_salt("macro_name")).labelled_by(label.id).changed() {
                 kind = Kind::Macro;
             }
             egui::Frame::NONE.fill(t.input_bg).stroke(egui::Stroke::new(1.0, t.input_border)).inner_margin(2.0).show(ui, |ui| {
-                ui.set_min_size(vec2(326.0, 200.0));
+                ui.set_min_size(vec2(col_w - 4.0, 200.0));
                 egui::ScrollArea::vertical().max_height(200.0).show(ui, |ui| {
                     if list.is_empty() {
                         ui.label(egui::RichText::new("This workbook has no scripts or macros.").italics().color(t.text_dim));
@@ -429,7 +434,7 @@ pub fn macros_dialog(app: &mut SheetApp, ui: &mut Ui, d: &mut Dialog, open: &mut
                             (Kind::Script, _) => format!("{}    (script, {} step{})", e.name, e.steps, if e.steps == 1 { "" } else { "s" }),
                         };
                         let selected = e.kind == kind && e.name.eq_ignore_ascii_case(name.trim());
-                        let r = ui.add(egui::Button::selectable(selected, label).min_size(vec2(322.0, 20.0)));
+                        let r = ui.add(egui::Button::selectable(selected, label).min_size(vec2(col_w - 8.0, 20.0)));
                         if r.clicked() {
                             name = e.name.clone();
                             kind = e.kind;

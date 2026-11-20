@@ -37,6 +37,7 @@ pub mod formula_bar;
 mod formula_locale;
 pub mod function_library;
 pub mod grid;
+pub mod host_settings;
 pub mod i18n;
 pub mod icons;
 pub mod keymap;
@@ -106,6 +107,9 @@ pub struct UiState {
     /// Expanding it again (the chevron, Ctrl+Shift+U) returns to that height.
     pub formula_bar_lines: usize,
     pub status_bar: bool,
+    /// The phone's toolbar sheets in the List style (a quick bar, a tab menu, one command a row)
+    /// rather than Tiles (a tab bar and tiles): File › Options › General › Phone layout.
+    pub phone_list_style: bool,
     /// Motion in the UI: the selection outline glides to a new selection (View ▸ Animations).
     pub animations: bool,
     /// Enable AutoComplete for cell values (File ▸ Options ▸ Editing): typed text is completed
@@ -163,6 +167,7 @@ impl Default for UiState {
             formula_bar_expanded: false,
             formula_bar_lines: formula_bar::MAX_LINES,
             status_bar: true,
+            phone_list_style: false,
             animations: true,
             autocomplete: true,
             highlight_active_row: false,

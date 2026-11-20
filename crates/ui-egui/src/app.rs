@@ -261,7 +261,7 @@ impl SheetApp {
             }
             pivot_pane::show(self, ui);
             panes::show(self, ui);
-            egui::CentralPanel::default().frame(egui::Frame::NONE.fill(t.grid_bg)).show(ui, |ui| {
+            egui::CentralPanel::default().frame(egui::Frame::NONE.fill(t.cell_bg)).show(ui, |ui| {
                 let g0 = now_ms();
                 grid::show(self, ui);
                 self.perf.grid_ms = now_ms() - g0;

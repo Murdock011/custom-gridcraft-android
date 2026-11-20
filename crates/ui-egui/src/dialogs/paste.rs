@@ -8,6 +8,8 @@ pub(super) fn paste_special(app: &mut SheetApp, ui: &mut egui::Ui, d: &mut Dialo
     // L, the Paste Link button's access key, pastes at once as the button does.
     let link_now = d.values.remove(PASTE_LINK_NOW).is_some_and(|v| v == json!(true));
     let t = theme::Tokens::get(ui.ctx());
+    // A phone has room for one column of options (the shared shell's dialog rules); the desktop two.
+    let (cols, min_w) = if crate::phone::active(ui.ctx()) { (1, 0.0) } else { (2, 200.0) };
     type Choice = (&'static str, &'static str, Vec<(&'static str, &'static str)>);
     let choices: Vec<Choice> = d
         .fields
@@ -24,10 +26,10 @@ pub(super) fn paste_special(app: &mut SheetApp, ui: &mut egui::Ui, d: &mut Dialo
             ui.set_min_width(ui.available_width());
             let cur = d.values.get(key).and_then(Json::as_str).unwrap_or("").to_string();
             // Column by column, as Excel fills them.
-            let rows = options.len().div_ceil(2);
-            egui::Grid::new(("paste_special", key)).num_columns(2).min_col_width(200.0).spacing(vec2(16.0, 4.0)).show(ui, |ui| {
+            let rows = options.len().div_ceil(cols);
+            egui::Grid::new(("paste_special", key)).num_columns(cols).min_col_width(min_w).spacing(vec2(16.0, 4.0)).show(ui, |ui| {
                 for r in 0..rows {
-                    for c in 0..2 {
+                    for c in 0..cols {
                         if let Some((value, text)) = options.get(c * rows + r) {
                             if ui.radio(cur == *value, lang.tr(text)).clicked() {
                                 d.set_value(key, json!(value));
@@ -44,14 +46,19 @@ pub(super) fn paste_special(app: &mut SheetApp, ui: &mut egui::Ui, d: &mut Dialo
     ui.add_space(8.0);
     // In the same columns as the options above.
     egui::Frame::new().inner_margin(egui::Margin::symmetric(11, 0)).show(ui, |ui| {
-        egui::Grid::new("paste_special_checks").num_columns(2).min_col_width(200.0).spacing(vec2(16.0, 4.0)).show(ui, |ui| {
+        egui::Grid::new("paste_special_checks").num_columns(cols).min_col_width(min_w).spacing(vec2(16.0, 4.0)).show(ui, |ui| {
             for (key, label) in [("skipBlanks", "Skip blanks"), ("transpose", "Transpose (E)")] {
                 let mut b = d.values.get(key).and_then(Json::as_bool).unwrap_or(false);
                 if ui.checkbox(&mut b, lang.tr(label)).changed() {
                     d.values.insert(key.into(), json!(b));
                 }
+                if cols == 1 {
+                    ui.end_row();
+                }
             }
-            ui.end_row();
+            if cols == 2 {
+                ui.end_row();
+            }
         });
     });
     ui.add_space(8.0);
