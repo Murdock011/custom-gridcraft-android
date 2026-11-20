@@ -21,6 +21,13 @@ pub(super) fn about(ui: &mut egui::Ui, d: &mut Dialog) {
             ui.label("A clean-room, open-source, Rust-native spreadsheet. Part of ArtCraft.");
             ui.hyperlink_to("getartcraft.com/apps/gridcraft", "https://getartcraft.com/apps/gridcraft");
             ui.hyperlink_to("Join the ArtCraft Discord", "https://discord.gg/artcraft");
+            // This fork: the Android version, made on top of the ArtCraft team's GridCraft.
+            ui.add_space(6.0);
+            ui.label("Android version by Murdock011, a modification of GridCraft. GridCraft itself is the work of the ArtCraft team.");
+            ui.hyperlink_to(
+                "Android source: github.com/Murdock011/custom-gridcraft-android",
+                "https://github.com/Murdock011/custom-gridcraft-android",
+            );
         }
     }
 }
